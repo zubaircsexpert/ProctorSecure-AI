@@ -37,7 +37,7 @@ const AssignmentManager = ({
               <b>{as.title}</b> <br/> 
               {as.submissionUrl && (
                 <div>
-                  <a href={`http://localhost:5000/uploads/${as.submissionUrl}`} target="_blank" rel="noreferrer">View Student File</a>
+                  <a href={`https://proctorsecure-ai-jkc2.onrender.com/api/uploads/${as.submissionUrl}`} target="_blank" rel="noreferrer">View Student File</a>
                 </div>
               )}
               <p>Marks: {as.marks}</p>
@@ -51,7 +51,7 @@ const AssignmentManager = ({
               {as.fileUrl && <div style={{fontSize: "11px", color: "#3b82f6"}}><Paperclip size={12} style={{display: "inline"}}/> File Attached</div>}
             </div>
             <div style={{display: "flex", gap: "10px"}}>
-              {as.fileUrl && <a href={`http://localhost:5000/uploads/${as.fileUrl}`} target="_blank" rel="noreferrer" style={iconBtn}><ExternalLink size={16}/></a>}
+              {as.fileUrl && <a href={`https://proctorsecure-ai-jkc2.onrender.com/api/uploads/${as.fileUrl}`} target="_blank" rel="noreferrer" style={iconBtn}><ExternalLink size={16}/></a>}
               <button style={okBtn}><CheckCircle size={16}/></button>
               <button onClick={() => handleDelete("assignments", as._id)} style={delBtn}><Trash2 size={16}/></button>
             </div>

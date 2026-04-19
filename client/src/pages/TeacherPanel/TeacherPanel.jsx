@@ -29,24 +29,24 @@ const TeacherPanel = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      if (isEditing) { await axios.put(`http://localhost:5000/api/notifications/update/${currentId}`, formData); setIsEditing(false); }
-      else { await axios.post("http://localhost:5000/api/notifications/add", formData); }
+      if (isEditing) { await axios.put(`https://proctorsecure-ai-jkc2.onrender.com/api/notifications/update/${currentId}`, formData); setIsEditing(false); }
+      else { await axios.post("https://proctorsecure-ai-jkc2.onrender.com/api/notifications/add", formData); }
       setFormData({ title: "", message: "", type: "general" }); fetchNotifications();
     } catch (err) { alert("Action failed!"); }
   };
 
   const fetchExams = async () => {
-    try { const res = await axios.get("http://localhost:5000/api/exams/all"); setExams(res.data); } catch (err) { console.log(err); }
+    try { const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/exams/all"); setExams(res.data); } catch (err) { console.log(err); }
   };
 
   const handleExamPost = async (e) => {
     e.preventDefault();
-    try { await axios.post("http://localhost:5000/api/exams/add", examForm); setExamForm({ course: "", title: "", syllabus: "" }); fetchExams(); alert("Exam Schedule Posted!"); }
+    try { await axios.post("https://proctorsecure-ai-jkc2.onrender.com/api/exams/add", examForm); setExamForm({ course: "", title: "", syllabus: "" }); fetchExams(); alert("Exam Schedule Posted!"); }
     catch (err) { alert("Post failed!"); }
   };
 
   const fetchAssignments = async () => {
-    try { const res = await axios.get("http://localhost:5000/api/assignments/all"); setAssignments(res.data); } catch (err) { console.log(err); }
+    try { const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/assignments/all"); setAssignments(res.data); } catch (err) { console.log(err); }
   };
 
   const handleAssignPost = async (e) => {
@@ -56,7 +56,7 @@ const TeacherPanel = () => {
     data.append("dueDate", assignForm.dueDate);
     if (selectedFile) { data.append("file", selectedFile); }
     try {
-      await axios.post("http://localhost:5000/api/assignments/add", data, { headers: { "Content-Type": "multipart/form-data" } });
+      await axios.post("https://proctorsecure-ai-jkc2.onrender.com/api/assignments/add", data, { headers: { "Content-Type": "multipart/form-data" } });
       setAssignForm({ title: "", dueDate: "" }); setSelectedFile(null); fetchAssignments(); alert("Assignment Sent!");
     } catch (err) { alert("Assignment creation failed!"); }
   };
@@ -65,7 +65,7 @@ const TeacherPanel = () => {
     const marks = marksInput[assignmentId];
     if (!marks) { alert("Marks enter karo"); return; }
     try {
-      await axios.post("http://localhost:5000/api/assignments/give-marks", { assignmentId, marks });
+      await axios.post("https://proctorsecure-ai-jkc2.onrender.com/api/assignments/give-marks", { assignmentId, marks });
       alert("Marks added"); fetchAssignments();
     } catch (err) { alert("Error"); }
   };
@@ -73,7 +73,7 @@ const TeacherPanel = () => {
   const handleDelete = async (type, id) => {
     if (window.confirm("Khatam kar dein?")) {
       try {
-        await axios.delete(`http://localhost:5000/api/${type}/delete/${id}`);
+        await axios.delete(`https://proctorsecure-ai-jkc2.onrender.com/api/${type}/delete/${id}`);
         type === "notifications" ? fetchNotifications() : type === "exams" ? fetchExams() : fetchAssignments();
       } catch (err) { alert("Delete failed!"); }
     }
