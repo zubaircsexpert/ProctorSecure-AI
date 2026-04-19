@@ -23,7 +23,7 @@ const TeacherPanel = () => {
   }, []);
 
   const fetchNotifications = async () => {
-    try { const res = await axios.get("http://localhost:5000/api/notifications/all"); setNotifications(res.data); } catch (err) { console.log(err); }
+    try { const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/notifications/all"); setNotifications(res.data); } catch (err) { console.log(err); }
   };
 
   const handleSubmit = async (e) => {
