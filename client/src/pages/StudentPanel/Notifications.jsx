@@ -25,7 +25,7 @@ const Notifications = () => {
 
   return (
     <div style={containerStyle}>
-      <h2 style={headerStyle}>Academic Announcements 📢</h2>
+      <h2 style={headerStyle}>Academic Announcement 📢</h2>
       <div style={listStyle}>
         {notifications.length === 0 ? (
           <p style={{color: "#666"}}>Koi nayi notification nahi hai.</p>
