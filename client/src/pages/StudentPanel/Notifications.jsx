@@ -10,7 +10,7 @@ const Notifications = () => {
     const fetchNotifications = async () => {
       try {
         // Backend se data mangwana
-        const res = await axios.get("http://localhost:5000/api/notifications/all");
+        const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/notifications/all");
         setNotifications(res.data);
         setLoading(false);
       } catch (err) {
