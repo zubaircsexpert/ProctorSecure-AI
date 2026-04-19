@@ -42,7 +42,7 @@ const AssignmentList = () => {
 
   return (
     <div style={{ padding: "20px" }}>
-      <h2>Available Assignments</h2>
+      <h2>Available Assignment</h2>
 
       {assignments.length > 0 ? (
         assignments.map((asm) => (
@@ -65,7 +65,7 @@ const AssignmentList = () => {
             {asm.fileUrl && (
               <div style={{ marginTop: "10px" }}>
                 <a
-                  href={`http://localhost:5000/uploads/${asm.fileUrl}`}
+                  href={`https://proctorsecure-ai-jkc2.onrender.com/uploads/${asm.fileUrl}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

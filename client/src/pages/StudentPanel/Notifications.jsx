@@ -25,14 +25,14 @@ const Notifications = () => {
 
   return (
     <div style={containerStyle}>
-      <h2 style={headerStyle}>Academic Announcement 📢</h2>
+      <h2 style={headerStyle}>Academic Announcements 📢</h2>
       <div style={listStyle}>
         {notifications.length === 0 ? (
-          <p style={{color: "#666"}}>Koi nayi notification nahi hai.</p>
+          <p style={{color: "#666"}}></p>
         ) : (
           notifications.map((n) => (
             <div key={n._id} style={cardStyle}>
-              <div style={cardHeader}>
+              <div style={cardHeader}>Loading
                 <h3 style={titleStyle}>{n.title}</h3>
                 <span style={badgeStyle(n.type)}>{n.type}</span>
               </div>
