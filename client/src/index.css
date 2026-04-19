@@ -1,5 +1,5 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
@@ -13,32 +13,58 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* --- Global Reset for Professional Layout --- */
+* {
+  box-sizing: border-box;
+  scroll-behavior: smooth;
+}
+
+/* Custom Scrollbar for VIP look */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+::-webkit-scrollbar-thumb {
+  background: #3b82f6;
+  border-radius: 10px;
+}
+
 a {
   font-weight: 500;
   color: #646cff;
   text-decoration: inherit;
+  transition: 0.3s;
 }
 a:hover {
   color: #535bf2;
 }
 
-/* --- Responsive Body Logic --- */
+/* --- Body: Hybrid Responsive Logic --- */
 body {
   margin: 0;
+  padding: 0;
   display: flex;
-  flex-direction: column; /* Mobile first approach: upar se niche */
-  align-items: center;
+  flex-direction: column; /* Mobile first */
   min-width: 320px;
   min-height: 100vh;
-  overflow-x: hidden; /* Screen se bahar jane se rokne ke liye */
+  overflow-x: hidden;
+  background-color: #0f172a; /* Professional dark background */
 }
 
-/* Laptop/Desktop ke liye flex center wapis set karein */
-@media (min-width: 768px) {
+/* Laptop / Desktop (VIP Wide View) */
+@media (min-width: 1024px) {
   body {
-    flex-direction: row; /* Baray screens par horizontal layout */
-    place-items: center;
-    justify-content: center;
+    flex-direction: row; /* Sidebar and main side by side */
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  #root {
+    display: flex;
+    width: 100%;
+    height: 100vh;
   }
 }
 
@@ -46,53 +72,85 @@ h1 {
   font-size: 3.2em;
   line-height: 1.1;
   text-align: center;
+  letter-spacing: -1px;
 }
 
-/* Mobile par h1 chota karne ke liye */
-@media (max-width: 600px) {
+/* Mobile Friendly Typography */
+@media (max-width: 768px) {
   h1 {
-    font-size: 2.2em;
-    padding: 0 15px;
+    font-size: 2rem;
+    padding: 0 10px;
+  }
+  
+  body {
+    display: block; /* Stack everything vertically on mobile */
   }
 }
 
+/* --- VIP Button Styling --- */
 button {
   border-radius: 8px;
   border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
+  padding: 0.8em 1.5em;
+  font-size: 1rem;
+  font-weight: 600;
   font-family: inherit;
   background-color: #17da93;
+  color: #1e293b;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-
-/* Mobile par button ko width dena behtar rehta hai */
-@media (max-width: 480px) {
-  button {
-    width: 90%; 
-    margin: 10px 0;
-  }
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
 }
 
 button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(23, 218, 147, 0.3);
+  filter: brightness(1.1);
 }
 
+button:active {
+  transform: translateY(0);
+}
+
+/* Mobile Button Optimization */
+@media (max-width: 480px) {
+  button {
+    width: 100%; 
+    margin: 8px 0;
+    font-size: 0.95rem;
+  }
+}
+
+/* --- Light Mode Support --- */
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    color: #1e293b;
+    background-color: #f8fafc;
   }
+  
+  body {
+    background-color: #f1f5f9;
+  }
+
   a:hover {
     color: #747bff;
   }
+
   button {
-    background-color: #f9f9f9;
+    background-color: #10b981;
+    color: white;
   }
+}
+
+/* Fix for Images and Cards in Dashboard */
+img, video {
+  max-width: 100%;
+  height: auto;
+}
+
+.card {
+  transition: transform 0.3s ease;
+}
+.card:hover {
+  transform: scale(1.02);
 }
