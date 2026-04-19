@@ -110,7 +110,7 @@ const AssignmentList = () => {
           </div>
         ))
       ) : (
-        <p>Filhaal koi assignment nahi hai.</p>
+        <p>Loading....</p>
       )}
     </div>
   );
