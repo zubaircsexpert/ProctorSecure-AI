@@ -11,7 +11,7 @@ const AssignmentList = () => {
 
   const fetchAssignments = async () => {
     try {
-      const res = await axios.get("http://localhost:5000/api/assignments/all");
+     const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/assignments/all");
       setAssignments(res.data);
     } catch (err) {
       console.error("Data fetch nahi ho raha", err);
