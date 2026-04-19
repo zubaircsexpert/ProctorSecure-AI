@@ -8,7 +8,7 @@ const ResultsList = () => {
   useEffect(() => {
     const fetchResults = async () => {
       try {
-        const res = await axios.get("http://localhost:5000/api/results/all-students");
+        const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/results/all-students");
         setAllResults(res.data);
       } catch (err) {
         console.error("Results fetch failed");
