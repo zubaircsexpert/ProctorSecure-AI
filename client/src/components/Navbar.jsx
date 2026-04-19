@@ -1,19 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Bell, Menu, X } from "lucide-react"; // Hamburger icons add kiye
+import { Bell, Menu, X } from "lucide-react";
 import axios from "axios";
 
 const Navbar = () => {
   const [notificationCount, setNotificationCount] = useState(0);
-  const [isMenuOpen, setIsMenuOpen] = useState(false); // Mobile menu state
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 850);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024); // Professional break-point 1024px
   const navigate = useNavigate();
 
-  // Screen size check karne ke liye
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 850);
-      if (window.innerWidth > 850) setIsMenuOpen(false);
+      setIsMobile(window.innerWidth < 1024);
+      if (window.innerWidth > 1024) setIsMenuOpen(false);
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -55,61 +54,70 @@ const Navbar = () => {
 
   if (!user) return null;
 
-  // --- Dynamic Styles ---
+  // --- Dynamic Styles for "VIP" Look ---
   const navStyle = {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    padding: isMobile ? "0 20px" : "0 40px",
-    background: "linear-gradient(90deg, #1a2a6c, #b21f1f)",
-    height: "70px",
+    padding: isMobile ? "0 20px" : "0 60px", // Laptop par zyada padding for premium feel
+    background: "linear-gradient(135deg, #1a2a6c, #b21f1f)", // 135deg for better gradient flow
+    height: "75px",
     position: "fixed",
     top: 0,
     left: 0,
     width: "100%",
     boxSizing: "border-box",
     zIndex: 2000,
-    boxShadow: "0 4px 15px rgba(0, 0, 0, 0.3)",
+    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.4)",
   };
 
   const menuContainer = {
     display: isMobile ? (isMenuOpen ? "flex" : "none") : "flex",
     flexDirection: isMobile ? "column" : "row",
     position: isMobile ? "absolute" : "static",
-    top: isMobile ? "70px" : "auto",
+    top: isMobile ? "75px" : "auto",
     left: 0,
     width: isMobile ? "100%" : "auto",
-    background: isMobile ? "#1a2a6c" : "transparent",
-    padding: isMobile ? "20px" : "0",
+    background: isMobile ? "rgba(26, 42, 108, 0.98)" : "transparent", // Blur effect style for mobile
+    padding: isMobile ? "30px 20px" : "0",
     alignItems: "center",
-    gap: isMobile ? "15px" : "5px",
-    transition: "0.3s ease",
+    gap: isMobile ? "20px" : "15px", // Professional spacing between links
+    transition: "all 0.4s ease-in-out",
+    backdropFilter: isMobile ? "blur(10px)" : "none",
   };
 
   const linkStyle = {
     color: "#fff",
-    padding: "8px 12px",
+    padding: "10px 15px",
     textDecoration: "none",
-    fontSize: isMobile ? "16px" : "14px",
+    fontSize: isMobile ? "18px" : "15px",
     fontWeight: "600",
-    borderRadius: "5px",
+    borderRadius: "8px",
+    transition: "0.3s",
+    borderBottom: isMobile ? "1px solid rgba(255,255,255,0.1)" : "none",
     width: isMobile ? "100%" : "auto",
-    textAlign: isMobile ? "center" : "left",
+    textAlign: "center",
   };
 
   return (
     <nav style={navStyle}>
-      {/* --- LEFT SIDE: LOGO --- */}
+      {/* --- LOGO --- */}
       <div style={{ display: "flex", alignItems: "center" }}>
-        <h2 style={{ color: "#fff", margin: 0, fontSize: isMobile ? "18px" : "24px", fontWeight: "900", letterSpacing: "1.5px" }}>
+        <h2 style={{ 
+          color: "#fff", 
+          margin: 0, 
+          fontSize: isMobile ? "20px" : "26px", 
+          fontWeight: "900", 
+          letterSpacing: "2px",
+          textShadow: "2px 2px 4px rgba(0,0,0,0.3)" 
+        }}>
           PROCTOR-AI
         </h2>
       </div>
 
-      {/* --- RIGHT SIDE: ACTIONS --- */}
+      {/* --- ACTIONS & NAVIGATION --- */}
       <div style={{ display: "flex", alignItems: "center" }}>
         
-        {/* Menu Links */}
         <div style={menuContainer}>
           {role === "student" && (
             <>
@@ -129,23 +137,35 @@ const Navbar = () => {
 
           <Link to="/schedule" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Schedule</Link>
           
-          <button onClick={handleLogout} style={{ ...logoutBtn, width: isMobile ? "80%" : "auto" }}>Logout</button>
+          <button 
+            onClick={handleLogout} 
+            style={{ 
+              ...logoutBtn, 
+              width: isMobile ? "100%" : "auto",
+              marginTop: isMobile ? "10px" : "0" 
+            }}
+          >
+            Logout
+          </button>
         </div>
 
-        {/* 🔔 Notification Icon (Hamesha dikhayi dega) */}
-        <div style={{ position: "relative", margin: "0 15px", cursor: "pointer" }}>
+        {/* 🔔 Notifications */}
+        <div style={{ position: "relative", marginLeft: isMobile ? "15px" : "25px", cursor: "pointer" }}>
           <Link to="/notifications" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-            <Bell size={isMobile ? 20 : 22} color="#fff" strokeWidth={2} />
+            <Bell size={isMobile ? 22 : 24} color="#fff" strokeWidth={2.5} />
             {notificationCount > 0 && (
               <span style={badgeStyle}>{notificationCount}</span>
             )}
           </Link>
         </div>
 
-        {/* 🍔 Hamburger Button (Sirf Mobile par) */}
+        {/* 🍔 Hamburger for Mobile */}
         {isMobile && (
-          <div onClick={() => setIsMenuOpen(!isMenuOpen)} style={{ cursor: "pointer", color: "#fff", marginLeft: "10px" }}>
-            {isMenuOpen ? <X size={28} /> : <Menu size={28} />}
+          <div 
+            onClick={() => setIsMenuOpen(!isMenuOpen)} 
+            style={{ cursor: "pointer", color: "#fff", marginLeft: "20px" }}
+          >
+            {isMenuOpen ? <X size={32} /> : <Menu size={32} />}
           </div>
         )}
       </div>
@@ -153,33 +173,36 @@ const Navbar = () => {
   );
 };
 
-// --- Constant Styles ---
+// --- Constant Styles for Premium Look ---
 const badgeStyle = {
   position: "absolute",
-  top: "-5px",
-  right: "-8px",
+  top: "-8px",
+  right: "-10px",
   background: "#ffc107",
   color: "#000",
-  fontSize: "10px",
+  fontSize: "11px",
   fontWeight: "bold",
-  width: "18px",
-  height: "18px",
+  width: "20px",
+  height: "20px",
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
   borderRadius: "50%",
+  boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
 };
 
 const logoutBtn = {
   background: "#ff4b2b",
-  padding: "8px 20px",
-  borderRadius: "6px",
+  padding: "10px 24px",
+  borderRadius: "8px",
   color: "#fff",
   border: "none",
   cursor: "pointer",
-  marginLeft: "10px",
+  marginLeft: "15px",
   fontSize: "14px",
   fontWeight: "bold",
+  boxShadow: "0 4px 10px rgba(255, 75, 43, 0.3)",
+  transition: "0.3s",
 };
 
 export default Navbar;
