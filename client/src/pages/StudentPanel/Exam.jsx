@@ -33,7 +33,7 @@ const Exam = () => {
   useEffect(() => {
     const fetchQuestions = async () => {
       try {
-        const res = await API.get("/questions");
+        const res = await API.get("/api/questions");
         setQuestions(res.data);
       } catch (error) {
         console.error("Fetch Error:", error);
