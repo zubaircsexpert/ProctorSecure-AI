@@ -14,7 +14,7 @@ import assignmentRoutes from "./routes/assignments.js";
 import User from "./models/User.js";
 import Question from "./models/Question.js";
 import Result from "./models/Result.js";
-import Exam from "./models/Exam.js"; // ✅ NEW
+import Exam from "./models/Exam.js"; 
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
@@ -118,9 +118,9 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// ================= EXAMS (NEW) =================
+// ================= EXAMS =================
 
-// ➕ Add Exam (Teacher sets time)
+// ➕ Add Exam
 app.post("/api/exams/add", verifyToken, async (req, res) => {
   try {
     const { title, course, duration } = req.body;
@@ -129,7 +129,7 @@ app.post("/api/exams/add", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "Title & duration required" });
     }
 
-    const exam = new Exam({ title, course, duration });
+    const exam = new Exam({ title, course, duration, status: "pending" }); // Default pending
     await exam.save();
 
     res.json({ message: "Exam Created ✅", exam });
@@ -145,6 +145,22 @@ app.get("/api/exams/all", verifyToken, async (req, res) => {
   try {
     const exams = await Exam.find();
     res.json(exams);
+  } catch (err) {
+    res.status(500).json({ message: "Error ❌" });
+  }
+});
+
+// 🔄 UPDATE EXAM STATUS (NEW LOGIC)
+app.put("/api/exams/update-status/:id", verifyToken, async (req, res) => {
+  try {
+    const { status } = req.body; // Expecting { status: "live" }
+    const exam = await Exam.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
+    if (!exam) return res.status(404).json({ message: "Exam not found" });
+    res.json({ message: "Exam status updated ✅", exam });
   } catch (err) {
     res.status(500).json({ message: "Error ❌" });
   }

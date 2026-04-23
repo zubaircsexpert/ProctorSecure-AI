@@ -12,6 +12,7 @@ import assignmentRoutes from "./routes/assignments.js";
 import User from "./models/User.js";
 import Question from "./models/Question.js";
 import Result from "./models/Result.js";
+import Exam from "./models/Exam.js"; // ✅ Exam Model Import
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
@@ -34,15 +35,12 @@ app.use("/api/assignments", assignmentRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 // ================= AUTH ROUTES =================
-// ================= EXAMS (TEST) =================
+
+// ROOT
 app.get("/", (req, res) => {
   res.send("Backend Running ✅");
 });
 
-
-app.post("/api/exams/add", (req, res) => {
-  res.send("Exam route working ✅");
-});
 // REGISTER
 app.post("/api/auth/register", async (req, res) => {
   try {
@@ -128,45 +126,40 @@ const verifyToken = (req, res, next) => {
 };
 
 // ================= EXAMS =================
-// Added because Exam.js calls: GET /api/exams/all
-app.get("/api/exams/all", async (req, res) => {
+
+// Add Exam (Teacher)
+app.post("/api/exams/add", verifyToken, async (req, res) => {
   try {
-    const questions = await Question.find().lean();
+    const { title, course, duration } = req.body;
+    // New exam default status is pending
+    const newExam = new Exam({ title, course, duration, status: "pending" });
+    await newExam.save();
+    res.json({ message: "Exam Created Pending ⏳", exam: newExam });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "Error ❌" });
+  }
+});
 
-    if (!questions.length) {
-      return res.json([]);
-    }
-
-    const examMap = new Map();
-
-    questions.forEach((q) => {
-      const examId =
-        q.examId?.toString() ||
-        q.exam?._id?.toString() ||
-        q.exam?.toString() ||
-        "default-exam";
-
-      const title =
-        q.examTitle ||
-        q.subject ||
-        q.title ||
-        "ProctorSecure Final Assessment";
-
-      const duration = q.duration || 5;
-
-      if (!examMap.has(examId)) {
-        examMap.set(examId, {
-          _id: examId,
-          title,
-          duration,
-        });
-      }
-    });
-
-    res.json(Array.from(examMap.values()));
+// Get All Exams (Only 'live' exams for students)
+app.get("/api/exams/all", verifyToken, async (req, res) => {
+  try {
+    const exams = await Exam.find({ status: "live" });
+    res.json(exams);
   } catch (err) {
     console.log("FETCH EXAMS ERROR:", err);
     res.status(500).json({ message: "Failed to load exams" });
+  }
+});
+
+// Update Exam Status (Teacher)
+app.put("/api/exams/update-status/:id", verifyToken, async (req, res) => {
+  try {
+    const { status } = req.body; // Expects { status: "live" }
+    const exam = await Exam.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    res.json({ message: "Exam Status Updated ✅", exam });
+  } catch (err) {
+    res.status(500).json({ message: "Error ❌" });
   }
 });
 
@@ -181,39 +174,26 @@ app.get("/api/questions", verifyToken, async (req, res) => {
   }
 });
 
-// Added because Exam.js calls: GET /api/questions/:examId
-app.get("/api/questions/:examId", async (req, res) => {
+app.get("/api/questions/:examId", verifyToken, async (req, res) => {
   try {
     const { examId } = req.params;
-    let questions = [];
-
-    if (!examId || examId === "default-exam") {
-      questions = await Question.find();
-    } else {
-      const filters = [
-        { examId: examId },
-        { exam: examId },
-        { "exam._id": examId },
-      ];
-
-      if (mongoose.Types.ObjectId.isValid(examId)) {
-        const objectId = new mongoose.Types.ObjectId(examId);
-        filters.push({ examId: objectId });
-        filters.push({ exam: objectId });
-        filters.push({ "exam._id": objectId });
-      }
-
-      questions = await Question.find({ $or: filters });
-
-      if (!questions.length) {
-        questions = await Question.find();
-      }
-    }
-
+    const questions = await Question.find({ examId });
     res.json(questions);
   } catch (err) {
     console.log("FETCH EXAM QUESTIONS ERROR:", err);
     res.status(500).json({ message: "Failed to load questions" });
+  }
+});
+
+app.post("/api/questions/add", verifyToken, async (req, res) => {
+  try {
+    const { examId, questionText, options, correctAnswer } = req.body;
+    const newQuestion = new Question({ examId, questionText, options, correctAnswer });
+    await newQuestion.save();
+    res.json({ message: "Question Added ✅" });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: "Error ❌" });
   }
 });
 
