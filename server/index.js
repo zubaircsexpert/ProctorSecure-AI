@@ -35,6 +35,10 @@ app.use("/api/notifications", notificationRoutes);
 
 // ================= AUTH ROUTES =================
 // ================= EXAMS (TEST) =================
+app.get("/", (req, res) => {
+  res.send("Backend Running ✅");
+});
+
 
 app.post("/api/exams/add", (req, res) => {
   res.send("Exam route working ✅");
