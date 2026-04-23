@@ -51,55 +51,56 @@ const Exam = () => {
   const sessionIdRef = useRef(createSessionId());
 
   // 1. Fetch Exams
-useEffect(() => {
-  const fetchExams = async () => {
-    try {
-      setLoadingExams(true);
-      setErrorMessage("");
+  useEffect(() => {
+    const fetchExams = async () => {
+      try {
+        setLoadingExams(true);
+        setErrorMessage("");
 
-      const res = await API.get("/api/exams/all");
-      console.log("Exams API response:", res.data);
+        const res = await API.get("/api/exams/all");
+        console.log("Exams API response:", res.data);
 
-      const examList = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data?.exams)
-        ? res.data.exams
-        : Array.isArray(res.data?.data)
-        ? res.data.data
-        : [];
+        const examList = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.exams)
+          ? res.data.exams
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : [];
 
-      setExams(examList);
-    } catch (err) {
-      console.error("Fetch exams error:", {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-      });
+        // ✅ FILTER: Only show live exams to students
+        const liveExams = examList.filter(ex => ex.status === 'live');
+        setExams(liveExams);
+      } catch (err) {
+        console.error("Fetch exams error:", {
+          message: err.message,
+          status: err.response?.status,
+          data: err.response?.data,
+        });
 
-      setErrorMessage(
-        err.response?.data?.message ||
-          `Failed to load exams (${err.response?.status || err.message})`
-      );
-    } finally {
-      setLoadingExams(false);
-    }
-  };
+        setErrorMessage(
+          err.response?.data?.message ||
+            `Failed to load exams (${err.response?.status || err.message})`
+        );
+      } finally {
+        setLoadingExams(false);
+      }
+    };
 
-  fetchExams();
+    fetchExams();
 
-  const handleBeforeUnload = (e) => {
-    e.preventDefault();
-    e.returnValue =
-      "Are you sure you want to leave? Your progress will be lost.";
-  };
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue =
+        "Are you sure you want to leave? Your progress will be lost.";
+    };
 
-  window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("beforeunload", handleBeforeUnload);
 
-  return () => {
-    window.removeEventListener("beforeunload", handleBeforeUnload);
-  };
-}, []);
-
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
   // 2. Specialized Warning Function
   const addWarning = useCallback(
