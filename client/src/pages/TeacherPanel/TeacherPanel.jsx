@@ -43,6 +43,20 @@ const TeacherPanel = () => {
     fetchAssignments();
   }, []);
 
+  // ================= EXAM CONTROL LOGIC (NEW) =================
+  const toggleExamStatus = async (id, currentStatus) => {
+    // Agar status live hai to pending kar do, agar pending hai to live
+    const newStatus = currentStatus === 'live' ? 'pending' : 'live';
+    try {
+      await axios.put(`https://proctorsecure-ai-jkc2.onrender.com/api/exams/update-status/${id}`, { status: newStatus });
+      fetchExams(); // Refresh list
+      alert(`Exam status successfully changed to ${newStatus}`);
+    } catch (err) {
+      console.error(err);
+      alert("Failed to update status. Make sure backend route exists!");
+    }
+  };
+
   // ================= NOTIFICATIONS =================
   const fetchNotifications = async () => {
     const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/notifications/all");
@@ -158,6 +172,24 @@ const TeacherPanel = () => {
               onChange={e => setExamForm({...examForm, duration: e.target.value})} />
             <button>Create Exam</button>
           </form>
+
+          <hr />
+
+          {/* ✅ NEW: EXAM CONTROL CENTER */}
+          <h2>Control Center</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {exams.map(ex => (
+              <div key={ex._id} style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '5px', background: '#fff' }}>
+                <strong>{ex.title}</strong> - Status: <b>{ex.status || "pending"}</b>
+                <button 
+                  style={{ marginLeft: '20px', backgroundColor: ex.status === 'live' ? '#ff4d4d' : '#4CAF50', color: '#fff', border: 'none', padding: '5px 10px', cursor: 'pointer' }}
+                  onClick={() => toggleExamStatus(ex._id, ex.status)}
+                >
+                  {ex.status === 'live' ? 'Stop Exam' : 'Start/Allow Exam'}
+                </button>
+              </div>
+            ))}
+          </div>
 
           <hr />
 
