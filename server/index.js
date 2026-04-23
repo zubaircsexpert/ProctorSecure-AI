@@ -12,6 +12,7 @@ import assignmentRoutes from "./routes/assignments.js";
 import User from "./models/User.js";
 import Question from "./models/Question.js";
 import Result from "./models/Result.js";
+import examRoutes from "./routes/examRoutes.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 
@@ -32,6 +33,7 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // ================= ROUTES =================
 app.use("/api/assignments", assignmentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/exams", examRoutes);
 
 // ================= AUTH ROUTES =================
 // ================= EXAMS (TEST) =================
