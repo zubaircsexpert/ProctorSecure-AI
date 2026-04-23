@@ -8,12 +8,12 @@ const Results = () => {
     const getFinalResult = async () => {
       try {
         // 1. Sabse pehle LocalStorage check karein (Instant Result)
-        const localData = localStorage.getItem("examResult");
+        const localData = localStorage.getItem("/api/examResult");
         if (localData) {
           setResult(JSON.parse(localData));
         } else {
           // 2. Agar local nahi hai to API se fetch karein
-          const res = await API.get("/my-results");
+          const res = await API.get("/api/my-results");
           if (res.data && res.data.length > 0) {
             // Latest result uthayein
             setResult(res.data[res.data.length - 1]);
@@ -22,7 +22,7 @@ const Results = () => {
       } catch (err) {
         console.error("Error fetching results:", err);
         // Fallback to local if API fails
-        const local = localStorage.getItem("examResult");
+        const local = localStorage.getItem("/api/examResult");
         if (local) setResult(JSON.parse(local));
       }
     };
