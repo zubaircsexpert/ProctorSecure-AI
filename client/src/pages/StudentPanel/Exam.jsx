@@ -70,7 +70,19 @@ const Exam = () => {
 
         // ✅ FILTER: Only show live exams to students
         setExams(examList);
-        setExams(liveExams);
+        const examList = Array.isArray(res.data)
+  ? res.data
+  : Array.isArray(res.data?.exams)
+  ? res.data.exams
+  : Array.isArray(res.data?.data)
+  ? res.data.data
+  : [];
+
+// ✅ define properly
+const liveExams = examList.filter(ex => ex.status === "live");
+
+// ✅ then set
+setExams(liveExams);
       } catch (err) {
         console.error("Fetch exams error:", {
           message: err.message,
