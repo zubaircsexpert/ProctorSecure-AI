@@ -9,13 +9,9 @@ const createSessionId = () =>
 
 const extractList = (payload, keys = []) => {
   if (Array.isArray(payload)) return payload;
-
   for (const key of keys) {
-    if (Array.isArray(payload?.[key])) {
-      return payload[key];
-    }
+    if (Array.isArray(payload?.[key])) return payload[key];
   }
-
   return [];
 };
 
@@ -48,41 +44,59 @@ const Exam = () => {
   const warningTimeoutRef = useRef(null);
   const sessionIdRef = useRef(createSessionId());
 
-  useEffect(() => {
-    const fetchExams = async () => {
-      try {
-        setLoadingExams(true);
-        setErrorMessage("");
+  const fetchExams = useCallback(async () => {
+    try {
+      setLoadingExams(true);
+      setErrorMessage("");
 
-        const res = await API.get("/api/exams/all");
-        console.log("Exams API response:", res.data);
+      const res = await API.get("/api/exams/all");
+      const examList = extractList(res.data, ["exams", "data"]).filter(
+        (exam) => exam.status !== "closed"
+      );
 
-        const examList = Array.isArray(res.data)
-          ? res.data
-          : Array.isArray(res.data?.exams)
-          ? res.data.exams
-          : Array.isArray(res.data?.data)
-          ? res.data.data
-          : [];
+      setExams(examList);
+      setSelectedExam((prev) => {
+        if (!prev) return prev;
+        return examList.find((exam) => exam._id === prev._id) || prev;
+      });
+    } catch (err) {
+      setErrorMessage(
+        err.response?.data?.message ||
+          `Failed to load exams (${err.response?.status || err.message})`
+      );
+    } finally {
+      setLoadingExams(false);
+    }
+  }, []);
 
-        setExams(examList);
-      } catch (err) {
-        console.error("Fetch exams error:", {
-          message: err.message,
-          status: err.response?.status,
-          data: err.response?.data,
-        });
-
-        setErrorMessage(
-          err.response?.data?.message ||
-            `Failed to load exams (${err.response?.status || err.message})`
-        );
-      } finally {
-        setLoadingExams(false);
+  const loadQuestions = useCallback(async (examId, initialLoad = false) => {
+    try {
+      if (initialLoad) {
+        setLoadingQuestions(true);
       }
-    };
 
+      const res = await API.get(`/api/questions/${examId}`);
+      const questionList = extractList(res.data, ["questions", "data"]);
+
+      setQuestions(questionList);
+      setErrorMessage("");
+    } catch (err) {
+      if (err.response?.status === 403) {
+        setErrorMessage(err.response?.data?.message || "Teacher ne access enable nahi ki.");
+      } else {
+        setErrorMessage("Failed to load questions.");
+      }
+      setQuestions([]);
+    } finally {
+      if (initialLoad) {
+        setLoadingQuestions(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
     fetchExams();
+    const examInterval = setInterval(fetchExams, 10000);
 
     const handleBeforeUnload = (e) => {
       e.preventDefault();
@@ -93,9 +107,24 @@ const Exam = () => {
     window.addEventListener("beforeunload", handleBeforeUnload);
 
     return () => {
+      clearInterval(examInterval);
       window.removeEventListener("beforeunload", handleBeforeUnload);
+      if (warningTimeoutRef.current) {
+        clearTimeout(warningTimeoutRef.current);
+      }
     };
-  }, []);
+  }, [fetchExams]);
+
+  useEffect(() => {
+    if (!selectedExam || submitted) return;
+
+    loadQuestions(selectedExam._id, true);
+    const questionInterval = setInterval(() => {
+      loadQuestions(selectedExam._id, false);
+    }, 5000);
+
+    return () => clearInterval(questionInterval);
+  }, [selectedExam, submitted, loadQuestions]);
 
   const addWarning = useCallback(
     (type, message) => {
@@ -159,34 +188,22 @@ const Exam = () => {
       return;
     }
 
-    try {
-      setSelectedExam(exam);
-      setLoadingQuestions(true);
-      setErrorMessage("");
-      setQuestions([]);
-      setCurrentIdx(0);
-      setAnswers({});
-      sessionIdRef.current = createSessionId();
-
-      const res = await API.get(`/api/questions/${exam._id}`);
-      const questionList = extractList(res.data, ["data", "questions"]);
-
-      setQuestions(questionList);
-
-      if (questionList.length === 0) {
-        setErrorMessage("No questions found for this exam.");
-      }
-    } catch (err) {
-      console.log(err);
-      setQuestions([]);
-      setErrorMessage("Failed to load questions.");
-    } finally {
-      setLoadingQuestions(false);
+    if (!exam.canStart) {
+      setErrorMessage("Exam abhi teacher ne start/access enable nahi kiya.");
+      return;
     }
+
+    setSelectedExam(exam);
+    setQuestions([]);
+    setCurrentIdx(0);
+    setAnswers({});
+    setErrorMessage("");
+    sessionIdRef.current = createSessionId();
+    await loadQuestions(exam._id, true);
   };
 
   const handleSubmit = async () => {
-    if (hasSubmitted.current || submitted || submitting) return;
+    if (hasSubmitted.current || submitted || submitting || !selectedExam) return;
 
     hasSubmitted.current = true;
     setSubmitting(true);
@@ -196,7 +213,6 @@ const Exam = () => {
 
       questions.forEach((q, i) => {
         const correct = q.correctAnswer || q.answer;
-
         if (
           answers[i] &&
           String(answers[i]).toLowerCase().trim() ===
@@ -210,28 +226,19 @@ const Exam = () => {
       const percentage =
         total > 0 ? Number(((scoreCount / total) * 100).toFixed(2)) : 0;
 
-      let user = {
-        name: "Muhammad Zubair",
-        id: "654321",
-      };
+      let user = { name: "Student", id: "" };
 
       try {
         const savedUser = localStorage.getItem("user");
         if (savedUser) {
-          const parsedUser = JSON.parse(savedUser);
-          user = {
-            ...user,
-            ...parsedUser,
-          };
+          user = { ...user, ...JSON.parse(savedUser) };
         }
-      } catch (error) {
-        console.log("User parse error:", error);
-      }
+      } catch {}
 
       const resultData = {
-        userId: user.id || user._id || "654321",
-        studentName: user.name || "Muhammad Zubair",
-        testName: selectedExam?.title || "ProctorSecure Final Assessment",
+        examId: selectedExam._id,
+        studentName: user.name || "Student",
+        testName: selectedExam.title || "Exam",
         score: scoreCount,
         total,
         percentage,
@@ -247,22 +254,21 @@ const Exam = () => {
         cheatingPercent: Number(((warnings / 20) * 100).toFixed(2)),
       };
 
-      console.log("Teacher Panel Payload:", resultData);
-
       await API.post("/api/results/submit", resultData);
-      localStorage.setItem("/api/examResult", JSON.stringify(resultData));
-
+      localStorage.setItem("examResult", JSON.stringify(resultData));
       setSubmitted(true);
-      window.location.href = "/api/results";
+      window.location.href = "/results";
     } catch (err) {
       console.error("Submission Error:", err);
-      window.location.href = "/api/results";
+      window.location.href = "/results";
     } finally {
       setSubmitting(false);
     }
   };
 
   const currentQuestion = questions[currentIdx];
+  const currentQuestionText =
+    currentQuestion?.questionText || currentQuestion?.question || "";
   const currentOptions = Array.isArray(currentQuestion?.options)
     ? currentQuestion.options
     : [];
@@ -273,11 +279,9 @@ const Exam = () => {
         <h2>Select Exam</h2>
 
         {loadingExams && <div style={loaderStyle}>Loading Exams...</div>}
-
         {!loadingExams && errorMessage && (
           <div style={errorBoxStyle}>{errorMessage}</div>
         )}
-
         {!loadingExams && !errorMessage && exams.length === 0 && (
           <div style={emptyBoxStyle}>No exams available.</div>
         )}
@@ -286,8 +290,23 @@ const Exam = () => {
           exams.map((exam) => (
             <div key={exam._id} style={examCardStyle}>
               <h3>{exam.title}</h3>
-              <button onClick={() => startExam(exam)} style={btnNext}>
-                Start Exam
+              <p>Course: {exam.course}</p>
+              <p>Status: {exam.status}</p>
+              <p>Duration: {exam.duration} min</p>
+              <p>
+                Start:{" "}
+                {exam.startTime ? new Date(exam.startTime).toLocaleString() : "Any time"}
+              </p>
+              <button
+                onClick={() => startExam(exam)}
+                style={{
+                  ...btnNext,
+                  opacity: exam.canStart ? 1 : 0.5,
+                  cursor: exam.canStart ? "pointer" : "not-allowed",
+                }}
+                disabled={!exam.canStart}
+              >
+                {exam.canStart ? "Start Exam" : "Waiting For Teacher"}
               </button>
             </div>
           ))}
@@ -295,7 +314,7 @@ const Exam = () => {
     );
   }
 
-  if (loadingQuestions) {
+  if (loadingQuestions && questions.length === 0) {
     return <div style={loaderStyle}>Loading Questions...</div>;
   }
 
@@ -318,11 +337,16 @@ const Exam = () => {
     );
   }
 
-  if (!currentQuestion) {
+  if (!loadingQuestions && questions.length === 0) {
     return (
       <div style={loaderStyle}>
         <div style={errorWrapperStyle}>
-          <div style={{ marginBottom: "20px" }}>Question not found.</div>
+          <div style={{ marginBottom: "20px" }}>
+            Teacher MCQs add kar raha hai. Yeh page auto-refresh ho raha hai.
+          </div>
+          <button onClick={() => loadQuestions(selectedExam._id, true)} style={btnNext}>
+            Refresh Now
+          </button>
           <button
             onClick={() => {
               setSelectedExam(null);
@@ -330,7 +354,7 @@ const Exam = () => {
               setCurrentIdx(0);
               setErrorMessage("");
             }}
-            style={btnPrev}
+            style={{ ...btnPrev, marginTop: "12px" }}
           >
             Back To Exams
           </button>
@@ -377,7 +401,7 @@ const Exam = () => {
               </div>
             </div>
 
-            <h3 style={qTextStyle}>{currentQuestion.questionText}</h3>
+            <h3 style={qTextStyle}>{currentQuestionText}</h3>
 
             <div style={optionsContainer}>
               {currentOptions.map((opt, j) => (
@@ -439,45 +463,14 @@ const Exam = () => {
           </h4>
 
           <div style={statBox}>
-            <div style={statItem}>
-              <span>Total Alerts</span>
-              <b>{warnings}</b>
-            </div>
-
-            <div style={statItem}>
-              <span>Eye Tracking</span>
-              <b>{eyeWarnings}</b>
-            </div>
-
-            <div style={statItem}>
-              <span>Head Posture</span>
-              <b>{headWarnings}</b>
-            </div>
-
-            <div style={statItem}>
-              <span>Sound</span>
-              <b>{soundWarnings}</b>
-            </div>
-
-            <div style={statItem}>
-              <span>Tab Switch</span>
-              <b>{tabWarnings}</b>
-            </div>
-
-            <div style={statItem}>
-              <span>Fullscreen</span>
-              <b>{fullscreenWarnings}</b>
-            </div>
-
-            <div style={statItem}>
-              <span>Copy Paste</span>
-              <b>{copyWarnings}</b>
-            </div>
-
-            <div style={statItem}>
-              <span>Right Click</span>
-              <b>{rightClickWarnings}</b>
-            </div>
+            <div style={statItem}><span>Total Alerts</span><b>{warnings}</b></div>
+            <div style={statItem}><span>Eye Tracking</span><b>{eyeWarnings}</b></div>
+            <div style={statItem}><span>Head Posture</span><b>{headWarnings}</b></div>
+            <div style={statItem}><span>Sound</span><b>{soundWarnings}</b></div>
+            <div style={statItem}><span>Tab Switch</span><b>{tabWarnings}</b></div>
+            <div style={statItem}><span>Fullscreen</span><b>{fullscreenWarnings}</b></div>
+            <div style={statItem}><span>Copy Paste</span><b>{copyWarnings}</b></div>
+            <div style={statItem}><span>Right Click</span><b>{rightClickWarnings}</b></div>
           </div>
 
           <div style={securityBadge}>AI SHIELD ACTIVE</div>
@@ -495,7 +488,6 @@ const containerStyle = {
   minHeight: "100vh",
   fontFamily: "'Poppins', sans-serif",
 };
-
 const headerStyle = {
   display: "flex",
   justifyContent: "space-between",
@@ -506,7 +498,6 @@ const headerStyle = {
   boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
   marginBottom: "30px",
 };
-
 const timerBoxStyle = {
   backgroundColor: "#fef9e7",
   border: "1px solid #f39c12",
@@ -515,22 +506,18 @@ const timerBoxStyle = {
   fontWeight: "bold",
   fontSize: "18px",
 };
-
 const mainLayoutStyle = {
   display: "grid",
   gridTemplateColumns: "3fr 1fr",
   gap: "30px",
 };
-
 const cardStyle = {
   backgroundColor: "#fff",
   padding: "40px",
   borderRadius: "20px",
   boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
 };
-
 const qHeaderStyle = { marginBottom: "30px" };
-
 const badgeStyle = {
   backgroundColor: "#e8f0fe",
   color: "#1a73e8",
@@ -539,7 +526,6 @@ const badgeStyle = {
   fontSize: "12px",
   fontWeight: "bold",
 };
-
 const progressBarContainer = {
   width: "100%",
   height: "4px",
@@ -547,22 +533,18 @@ const progressBarContainer = {
   marginTop: "15px",
   borderRadius: "2px",
 };
-
 const progressBar = {
   height: "100%",
   backgroundColor: "#1a73e8",
   transition: "width 0.4s",
 };
-
 const qTextStyle = {
   fontSize: "24px",
   color: "#2c3e50",
   marginBottom: "30px",
   fontWeight: "500",
 };
-
 const optionsContainer = { display: "grid", gap: "15px" };
-
 const optionStyle = {
   display: "flex",
   alignItems: "center",
@@ -572,13 +554,11 @@ const optionStyle = {
   cursor: "pointer",
   transition: "0.3s",
 };
-
 const navigationStyle = {
   display: "flex",
   justifyContent: "space-between",
   marginTop: "40px",
 };
-
 const sidebarStyle = {
   backgroundColor: "#fff",
   padding: "25px",
@@ -586,9 +566,7 @@ const sidebarStyle = {
   boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
   height: "fit-content",
 };
-
 const statBox = { display: "grid", gap: "10px" };
-
 const statItem = {
   display: "flex",
   justifyContent: "space-between",
@@ -598,7 +576,6 @@ const statItem = {
   borderBottom: "1px solid #eee",
   fontSize: "13px",
 };
-
 const securityBadge = {
   marginTop: "20px",
   textAlign: "center",
@@ -610,7 +587,6 @@ const securityBadge = {
   padding: "5px",
   borderRadius: "4px",
 };
-
 const btnNext = {
   padding: "12px 35px",
   backgroundColor: "#1a73e8",
@@ -620,7 +596,6 @@ const btnNext = {
   cursor: "pointer",
   fontWeight: "bold",
 };
-
 const btnPrev = {
   padding: "12px 35px",
   backgroundColor: "#f1f3f4",
@@ -629,7 +604,6 @@ const btnPrev = {
   borderRadius: "8px",
   cursor: "pointer",
 };
-
 const btnSubmit = {
   padding: "12px 35px",
   backgroundColor: "#27ae60",
@@ -639,7 +613,6 @@ const btnSubmit = {
   cursor: "pointer",
   fontWeight: "bold",
 };
-
 const loaderStyle = {
   display: "flex",
   justifyContent: "center",
@@ -650,9 +623,7 @@ const loaderStyle = {
   color: "#34495e",
   textAlign: "center",
 };
-
 const questionAreaStyle = { position: "relative" };
-
 const examCardStyle = {
   backgroundColor: "#fff",
   padding: "20px",
@@ -660,7 +631,6 @@ const examCardStyle = {
   boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
   marginBottom: "16px",
 };
-
 const errorBoxStyle = {
   backgroundColor: "#ffeaea",
   color: "#c0392b",
@@ -668,7 +638,6 @@ const errorBoxStyle = {
   borderRadius: "10px",
   marginBottom: "20px",
 };
-
 const emptyBoxStyle = {
   backgroundColor: "#fff",
   color: "#555",
@@ -676,12 +645,14 @@ const emptyBoxStyle = {
   borderRadius: "10px",
   marginBottom: "20px",
 };
-
 const errorWrapperStyle = {
   backgroundColor: "#fff",
   padding: "30px",
   borderRadius: "16px",
   boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
 };
 
 export default Exam;

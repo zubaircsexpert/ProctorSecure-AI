@@ -7,53 +7,44 @@ import dotenv from "dotenv";
 import dns from "dns";
 import path from "path";
 import { fileURLToPath } from "url";
+
 import notificationRoutes from "./routes/notificationRoutes.js";
 import assignmentRoutes from "./routes/assignments.js";
+
 import User from "./models/User.js";
 import Question from "./models/Question.js";
 import Result from "./models/Result.js";
-import Exam from "./models/Exam.js"; // ✅ Exam Model Import
+import Exam from "./models/Exam.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
-
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 5000;
 
-// --- Static Folder Setup ---
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ================= MIDDLEWARE =================
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// ================= ROUTES =================
 app.use("/api/assignments", assignmentRoutes);
 app.use("/api/notifications", notificationRoutes);
 
-// ================= AUTH ROUTES =================
-
-// ROOT
 app.get("/", (req, res) => {
   res.send("Backend Running ✅");
 });
 
-// REGISTER
 app.post("/api/auth/register", async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
-
-    console.log("Register Data:", req.body);
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: "All fields required" });
     }
 
     const exist = await User.findOne({ email });
-
     if (exist) {
       return res.status(400).json({ message: "User already exists" });
     }
@@ -68,7 +59,6 @@ app.post("/api/auth/register", async (req, res) => {
     });
 
     await newUser.save();
-
     res.json({ message: "Registered Successfully ✅" });
   } catch (err) {
     console.log("REGISTER ERROR:", err);
@@ -76,24 +66,24 @@ app.post("/api/auth/register", async (req, res) => {
   }
 });
 
-// LOGIN
 app.post("/api/auth/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
     const user = await User.findOne({ email });
-
     if (!user) {
       return res.status(400).json({ message: "User not found" });
     }
 
     const valid = await bcrypt.compare(password, user.password);
-
     if (!valid) {
       return res.status(400).json({ message: "Wrong password" });
     }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET);
+    const token = jwt.sign(
+      { userId: user._id, role: user.role },
+      process.env.JWT_SECRET
+    );
 
     res.json({
       token,
@@ -110,11 +100,12 @@ app.post("/api/auth/login", async (req, res) => {
   }
 });
 
-// ================= VERIFY TOKEN =================
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
 
-  if (!token) return res.status(401).json({ message: "No token" });
+  if (!token) {
+    return res.status(401).json({ message: "No token" });
+  }
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
@@ -125,54 +116,144 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-// ================= EXAMS =================
+const buildExamPayload = (exam) => {
+  const now = new Date();
+  const startReached = !exam.startTime || now >= new Date(exam.startTime);
+  const endReached = !exam.endTime || now <= new Date(exam.endTime);
 
-// Add Exam (Teacher)
+  return {
+    ...exam.toObject(),
+    canStart:
+      exam.status === "live" &&
+      exam.accessGranted === true &&
+      startReached &&
+      endReached,
+  };
+};
+
 app.post("/api/exams/add", verifyToken, async (req, res) => {
   try {
-    const { title, course, duration } = req.body;
+    const {
+      title,
+      course,
+      syllabus,
+      duration,
+      examKey,
+      startTime,
+      endTime,
+    } = req.body;
 
-    // ✅ changed from pending to live
-    const newExam = new Exam({ title, course, duration, status: "live" });
+    if (!title || !course || !duration) {
+      return res.status(400).json({ message: "Course, title, duration required" });
+    }
 
-    await newExam.save();
-    res.json({ message: "Exam Created ✅", exam: newExam });
+    const exam = new Exam({
+      title,
+      course,
+      syllabus: syllabus || "",
+      duration: Number(duration),
+      examKey: examKey || "",
+      startTime: startTime || null,
+      endTime: endTime || null,
+      status: "scheduled",
+      accessGranted: false,
+    });
+
+    await exam.save();
+    res.json({ message: "Exam Scheduled ✅", exam });
   } catch (err) {
-    console.log(err);
+    console.log("ADD EXAM ERROR:", err);
     res.status(500).json({ message: "Error ❌" });
   }
 });
 
-// Get All Exams (Only 'live' exams for students)
 app.get("/api/exams/all", verifyToken, async (req, res) => {
   try {
-    const exams = await Exam.find({ status: "live" });
-    res.json(exams);
+    const exams = await Exam.find().sort({ createdAt: -1 });
+    res.json(exams.map(buildExamPayload));
   } catch (err) {
     console.log("FETCH EXAMS ERROR:", err);
     res.status(500).json({ message: "Failed to load exams" });
   }
 });
 
-// Update Exam Status (Teacher)
 app.put("/api/exams/update-status/:id", verifyToken, async (req, res) => {
   try {
-    const { status } = req.body;
-    const exam = await Exam.findByIdAndUpdate(
-      req.params.id,
-      { status },
-      { new: true }
-    );
-    res.json({ message: "Exam Status Updated ✅", exam });
+    const { status, accessGranted, startTime, endTime } = req.body;
+
+    const updateData = {};
+
+    if (status) {
+      updateData.status = status;
+    }
+
+    if (typeof accessGranted === "boolean") {
+      updateData.accessGranted = accessGranted;
+    } else if (status === "live") {
+      updateData.accessGranted = true;
+    } else if (status === "scheduled" || status === "closed") {
+      updateData.accessGranted = false;
+    }
+
+    if (startTime !== undefined) {
+      updateData.startTime = startTime || null;
+    }
+
+    if (endTime !== undefined) {
+      updateData.endTime = endTime || null;
+    }
+
+    const exam = await Exam.findByIdAndUpdate(req.params.id, updateData, {
+      new: true,
+    });
+
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    res.json({ message: "Exam Updated ✅", exam: buildExamPayload(exam) });
   } catch (err) {
+    console.log("UPDATE EXAM ERROR:", err);
     res.status(500).json({ message: "Error ❌" });
   }
 });
 
-// ================= QUESTIONS =================
+app.post("/api/questions/add", verifyToken, async (req, res) => {
+  try {
+    const { examId, questionText, question, options, correctAnswer } = req.body;
+
+    const finalQuestionText = questionText || question;
+    const cleanOptions = Array.isArray(options)
+      ? options.map((item) => String(item).trim()).filter(Boolean)
+      : [];
+
+    if (!examId || !finalQuestionText || cleanOptions.length < 2 || !correctAnswer) {
+      return res.status(400).json({ message: "Invalid question data ❌" });
+    }
+
+    const exam = await Exam.findById(examId);
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found ❌" });
+    }
+
+    const newQuestion = new Question({
+      examId,
+      questionText: finalQuestionText,
+      options: cleanOptions,
+      correctAnswer,
+    });
+
+    await newQuestion.save();
+    res.json({ message: "Question Added ✅", question: newQuestion });
+  } catch (err) {
+    console.log("ADD QUESTION ERROR:", err);
+    res.status(500).json({ message: "Error ❌" });
+  }
+});
+
 app.get("/api/questions", verifyToken, async (req, res) => {
   try {
-    const questions = await Question.find();
+    const questions = await Question.find().sort({ createdAt: 1 });
     res.json(questions);
   } catch (err) {
     console.log("FETCH QUESTIONS ERROR:", err);
@@ -182,8 +263,32 @@ app.get("/api/questions", verifyToken, async (req, res) => {
 
 app.get("/api/questions/:examId", verifyToken, async (req, res) => {
   try {
-    const { examId } = req.params;
-    const questions = await Question.find({ examId });
+    const exam = await Exam.findById(req.params.examId);
+
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found ❌" });
+    }
+
+    const now = new Date();
+    const startReached = !exam.startTime || now >= new Date(exam.startTime);
+    const endReached = !exam.endTime || now <= new Date(exam.endTime);
+
+    const canStart =
+      exam.status === "live" &&
+      exam.accessGranted === true &&
+      startReached &&
+      endReached;
+
+    if (!canStart) {
+      return res.status(403).json({
+        message: "Exam abhi live/access enabled nahi hua.",
+      });
+    }
+
+    const questions = await Question.find({ examId: req.params.examId }).sort({
+      createdAt: 1,
+    });
+
     res.json(questions);
   } catch (err) {
     console.log("FETCH EXAM QUESTIONS ERROR:", err);
@@ -191,39 +296,26 @@ app.get("/api/questions/:examId", verifyToken, async (req, res) => {
   }
 });
 
-app.post("/api/questions/add", verifyToken, async (req, res) => {
+app.post("/api/results/submit", verifyToken, async (req, res) => {
   try {
-    const { examId, questionText, options, correctAnswer } = req.body;
-    const newQuestion = new Question({
-      examId,
-      questionText,
-      options,
-      correctAnswer,
+    const result = new Result({
+      ...req.body,
+      userId: req.user.userId,
     });
-    await newQuestion.save();
-    res.json({ message: "Question Added ✅" });
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: "Error ❌" });
-  }
-});
 
-// ================= SUBMIT EXAM =================
-app.post("/api/results/submit", async (req, res) => {
-  try {
-    const result = new Result(req.body);
     await result.save();
-    res.json({ message: "Saved ✅" });
+    res.json({ message: "Result Saved ✅", result });
   } catch (err) {
-    console.log(err);
+    console.log("RESULT SAVE ERROR:", err);
     res.status(500).json({ message: "Error ❌" });
   }
 });
 
-// ================= RESULTS =================
-app.get("/my-results", verifyToken, async (req, res) => {
+app.get("/api/results/my", verifyToken, async (req, res) => {
   try {
-    const results = await Result.find({ userId: req.user.userId });
+    const results = await Result.find({ userId: req.user.userId }).sort({
+      createdAt: -1,
+    });
     res.json(results);
   } catch (err) {
     console.log("MY RESULTS ERROR:", err);
@@ -231,17 +323,28 @@ app.get("/my-results", verifyToken, async (req, res) => {
   }
 });
 
-app.get("/api/results", async (req, res) => {
+app.get("/my-results", verifyToken, async (req, res) => {
   try {
-    const data = await Result.find();
-    res.json(data);
+    const results = await Result.find({ userId: req.user.userId }).sort({
+      createdAt: -1,
+    });
+    res.json(results);
   } catch (err) {
-    console.log(err);
+    console.log("MY RESULTS ERROR:", err);
     res.status(500).json({ message: "Error ❌" });
   }
 });
 
-// ================= START SERVER AFTER DB =================
+app.get("/api/results", verifyToken, async (req, res) => {
+  try {
+    const data = await Result.find().sort({ createdAt: -1 });
+    res.json(data);
+  } catch (err) {
+    console.log("RESULTS ERROR:", err);
+    res.status(500).json({ message: "Error ❌" });
+  }
+});
+
 const startServer = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI);
