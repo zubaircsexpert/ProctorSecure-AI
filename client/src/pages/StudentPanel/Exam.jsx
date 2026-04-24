@@ -69,7 +69,7 @@ const Exam = () => {
           : [];
 
         // ✅ FILTER: Only show live exams to students
-        const liveExams = examList.filter(ex => ex.status === 'live');
+        setExams(examList);
         setExams(liveExams);
       } catch (err) {
         console.error("Fetch exams error:", {
