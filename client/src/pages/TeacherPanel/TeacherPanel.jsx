@@ -1,32 +1,27 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
 import NotificationManager from "./NotificationManager";
 import ExamManager from "./ExamManager";
 import AssignmentManager from "./AssignmentManager";
 import ResultsList from "./ResultsList";
+import API from "../../services/api";
 
 const TeacherPanel = () => {
   const [activeTab, setActiveTab] = useState("notifications");
 
+  // State Management
   const [notifications, setNotifications] = useState([]);
   const [formData, setFormData] = useState({ title: "", message: "", type: "general" });
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState(null);
 
   const [exams, setExams] = useState([]);
-  const [examForm, setExamForm] = useState({
-    course: "",
-    title: "",
-    syllabus: "",
-    duration: "" // ✅ NEW (timer)
-  });
+  const [examForm, setExamForm] = useState({ course: "", title: "", syllabus: "", duration: "" });
 
   const [assignments, setAssignments] = useState([]);
   const [assignForm, setAssignForm] = useState({ title: "", dueDate: "" });
   const [selectedFile, setSelectedFile] = useState(null);
   const [marksInput, setMarksInput] = useState({});
 
-  // ✅ NEW MCQ STATE
   const [questionForm, setQuestionForm] = useState({
     examId: "",
     question: "",
@@ -43,228 +38,172 @@ const TeacherPanel = () => {
     fetchAssignments();
   }, []);
 
-  // ================= EXAM CONTROL LOGIC (NEW) =================
-  const toggleExamStatus = async (id, currentStatus) => {
-    // Agar status live hai to pending kar do, agar pending hai to live
-    const newStatus = currentStatus === 'live' ? 'pending' : 'live';
-    try {
-      await axios.put(`https://proctorsecure-ai-jkc2.onrender.com/api/exams/update-status/${id}`, { status: newStatus });
-      fetchExams(); // Refresh list
-      alert(`Exam status successfully changed to ${newStatus}`);
-    } catch (err) {
-      console.error(err);
-      alert("Failed to update status. Make sure backend route exists!");
-    }
-  };
+  // ================= API CALLS =================
 
-  // ================= NOTIFICATIONS =================
   const fetchNotifications = async () => {
-    const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/notifications/all");
-    setNotifications(res.data);
+    try {
+      const res = await API.get("/api/notifications/all");
+      setNotifications(res.data);
+    } catch (err) { console.error("Error fetching notifications:", err); }
   };
 
+  const fetchExams = async () => {
+    try {
+      const res = await API.get("/api/exams/all");
+      setExams(res.data);
+    } catch (err) { console.error("Error fetching exams:", err); }
+  };
+
+  const fetchAssignments = async () => {
+    try {
+      const res = await API.get("/api/assignments/all");
+      setAssignments(res.data);
+    } catch (err) { console.error("Error fetching assignments:", err); }
+  };
+
+  // ================= NOTIFICATIONS LOGIC =================
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isEditing) {
-      await axios.put(`https://proctorsecure-ai-jkc2.onrender.com/api/notifications/update/${currentId}`, formData);
-      setIsEditing(false);
-    } else {
-      await axios.post("https://proctorsecure-ai-jkc2.onrender.com/api/notifications/add", formData);
-    }
-    setFormData({ title: "", message: "", type: "general" });
-    fetchNotifications();
+    try {
+      if (isEditing) {
+        await API.put(`/api/notifications/update/${currentId}`, formData);
+        setIsEditing(false);
+      } else {
+        await API.post("/api/notifications/add", formData);
+      }
+      setFormData({ title: "", message: "", type: "general" });
+      fetchNotifications();
+    } catch (err) { alert("Failed to save notification"); }
   };
 
-  // ================= EXAMS =================
-  const fetchExams = async () => {
-  try {
-    const token = localStorage.getItem("token"); // LocalStorage se token lo
-
-    const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/exams/all", {
-      headers: {
-        Authorization: `Bearer ${token}`, // Token yahan bhejna zaroori hai
-      },
-    });
-
-    setExams(res.data);
-  } catch (error) {
-    console.error("Exam fetch error:", error);
-    // Agar 401 error aaye, toh samajh jayen token expire ho gaya hai
-  }
-};
-const handleExamPost = async (e) => {
-  e.preventDefault();
-
-  const token = localStorage.getItem("token");
-
-  const payload = {
-    course: examForm.course,
-    title: examForm.title,
-    duration: Number(examForm.duration), // ✅ FIX
-    status: "pending" // یا "live"
+  // ================= EXAM LOGIC =================
+  const handleExamPost = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = { ...examForm, duration: Number(examForm.duration), status: "pending" };
+      await API.post("/api/exams/add", payload);
+      setExamForm({ course: "", title: "", syllabus: "", duration: "" });
+      fetchExams();
+      alert("Exam Created ✅");
+    } catch (err) { alert("Failed to create exam"); }
   };
 
-  await axios.post(
-    "https://proctorsecure-ai-jkc2.onrender.com/api/exams/add",
-    payload,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
+  const toggleExamStatus = async (id, currentStatus) => {
+    const newStatus = currentStatus === 'live' ? 'pending' : 'live';
+    try {
+      await API.put(`/api/exams/update-status/${id}`, { status: newStatus });
+      fetchExams();
+    } catch (err) { alert("Failed to update status"); }
+  };
 
-  setExamForm({ course: "", title: "", syllabus: "", duration: "" });
-  fetchExams();
-  alert("Exam Created ✅");
-};
-  // ================= MCQ ADD =================
+  // ================= MCQ LOGIC =================
   const handleQuestionSubmit = async (e) => {
     e.preventDefault();
+    if (!questionForm.examId) return alert("Select an exam first!");
 
-    await axios.post("https://proctorsecure-ai-jkc2.onrender.com/api/questions/add", {
-      examId: questionForm.examId,
-      question: questionForm.question,
-      options: [
-        questionForm.optionA,
-        questionForm.optionB,
-        questionForm.optionC,
-        questionForm.optionD
-      ],
-      correctAnswer: questionForm.correctAnswer
-    });
-
-    alert("MCQ Added ✅");
-
-    setQuestionForm({
-      examId: "",
-      question: "",
-      optionA: "",
-      optionB: "",
-      optionC: "",
-      optionD: "",
-      correctAnswer: ""
-    });
+    try {
+      const payload = {
+        examId: questionForm.examId,
+        question: questionForm.question,
+        options: [questionForm.optionA, questionForm.optionB, questionForm.optionC, questionForm.optionD],
+        correctAnswer: questionForm.correctAnswer
+      };
+      await API.post("/api/questions/add", payload);
+      alert("MCQ Added Successfully! ✅");
+      setQuestionForm({ examId: "", question: "", optionA: "", optionB: "", optionC: "", optionD: "", correctAnswer: "" });
+    } catch (err) {
+      alert("Error: " + (err.response?.data?.message || "Failed to add MCQ"));
+    }
   };
 
-  // ================= ASSIGNMENTS =================
-  const fetchAssignments = async () => {
-    const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/assignments/all");
-    setAssignments(res.data);
-  };
-
+  // ================= ASSIGNMENT LOGIC =================
   const handleAssignPost = async (e) => {
     e.preventDefault();
-    const data = new FormData();
-    data.append("title", assignForm.title);
-    data.append("dueDate", assignForm.dueDate);
-    if (selectedFile) data.append("file", selectedFile);
-
-    await axios.post("https://proctorsecure-ai-jkc2.onrender.com/api/assignments/add", data);
-
-    setAssignForm({ title: "", dueDate: "" });
-    setSelectedFile(null);
-    fetchAssignments();
+    try {
+      const data = new FormData();
+      data.append("title", assignForm.title);
+      data.append("dueDate", assignForm.dueDate);
+      if (selectedFile) data.append("file", selectedFile);
+      await API.post("/api/assignments/add", data);
+      setAssignForm({ title: "", dueDate: "" });
+      setSelectedFile(null);
+      fetchAssignments();
+    } catch (err) { alert("Failed to upload assignment"); }
   };
 
-  // ================= DELETE =================
+  // ================= DELETE LOGIC =================
   const handleDelete = async (type, id) => {
-    await axios.delete(`https://proctorsecure-ai-jkc2.onrender.com/api/${type}/delete/${id}`);
-    type === "notifications" ? fetchNotifications() :
-    type === "exams" ? fetchExams() : fetchAssignments();
+    try {
+      await API.delete(`/api/${type}/delete/${id}`);
+      if (type === "notifications") fetchNotifications();
+      else if (type === "exams") fetchExams();
+      else fetchAssignments();
+    } catch (err) { alert("Delete failed"); }
   };
 
   const container = { padding: "40px", backgroundColor: "#f4f7f6" };
 
   return (
     <div style={container}>
-
-      {/* NAV */}
-      <div>
+      {/* NAVIGATION TABS */}
+      <div style={{ marginBottom: "20px" }}>
         <button onClick={() => setActiveTab("notifications")}>Announcements</button>
         <button onClick={() => setActiveTab("exams")}>Manage Exams</button>
         <button onClick={() => setActiveTab("assignments")}>Assignments</button>
         <button onClick={() => setActiveTab("studentResult")}>Results</button>
       </div>
 
-      {/* ================= EXAMS TAB ================= */}
+      {/* ================= EXAMS TAB CONTENT ================= */}
       {activeTab === "exams" && (
         <div>
-
           <h2>Create Exam (With Timer)</h2>
           <form onSubmit={handleExamPost}>
-            <input placeholder="Course"
-              onChange={e => setExamForm({...examForm, course: e.target.value})} />
-            <input placeholder="Title"
-              onChange={e => setExamForm({...examForm, title: e.target.value})} />
-            <input placeholder="Duration (minutes)" type="number"
-              onChange={e => setExamForm({...examForm, duration: e.target.value})} />
-            <button>Create Exam</button>
+            <input placeholder="Course" value={examForm.course} onChange={e => setExamForm({...examForm, course: e.target.value})} />
+            <input placeholder="Title" value={examForm.title} onChange={e => setExamForm({...examForm, title: e.target.value})} />
+            <input placeholder="Duration (min)" type="number" value={examForm.duration} onChange={e => setExamForm({...examForm, duration: e.target.value})} />
+            <button type="submit">Create Exam</button>
           </form>
 
           <hr />
-
-          {/* ✅ NEW: EXAM CONTROL CENTER */}
           <h2>Control Center</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {exams.map(ex => (
-              <div key={ex._id} style={{ padding: '10px', border: '1px solid #ddd', borderRadius: '5px', background: '#fff' }}>
-                <strong>{ex.title}</strong> - Status: <b>{ex.status || "pending"}</b>
-                <button 
-                  style={{ marginLeft: '20px', backgroundColor: ex.status === 'live' ? '#ff4d4d' : '#4CAF50', color: '#fff', border: 'none', padding: '5px 10px', cursor: 'pointer' }}
-                  onClick={() => toggleExamStatus(ex._id, ex.status)}
-                >
-                  {ex.status === 'live' ? 'Stop Exam' : 'Start/Allow Exam'}
-                </button>
-              </div>
-            ))}
-          </div>
+          {exams.map(ex => (
+            <div key={ex._id} style={{ padding: '10px', border: '1px solid #ddd', margin: '5px', borderRadius: '5px', background: '#fff' }}>
+              <strong>{ex.title}</strong> - Status: <b>{ex.status || "pending"}</b>
+              <button style={{ marginLeft: '20px' }} onClick={() => toggleExamStatus(ex._id, ex.status)}>
+                {ex.status === 'live' ? 'Stop Exam' : 'Start/Allow Exam'}
+              </button>
+            </div>
+          ))}
 
           <hr />
-
-          {/* ✅ MCQ ADD FORM */}
           <h2>Add MCQ</h2>
-
           <form onSubmit={handleQuestionSubmit}>
-            <select
-              value={questionForm.examId}
-              onChange={e => setQuestionForm({...questionForm, examId: e.target.value})}
-            >
+            <select value={questionForm.examId} onChange={e => setQuestionForm({...questionForm, examId: e.target.value})}>
               <option value="">Select Exam</option>
-              {exams.map(ex => (
-                <option key={ex._id} value={ex._id}>
-                  {ex.title}
-                </option>
-              ))}
+              {exams.map(ex => <option key={ex._id} value={ex._id}>{ex.title}</option>)}
             </select>
-
-            <input placeholder="Question"
-              onChange={e => setQuestionForm({...questionForm, question: e.target.value})} />
-
-            <input placeholder="Option A"
-              onChange={e => setQuestionForm({...questionForm, optionA: e.target.value})} />
-            <input placeholder="Option B"
-              onChange={e => setQuestionForm({...questionForm, optionB: e.target.value})} />
-            <input placeholder="Option C"
-              onChange={e => setQuestionForm({...questionForm, optionC: e.target.value})} />
-            <input placeholder="Option D"
-              onChange={e => setQuestionForm({...questionForm, optionD: e.target.value})} />
-
-            <input placeholder="Correct Answer"
-              onChange={e => setQuestionForm({...questionForm, correctAnswer: e.target.value})} />
-
-            <button>Add MCQ</button>
+            <input placeholder="Question" value={questionForm.question} onChange={e => setQuestionForm({...questionForm, question: e.target.value})} />
+            <input placeholder="Option A" value={questionForm.optionA} onChange={e => setQuestionForm({...questionForm, optionA: e.target.value})} />
+            <input placeholder="Option B" value={questionForm.optionB} onChange={e => setQuestionForm({...questionForm, optionB: e.target.value})} />
+            <input placeholder="Option C" value={questionForm.optionC} onChange={e => setQuestionForm({...questionForm, optionC: e.target.value})} />
+            <input placeholder="Option D" value={questionForm.optionD} onChange={e => setQuestionForm({...questionForm, optionD: e.target.value})} />
+            <input placeholder="Correct Answer" value={questionForm.correctAnswer} onChange={e => setQuestionForm({...questionForm, correctAnswer: e.target.value})} />
+            <button type="submit">Add MCQ</button>
           </form>
-
         </div>
       )}
 
+      {/* ================= OTHER TABS ================= */}
       {activeTab === "notifications" && (
-        <NotificationManager {...{formData,setFormData,isEditing,setIsEditing,handleSubmit,notifications,setCurrentId,handleDelete}} />
+        <NotificationManager 
+            {...{formData, setFormData, isEditing, setIsEditing, handleSubmit, notifications, setCurrentId, handleDelete}} 
+        />
       )}
-
+      
       {activeTab === "assignments" && (
-        <AssignmentManager {...{assignForm,setAssignForm,setSelectedFile,handleAssignPost,assignments,marksInput,setMarksInput,handleDelete}} />
+        <AssignmentManager 
+            {...{assignForm, setAssignForm, setSelectedFile, handleAssignPost, assignments, marksInput, setMarksInput, handleDelete}} 
+        />
       )}
 
       {activeTab === "studentResult" && <ResultsList />}
