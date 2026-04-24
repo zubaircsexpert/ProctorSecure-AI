@@ -92,38 +92,32 @@ const TeacherPanel = () => {
     // Agar 401 error aaye, toh samajh jayen token expire ho gaya hai
   }
 };
-
 const handleExamPost = async (e) => {
   e.preventDefault();
-  try {
-    // 1. LocalStorage se token get karein
-    const token = localStorage.getItem("token");
 
-    // 2. Header mein Authorization add karein
-    await axios.post(
-      "https://proctorsecure-ai-jkc2.onrender.com/api/exams/add", 
-      examForm, 
-      {
-        headers: {
-          Authorization: `Bearer ${token}`, // Token yahan include karna zaroori hai
-        },
-      }
-    );
+  const token = localStorage.getItem("token");
 
-    setExamForm({ course: "", title: "", syllabus: "", duration: "" });
-    fetchExams();
-    alert("Exam Created ✅");
-    
-  } catch (err) {
-    console.error("Exam Creation Error:", err);
-    if (err.response && err.response.status === 401) {
-      alert("Unauthorized! Please login again.");
-    } else {
-      alert("Error creating exam. Check console.");
+  const payload = {
+    course: examForm.course,
+    title: examForm.title,
+    duration: Number(examForm.duration), // ✅ FIX
+    status: "pending" // یا "live"
+  };
+
+  await axios.post(
+    "https://proctorsecure-ai-jkc2.onrender.com/api/exams/add",
+    payload,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     }
-  }
-};
+  );
 
+  setExamForm({ course: "", title: "", syllabus: "", duration: "" });
+  fetchExams();
+  alert("Exam Created ✅");
+};
   // ================= MCQ ADD =================
   const handleQuestionSubmit = async (e) => {
     e.preventDefault();
