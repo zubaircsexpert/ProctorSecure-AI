@@ -77,9 +77,21 @@ const TeacherPanel = () => {
 
   // ================= EXAMS =================
   const fetchExams = async () => {
-    const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/exams/all");
+  try {
+    const token = localStorage.getItem("token"); // LocalStorage se token lo
+
+    const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/exams/all", {
+      headers: {
+        Authorization: `Bearer ${token}`, // Token yahan bhejna zaroori hai
+      },
+    });
+
     setExams(res.data);
-  };
+  } catch (error) {
+    console.error("Exam fetch error:", error);
+    // Agar 401 error aaye, toh samajh jayen token expire ho gaya hai
+  }
+};
 
   const handleExamPost = async (e) => {
     e.preventDefault();
