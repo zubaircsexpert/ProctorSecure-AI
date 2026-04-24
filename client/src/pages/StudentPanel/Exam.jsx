@@ -20,7 +20,6 @@ const extractList = (payload, keys = []) => {
 };
 
 const Exam = () => {
-  // --- States ---
   const [questions, setQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -31,7 +30,6 @@ const Exam = () => {
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
-  // Warning Counters
   const [warnings, setWarnings] = useState(0);
   const [eyeWarnings, setEyeWarnings] = useState(0);
   const [headWarnings, setHeadWarnings] = useState(0);
@@ -51,58 +49,54 @@ const Exam = () => {
   const sessionIdRef = useRef(createSessionId());
 
   useEffect(() => {
-  const fetchExams = async () => {
-    try {
-      setLoadingExams(true);
-      setErrorMessage("");
+    const fetchExams = async () => {
+      try {
+        setLoadingExams(true);
+        setErrorMessage("");
 
-      const res = await API.get("/api/exams/all");
-      console.log("Exams API response:", res.data);
+        const res = await API.get("/api/exams/all");
+        console.log("Exams API response:", res.data);
 
-      const examList = Array.isArray(res.data)
-        ? res.data
-        : Array.isArray(res.data?.exams)
-        ? res.data.exams
-        : Array.isArray(res.data?.data)
-        ? res.data.data
-        : [];
+        const examList = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res.data?.exams)
+          ? res.data.exams
+          : Array.isArray(res.data?.data)
+          ? res.data.data
+          : [];
 
-      // ✅ FILTER: only LIVE exams
-      const liveExams = examList.filter(ex => ex.status === "live");
+        setExams(examList);
+      } catch (err) {
+        console.error("Fetch exams error:", {
+          message: err.message,
+          status: err.response?.status,
+          data: err.response?.data,
+        });
 
-      setExams(liveExams);
+        setErrorMessage(
+          err.response?.data?.message ||
+            `Failed to load exams (${err.response?.status || err.message})`
+        );
+      } finally {
+        setLoadingExams(false);
+      }
+    };
 
-    } catch (err) {
-      console.error("Fetch exams error:", {
-        message: err.message,
-        status: err.response?.status,
-        data: err.response?.data,
-      });
+    fetchExams();
 
-      setErrorMessage(
-        err.response?.data?.message ||
-        `Failed to load exams (${err.response?.status || err.message})`
-      );
-    } finally {
-      setLoadingExams(false);
-    }
-  };
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue =
+        "Are you sure you want to leave? Your progress will be lost.";
+    };
 
-  fetchExams();
+    window.addEventListener("beforeunload", handleBeforeUnload);
 
-  const handleBeforeUnload = (e) => {
-    e.preventDefault();
-    e.returnValue =
-      "Are you sure you want to leave? Your progress will be lost.";
-  };
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, []);
 
-  window.addEventListener("beforeunload", handleBeforeUnload);
-
-  return () => {
-    window.removeEventListener("beforeunload", handleBeforeUnload);
-  };
-}, []);
-  // 2. Specialized Warning Function
   const addWarning = useCallback(
     (type, message) => {
       if (submitted || hasSubmitted.current) return;
@@ -128,10 +122,9 @@ const Exam = () => {
         setShowWarning(false);
       }, 3000);
     },
-    [submitted],
+    [submitted]
   );
 
-  // 3. Security Event Listeners
   useEffect(() => {
     const handleCopy = (e) => {
       e.preventDefault();
@@ -192,7 +185,6 @@ const Exam = () => {
     }
   };
 
-  // 4. Handle Submission
   const handleSubmit = async () => {
     if (hasSubmitted.current || submitted || submitting) return;
 
@@ -275,7 +267,6 @@ const Exam = () => {
     ? currentQuestion.options
     : [];
 
-  // Step 1: Exam select screen
   if (!selectedExam) {
     return (
       <div style={{ padding: "40px" }}>
@@ -304,12 +295,10 @@ const Exam = () => {
     );
   }
 
-  // Step 2: Loader
   if (loadingQuestions) {
     return <div style={loaderStyle}>Loading Questions...</div>;
   }
 
-  // Step 3: Error screen
   if (errorMessage && questions.length === 0) {
     return (
       <div style={loaderStyle}>
@@ -329,7 +318,6 @@ const Exam = () => {
     );
   }
 
-  // Step 4: Safety check
   if (!currentQuestion) {
     return (
       <div style={loaderStyle}>
@@ -501,7 +489,6 @@ const Exam = () => {
   );
 };
 
-// --- Styles ---
 const containerStyle = {
   padding: "40px",
   backgroundColor: "#f4f7f9",

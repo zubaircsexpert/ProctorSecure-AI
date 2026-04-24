@@ -131,10 +131,12 @@ const verifyToken = (req, res, next) => {
 app.post("/api/exams/add", verifyToken, async (req, res) => {
   try {
     const { title, course, duration } = req.body;
-    // New exam default status is pending
-    const newExam = new Exam({ title, course, duration, status: "pending" });
+
+    // ✅ changed from pending to live
+    const newExam = new Exam({ title, course, duration, status: "live" });
+
     await newExam.save();
-    res.json({ message: "Exam Created Pending ⏳", exam: newExam });
+    res.json({ message: "Exam Created ✅", exam: newExam });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Error ❌" });
@@ -155,8 +157,12 @@ app.get("/api/exams/all", verifyToken, async (req, res) => {
 // Update Exam Status (Teacher)
 app.put("/api/exams/update-status/:id", verifyToken, async (req, res) => {
   try {
-    const { status } = req.body; // Expects { status: "live" }
-    const exam = await Exam.findByIdAndUpdate(req.params.id, { status }, { new: true });
+    const { status } = req.body;
+    const exam = await Exam.findByIdAndUpdate(
+      req.params.id,
+      { status },
+      { new: true }
+    );
     res.json({ message: "Exam Status Updated ✅", exam });
   } catch (err) {
     res.status(500).json({ message: "Error ❌" });
@@ -188,7 +194,12 @@ app.get("/api/questions/:examId", verifyToken, async (req, res) => {
 app.post("/api/questions/add", verifyToken, async (req, res) => {
   try {
     const { examId, questionText, options, correctAnswer } = req.body;
-    const newQuestion = new Question({ examId, questionText, options, correctAnswer });
+    const newQuestion = new Question({
+      examId,
+      questionText,
+      options,
+      correctAnswer,
+    });
     await newQuestion.save();
     res.json({ message: "Question Added ✅" });
   } catch (err) {
