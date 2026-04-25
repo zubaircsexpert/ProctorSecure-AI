@@ -116,6 +116,14 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+const verifyTeacher = (req, res, next) => {
+  if (req.user?.role !== "teacher") {
+    return res.status(403).json({ message: "Only teachers can do this action." });
+  }
+
+  next();
+};
+
 const buildExamPayload = (exam) => {
   return {
     ...exam.toObject(),
@@ -342,13 +350,28 @@ app.get("/my-results", verifyToken, async (req, res) => {
   }
 });
 
-app.get("/api/results", verifyToken, async (req, res) => {
+app.get("/api/results", verifyToken, verifyTeacher, async (req, res) => {
   try {
     const data = await Result.find().sort({ createdAt: -1 });
     res.json(data);
   } catch (err) {
     console.log("RESULTS ERROR:", err);
     res.status(500).json({ message: "Error ❌" });
+  }
+});
+
+app.delete("/api/results/delete/:id", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const deletedResult = await Result.findByIdAndDelete(req.params.id);
+
+    if (!deletedResult) {
+      return res.status(404).json({ message: "Result not found." });
+    }
+
+    res.json({ message: "Result deleted successfully." });
+  } catch (err) {
+    console.log("RESULT DELETE ERROR:", err);
+    res.status(500).json({ message: "Delete failed." });
   }
 });
 
