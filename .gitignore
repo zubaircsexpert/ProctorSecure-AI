@@ -2,3 +2,5 @@ node_modules
 .env
 server/node_modules
 client/node_modules
+client/.npm-cache
+server/.npm-cache

@@ -1,50 +1,74 @@
-import React, { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Bell, Menu, X } from "lucide-react";
-import axios from "axios";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { Bell, Menu, ShieldCheck, X } from "lucide-react";
+import API from "../services/api";
+
+const NAV_HEIGHT = 84;
+
+const getSavedUser = () => {
+  try {
+    const rawUser = localStorage.getItem("user");
+    if (!rawUser || rawUser === "undefined") return null;
+    return JSON.parse(rawUser);
+  } catch (err) {
+    console.error("Navbar user parse error:", err);
+    return null;
+  }
+};
 
 const Navbar = () => {
   const [notificationCount, setNotificationCount] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024); // Professional break-point 1024px
-  const navigate = useNavigate();
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
+  const location = useLocation();
+  const user = useMemo(() => getSavedUser(), []);
 
   useEffect(() => {
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 1024);
-      if (window.innerWidth > 1024) setIsMenuOpen(false);
+      const nextIsMobile = window.innerWidth < 1024;
+      setIsMobile(nextIsMobile);
+      if (!nextIsMobile) {
+        setIsMenuOpen(false);
+      }
     };
+
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  const getAuthUser = () => {
-    try {
-      const data = localStorage.getItem("user");
-      if (!data || data === "undefined") return null;
-      return JSON.parse(data);
-    } catch (err) {
-      console.error("Local storage parse error:", err);
-      return null;
-    }
-  };
-
-  const user = getAuthUser();
-  const role = user?.role;
-
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
-        const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/notifications/all");
-        if (res.data) {
-          setNotificationCount(res.data.length);
-        }
+        const response = await API.get("/api/notifications/all");
+        setNotificationCount(Array.isArray(response.data) ? response.data.length : 0);
       } catch (err) {
-        console.error("Error fetching notifications", err);
+        console.error("Error fetching notifications:", err);
       }
     };
-    if (user) { fetchNotifications(); }
+
+    if (user) {
+      fetchNotifications();
+    }
   }, [user]);
+
+  if (!user) {
+    return null;
+  }
+
+  const role = user.role;
+  const navLinks =
+    role === "teacher"
+      ? [
+          { label: "Teacher Panel", to: "/teacher-panel" },
+          { label: "Schedule", to: "/schedule" },
+        ]
+      : [
+          { label: "Dashboard", to: "/dashboard" },
+          { label: "Exam", to: "/exam" },
+          { label: "Results", to: "/results" },
+          { label: "Assignments", to: "/assignment-list" },
+          { label: "Schedule", to: "/schedule" },
+        ];
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -52,157 +76,183 @@ const Navbar = () => {
     window.location.href = "/";
   };
 
-  if (!user) return null;
-
-  // --- Dynamic Styles for "VIP" Look ---
-  const navStyle = {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: isMobile ? "0 20px" : "0 60px", // Laptop par zyada padding for premium feel
-    background: "linear-gradient(135deg, #1a2a6c, #b21f1f)", // 135deg for better gradient flow
-    height: "75px",
-    position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100%",
-    boxSizing: "border-box",
-    zIndex: 2000,
-    boxShadow: "0 4px 20px rgba(0, 0, 0, 0.4)",
-  };
-
-  const menuContainer = {
-    display: isMobile ? (isMenuOpen ? "flex" : "none") : "flex",
-    flexDirection: isMobile ? "column" : "row",
-    position: isMobile ? "absolute" : "static",
-    top: isMobile ? "75px" : "auto",
-    left: 0,
-    width: isMobile ? "100%" : "auto",
-    background: isMobile ? "rgba(26, 42, 108, 0.98)" : "transparent", // Blur effect style for mobile
-    padding: isMobile ? "30px 20px" : "0",
-    alignItems: "center",
-    gap: isMobile ? "20px" : "15px", // Professional spacing between links
-    transition: "all 0.4s ease-in-out",
-    backdropFilter: isMobile ? "blur(10px)" : "none",
-  };
-
-  const linkStyle = {
-    color: "#fff",
-    padding: "10px 15px",
-    textDecoration: "none",
-    fontSize: isMobile ? "18px" : "15px",
-    fontWeight: "600",
-    borderRadius: "8px",
-    transition: "0.3s",
-    borderBottom: isMobile ? "1px solid rgba(255,255,255,0.1)" : "none",
-    width: isMobile ? "100%" : "auto",
-    textAlign: "center",
-  };
-
   return (
-    <nav style={navStyle}>
-      {/* --- LOGO --- */}
-      <div style={{ display: "flex", alignItems: "center" }}>
-        <h2 style={{ 
-          color: "#fff", 
-          margin: 0, 
-          fontSize: isMobile ? "20px" : "26px", 
-          fontWeight: "900", 
-          letterSpacing: "2px",
-          textShadow: "2px 2px 4px rgba(0,0,0,0.3)" 
-        }}>
-          PROCTOR-AI
-        </h2>
-      </div>
-
-      {/* --- ACTIONS & NAVIGATION --- */}
-      <div style={{ display: "flex", alignItems: "center" }}>
-        
-        <div style={menuContainer}>
-          {role === "student" && (
-            <>
-              <Link to="/dashboard" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Dashboard</Link>
-              <Link to="/exam" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Exam</Link>
-              <Link to="/results" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Results</Link>
-              <Link to="/assignment-list" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Assignments</Link>
-            </>
+    <nav
+      style={{
+        position: "fixed",
+        inset: "0 0 auto 0",
+        height: `${NAV_HEIGHT}px`,
+        zIndex: 2200,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "24px",
+        padding: isMobile ? "16px 18px" : "16px 34px",
+        background:
+          "linear-gradient(120deg, rgba(25,35,88,0.98) 0%, rgba(97,26,70,0.96) 44%, rgba(176,29,38,0.96) 100%)",
+        boxShadow: "0 20px 45px rgba(15, 23, 42, 0.18)",
+        backdropFilter: "blur(16px)",
+      }}
+    >
+      <Link
+        to={role === "teacher" ? "/teacher-panel" : "/dashboard"}
+        style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}
+      >
+        <div
+          style={{
+            width: isMobile ? "42px" : "48px",
+            height: isMobile ? "42px" : "48px",
+            borderRadius: "16px",
+            display: "grid",
+            placeItems: "center",
+            background: "linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04))",
+            border: "1px solid rgba(255,255,255,0.18)",
+          }}
+        >
+          <ShieldCheck size={isMobile ? 22 : 26} color="#f8fafc" />
+        </div>
+        <div style={{ textAlign: "left" }}>
+          <div
+            style={{
+              color: "#ffffff",
+              fontWeight: 900,
+              fontSize: isMobile ? "22px" : "30px",
+              letterSpacing: "0.08em",
+              lineHeight: 1,
+            }}
+          >
+            PROCTOR-AI
+          </div>
+          {!isMobile && (
+            <div style={{ color: "rgba(255,255,255,0.78)", fontSize: "12px" }}>
+              Secure exam intelligence suite
+            </div>
           )}
+        </div>
+      </Link>
 
-          {role === "teacher" && (
-            <>
-              <Link to="/teacher-panel" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Teacher Panel</Link>
-              <Link to="/all-results" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Student Results</Link>
-            </>
-          )}
+      <div style={{ display: "flex", alignItems: "center", gap: isMobile ? "12px" : "18px" }}>
+        <div
+          style={{
+            display: isMobile ? (isMenuOpen ? "flex" : "none") : "flex",
+            flexDirection: isMobile ? "column" : "row",
+            position: isMobile ? "absolute" : "static",
+            top: `${NAV_HEIGHT}px`,
+            left: isMobile ? "16px" : "auto",
+            right: isMobile ? "16px" : "auto",
+            width: isMobile ? "calc(100% - 32px)" : "auto",
+            padding: isMobile ? "18px" : 0,
+            borderRadius: isMobile ? "24px" : 0,
+            background: isMobile
+              ? "linear-gradient(180deg, rgba(20,27,65,0.98), rgba(60,17,48,0.96))"
+              : "transparent",
+            border: isMobile ? "1px solid rgba(255,255,255,0.1)" : "none",
+            boxShadow: isMobile ? "0 22px 40px rgba(15, 23, 42, 0.28)" : "none",
+            gap: isMobile ? "10px" : "8px",
+          }}
+        >
+          {navLinks.map((link) => {
+            const active = location.pathname === link.to;
 
-          <Link to="/schedule" style={linkStyle} onClick={() => setIsMenuOpen(false)}>Schedule</Link>
-          
-          <button 
-            onClick={handleLogout} 
-            style={{ 
-              ...logoutBtn, 
-              width: isMobile ? "100%" : "auto",
-              marginTop: isMobile ? "10px" : "0" 
+            return (
+              <Link
+                key={link.to}
+                to={link.to}
+                onClick={() => setIsMenuOpen(false)}
+                style={{
+                  padding: isMobile ? "12px 14px" : "11px 16px",
+                  borderRadius: "14px",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: isMobile ? "16px" : "15px",
+                  background: active ? "rgba(255,255,255,0.14)" : "transparent",
+                  border: active
+                    ? "1px solid rgba(255,255,255,0.16)"
+                    : "1px solid transparent",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+
+          <button
+            onClick={handleLogout}
+            style={{
+              border: "none",
+              padding: isMobile ? "12px 14px" : "12px 20px",
+              borderRadius: "16px",
+              background: "linear-gradient(135deg, #ff7a18, #ff4d4f)",
+              color: "#fff",
+              fontWeight: 800,
+              boxShadow: "0 12px 24px rgba(255, 77, 79, 0.24)",
+              minWidth: isMobile ? "100%" : "auto",
             }}
           >
             Logout
           </button>
         </div>
 
-        {/* 🔔 Notifications */}
-        <div style={{ position: "relative", marginLeft: isMobile ? "15px" : "25px", cursor: "pointer" }}>
-          <Link to="/notifications" style={{ display: "flex", alignItems: "center", textDecoration: "none" }}>
-            <Bell size={isMobile ? 22 : 24} color="#fff" strokeWidth={2.5} />
-            {notificationCount > 0 && (
-              <span style={badgeStyle}>{notificationCount}</span>
-            )}
-          </Link>
-        </div>
+        <Link
+          to="/notifications"
+          style={{
+            position: "relative",
+            display: "grid",
+            placeItems: "center",
+            width: isMobile ? "42px" : "46px",
+            height: isMobile ? "42px" : "46px",
+            borderRadius: "16px",
+            background: "rgba(255,255,255,0.08)",
+            border: "1px solid rgba(255,255,255,0.12)",
+          }}
+        >
+          <Bell color="#fff" size={isMobile ? 21 : 23} />
+          {notificationCount > 0 && (
+            <span
+              style={{
+                position: "absolute",
+                top: "-6px",
+                right: "-4px",
+                minWidth: "22px",
+                height: "22px",
+                padding: "0 6px",
+                borderRadius: "999px",
+                display: "grid",
+                placeItems: "center",
+                background: "#facc15",
+                color: "#111827",
+                fontWeight: 800,
+                fontSize: "11px",
+                boxShadow: "0 8px 16px rgba(250, 204, 21, 0.35)",
+              }}
+            >
+              {notificationCount}
+            </span>
+          )}
+        </Link>
 
-        {/* 🍔 Hamburger for Mobile */}
         {isMobile && (
-          <div 
-            onClick={() => setIsMenuOpen(!isMenuOpen)} 
-            style={{ cursor: "pointer", color: "#fff", marginLeft: "20px" }}
+          <button
+            type="button"
+            onClick={() => setIsMenuOpen((prev) => !prev)}
+            style={{
+              display: "grid",
+              placeItems: "center",
+              width: "42px",
+              height: "42px",
+              borderRadius: "14px",
+              border: "1px solid rgba(255,255,255,0.14)",
+              background: "rgba(255,255,255,0.08)",
+              color: "#fff",
+            }}
           >
-            {isMenuOpen ? <X size={32} /> : <Menu size={32} />}
-          </div>
+            {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+          </button>
         )}
       </div>
     </nav>
   );
-};
-
-// --- Constant Styles for Premium Look ---
-const badgeStyle = {
-  position: "absolute",
-  top: "-8px",
-  right: "-10px",
-  background: "#ffc107",
-  color: "#000",
-  fontSize: "11px",
-  fontWeight: "bold",
-  width: "20px",
-  height: "20px",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  borderRadius: "50%",
-  boxShadow: "0 2px 5px rgba(0,0,0,0.2)",
-};
-
-const logoutBtn = {
-  background: "#ff4b2b",
-  padding: "10px 24px",
-  borderRadius: "8px",
-  color: "#fff",
-  border: "none",
-  cursor: "pointer",
-  marginLeft: "15px",
-  fontSize: "14px",
-  fontWeight: "bold",
-  boxShadow: "0 4px 10px rgba(255, 75, 43, 0.3)",
-  transition: "0.3s",
 };
 
 export default Navbar;

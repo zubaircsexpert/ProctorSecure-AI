@@ -1,18 +1,112 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import API from "../../services/api";
 import Timer from "../../components/Timer";
 import Proctoring from "../../components/Proctoring";
 import WarningModal from "../../components/WarningModal";
 
-const createSessionId = () =>
-  Math.random().toString(36).slice(2, 11).toUpperCase();
+const ACTIVE_SESSION_KEY = "proctor-ai-active-exam";
+
+const WARNING_FIELD_MAP = {
+  eye: "eyeWarnings",
+  head: "headWarnings",
+  sound: "soundWarnings",
+  tab: "tabWarnings",
+  fullscreen: "fullscreenWarnings",
+  copy: "copyWarnings",
+  paste: "pasteWarnings",
+  cut: "cutWarnings",
+  rightclick: "rightClickWarnings",
+  shortcut: "shortcutWarnings",
+  screenshot: "screenshotWarnings",
+  focus: "focusWarnings",
+  visibility: "visibilityWarnings",
+  exit: "exitWarnings",
+  faceMissing: "faceMissingWarnings",
+  multipleFace: "multipleFaceWarnings",
+  screenShare: "screenShareWarnings",
+};
+
+const WARNING_SEVERITY = {
+  eye: "medium",
+  head: "medium",
+  sound: "medium",
+  tab: "high",
+  fullscreen: "high",
+  copy: "high",
+  paste: "high",
+  cut: "high",
+  rightclick: "medium",
+  shortcut: "medium",
+  screenshot: "high",
+  focus: "high",
+  visibility: "high",
+  exit: "critical",
+  faceMissing: "high",
+  multipleFace: "critical",
+  screenShare: "critical",
+};
+
+const WARNING_WEIGHTS = {
+  eyeWarnings: 3,
+  headWarnings: 4,
+  soundWarnings: 3,
+  tabWarnings: 10,
+  fullscreenWarnings: 9,
+  copyWarnings: 8,
+  pasteWarnings: 8,
+  cutWarnings: 8,
+  rightClickWarnings: 4,
+  shortcutWarnings: 6,
+  screenshotWarnings: 12,
+  focusWarnings: 6,
+  visibilityWarnings: 7,
+  exitWarnings: 15,
+  faceMissingWarnings: 8,
+  multipleFaceWarnings: 12,
+  screenShareWarnings: 10,
+};
+
+const initialWarningCounts = {
+  total: 0,
+  eyeWarnings: 0,
+  headWarnings: 0,
+  soundWarnings: 0,
+  tabWarnings: 0,
+  fullscreenWarnings: 0,
+  copyWarnings: 0,
+  pasteWarnings: 0,
+  cutWarnings: 0,
+  rightClickWarnings: 0,
+  shortcutWarnings: 0,
+  screenshotWarnings: 0,
+  focusWarnings: 0,
+  visibilityWarnings: 0,
+  exitWarnings: 0,
+  faceMissingWarnings: 0,
+  multipleFaceWarnings: 0,
+  screenShareWarnings: 0,
+};
+
+const createSessionId = () => Math.random().toString(36).slice(2, 11).toUpperCase();
 
 const extractList = (payload, keys = []) => {
   if (Array.isArray(payload)) return payload;
+
   for (const key of keys) {
     if (Array.isArray(payload?.[key])) return payload[key];
   }
+
   return [];
+};
+
+const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
+const round = (value) => Number(value.toFixed(2));
+
+const computeTrustFactor = (score) => {
+  if (score >= 65) return "Critical";
+  if (score >= 40) return "Suspicious";
+  if (score >= 20) return "Monitor";
+  return "Reliable";
 };
 
 const Exam = () => {
@@ -25,20 +119,20 @@ const Exam = () => {
   const [loadingExams, setLoadingExams] = useState(true);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [resumeNotice, setResumeNotice] = useState("");
 
-  const [warnings, setWarnings] = useState(0);
-  const [eyeWarnings, setEyeWarnings] = useState(0);
-  const [headWarnings, setHeadWarnings] = useState(0);
-  const [soundWarnings, setSoundWarnings] = useState(0);
-  const [tabWarnings, setTabWarnings] = useState(0);
-  const [fullscreenWarnings, setFullscreenWarnings] = useState(0);
-  const [copyWarnings, setCopyWarnings] = useState(0);
-  const [rightClickWarnings, setRightClickWarnings] = useState(0);
-
-  const [warningMessage, setWarningMessage] = useState("");
+  const [warningCounts, setWarningCounts] = useState(initialWarningCounts);
+  const [activityLog, setActivityLog] = useState([]);
   const [showWarning, setShowWarning] = useState(false);
+  const [warningMessage, setWarningMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [telemetry, setTelemetry] = useState({
+    cameraReady: false,
+    microphoneReady: false,
+    faceVisible: false,
+    multipleFaces: false,
+  });
 
   const hasSubmitted = useRef(false);
   const warningTimeoutRef = useRef(null);
@@ -86,7 +180,7 @@ const Exam = () => {
     } catch (err) {
       if (err.response?.status === 403) {
         setErrorMessage(
-          err.response?.data?.message || "Teacher ne access enable nahi ki."
+          err.response?.data?.message || "Teacher ne access enable nahi kiya."
         );
       } else {
         setErrorMessage("Failed to load questions.");
@@ -101,92 +195,227 @@ const Exam = () => {
 
   useEffect(() => {
     fetchExams();
-    const examInterval = setInterval(fetchExams, 10000);
+    const examInterval = window.setInterval(fetchExams, 10000);
 
-    const handleBeforeUnload = (e) => {
-      e.preventDefault();
-      e.returnValue =
-        "Are you sure you want to leave? Your progress will be lost.";
-    };
-
-    window.addEventListener("beforeunload", handleBeforeUnload);
+    try {
+      const savedSession = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (savedSession) {
+        const parsedSession = JSON.parse(savedSession);
+        setResumeNotice(
+          `Previous exam session ${parsedSession.sessionId || ""} closed unexpectedly. This will be flagged in the next attempt.`
+        );
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+      }
+    } catch (err) {
+      console.error("Failed to read active exam session:", err);
+    }
 
     return () => {
-      clearInterval(examInterval);
-      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.clearInterval(examInterval);
       if (warningTimeoutRef.current) {
-        clearTimeout(warningTimeoutRef.current);
+        window.clearTimeout(warningTimeoutRef.current);
       }
     };
   }, [fetchExams]);
 
   useEffect(() => {
-    if (!selectedExam || submitted) return;
+    if (!selectedExam || submitted) {
+      return undefined;
+    }
 
     loadQuestions(selectedExam._id, true);
-
-    const questionInterval = setInterval(() => {
+    const questionInterval = window.setInterval(() => {
       loadQuestions(selectedExam._id, false);
     }, 5000);
 
-    return () => clearInterval(questionInterval);
-  }, [selectedExam, submitted, loadQuestions]);
-
-  const addWarning = useCallback(
-    (type, message) => {
-      if (submitted || hasSubmitted.current) return;
-
-      setWarnings((prev) => prev + 1);
-
-      if (type === "eye") setEyeWarnings((prev) => prev + 1);
-      if (type === "head") setHeadWarnings((prev) => prev + 1);
-      if (type === "sound") setSoundWarnings((prev) => prev + 1);
-      if (type === "tab") setTabWarnings((prev) => prev + 1);
-      if (type === "fullscreen") setFullscreenWarnings((prev) => prev + 1);
-      if (type === "copy") setCopyWarnings((prev) => prev + 1);
-      if (type === "rightclick") setRightClickWarnings((prev) => prev + 1);
-
-      setWarningMessage(message);
-      setShowWarning(true);
-
-      if (warningTimeoutRef.current) {
-        clearTimeout(warningTimeoutRef.current);
-      }
-
-      warningTimeoutRef.current = setTimeout(() => {
-        setShowWarning(false);
-      }, 3000);
-    },
-    [submitted]
-  );
+    return () => window.clearInterval(questionInterval);
+  }, [loadQuestions, selectedExam, submitted]);
 
   useEffect(() => {
-    const handleCopy = (e) => {
-      e.preventDefault();
-      addWarning("copy", "Copy/Paste is disabled!");
+    if (!selectedExam || submitted) {
+      return undefined;
+    }
+
+    const persistSession = () => {
+      localStorage.setItem(
+        ACTIVE_SESSION_KEY,
+        JSON.stringify({
+          sessionId: sessionIdRef.current,
+          examId: selectedExam._id,
+          examTitle: selectedExam.title,
+          savedAt: new Date().toISOString(),
+        })
+      );
     };
 
-    const handleRightClick = (e) => {
-      e.preventDefault();
-      addWarning("rightclick", "Right-click is restricted!");
+    const handleBeforeUnload = (event) => {
+      persistSession();
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [selectedExam, submitted]);
+
+  const addWarning = useCallback((type, message) => {
+    if (submitted || hasSubmitted.current) return;
+
+    const field = WARNING_FIELD_MAP[type];
+
+    setWarningCounts((prev) => ({
+      ...prev,
+      total: prev.total + 1,
+      ...(field ? { [field]: prev[field] + 1 } : {}),
+    }));
+
+    setActivityLog((prev) => {
+      const now = new Date().toISOString();
+      const existing = prev.find((item) => item.type === type && item.message === message);
+
+      if (existing) {
+        return prev
+          .map((item) =>
+            item.type === type && item.message === message
+              ? {
+                  ...item,
+                  count: item.count + 1,
+                  occurredAt: now,
+                }
+              : item
+          )
+          .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+          .slice(0, 12);
+      }
+
+      return [
+        {
+          type,
+          message,
+          count: 1,
+          severity: WARNING_SEVERITY[type] || "medium",
+          occurredAt: now,
+        },
+        ...prev,
+      ].slice(0, 12);
+    });
+
+    setWarningMessage(message);
+    setShowWarning(true);
+
+    if (warningTimeoutRef.current) {
+      window.clearTimeout(warningTimeoutRef.current);
+    }
+
+    warningTimeoutRef.current = window.setTimeout(() => {
+      setShowWarning(false);
+    }, 2800);
+  }, [submitted]);
+
+  useEffect(() => {
+    if (!selectedExam || submitted) {
+      return undefined;
+    }
+
+    const handleCopy = (event) => {
+      event.preventDefault();
+      addWarning("copy", "Copy action blocked. Stay within the exam flow.");
+    };
+
+    const handlePaste = (event) => {
+      event.preventDefault();
+      addWarning("paste", "Paste action blocked. External content is not allowed.");
+    };
+
+    const handleCut = (event) => {
+      event.preventDefault();
+      addWarning("cut", "Cut action blocked during the exam.");
+    };
+
+    const handleRightClick = (event) => {
+      event.preventDefault();
+      addWarning("rightclick", "Right-click is disabled during the exam.");
     };
 
     const handleVisibility = () => {
       if (document.hidden) {
-        addWarning("tab", "Don't switch tabs!");
+        addWarning("tab", "Tab switch detected. Keep the exam window active.");
+        addWarning("visibility", "Exam visibility changed.");
       }
     };
 
+    const handleFullscreen = () => {
+      if (!document.fullscreenElement) {
+        addWarning("fullscreen", "Fullscreen mode exited during the exam.");
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      const key = event.key.toLowerCase();
+      const ctrlOrMeta = event.ctrlKey || event.metaKey;
+
+      if (
+        event.key === "PrintScreen" ||
+        (event.metaKey && event.shiftKey && ["3", "4"].includes(key)) ||
+        (event.ctrlKey && event.shiftKey && key === "s")
+      ) {
+        addWarning("screenshot", "Screenshot shortcut detected.");
+      }
+
+      if (ctrlOrMeta && ["a", "p", "u"].includes(key)) {
+        addWarning("shortcut", `Restricted keyboard shortcut detected (${key.toUpperCase()}).`);
+      }
+    };
+
+    const handleWindowBlur = () => {
+      if (!document.hidden) {
+        addWarning(
+          "screenShare",
+          "Exam window focus changed. Possible overlay or share tool detected."
+        );
+      }
+
+      addWarning("focus", "Exam window lost focus.");
+    };
+
     document.addEventListener("copy", handleCopy);
+    document.addEventListener("paste", handlePaste);
+    document.addEventListener("cut", handleCut);
     document.addEventListener("contextmenu", handleRightClick);
     document.addEventListener("visibilitychange", handleVisibility);
+    document.addEventListener("fullscreenchange", handleFullscreen);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("blur", handleWindowBlur);
 
     return () => {
       document.removeEventListener("copy", handleCopy);
+      document.removeEventListener("paste", handlePaste);
+      document.removeEventListener("cut", handleCut);
       document.removeEventListener("contextmenu", handleRightClick);
       document.removeEventListener("visibilitychange", handleVisibility);
+      document.removeEventListener("fullscreenchange", handleFullscreen);
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("blur", handleWindowBlur);
     };
-  }, [addWarning]);
+  }, [addWarning, selectedExam, submitted]);
+
+  const resetExamState = () => {
+    setSelectedExam(null);
+    setQuestions([]);
+    setCurrentIdx(0);
+    setAnswers({});
+    setErrorMessage("");
+    setSubmitted(false);
+    setSubmitting(false);
+    setWarningCounts(initialWarningCounts);
+    setActivityLog([]);
+    sessionIdRef.current = createSessionId();
+    hasSubmitted.current = false;
+    localStorage.removeItem(ACTIVE_SESSION_KEY);
+  };
 
   const startExam = async (exam) => {
     if (!exam?._id) {
@@ -199,39 +428,83 @@ const Exam = () => {
       return;
     }
 
+    hasSubmitted.current = false;
+    setSubmitted(false);
     setSelectedExam(exam);
     setQuestions([]);
     setCurrentIdx(0);
     setAnswers({});
+    setWarningCounts({
+      ...initialWarningCounts,
+      exitWarnings: resumeNotice ? 1 : 0,
+      total: resumeNotice ? 1 : 0,
+    });
+    setActivityLog(
+      resumeNotice
+        ? [
+            {
+              type: "exit",
+              message: resumeNotice,
+              count: 1,
+              severity: "critical",
+              occurredAt: new Date().toISOString(),
+            },
+          ]
+        : []
+    );
     setErrorMessage("");
     sessionIdRef.current = createSessionId();
+
+    if (document.fullscreenEnabled && !document.fullscreenElement) {
+      try {
+        await document.documentElement.requestFullscreen();
+      } catch (err) {
+        console.error("Fullscreen request failed:", err);
+      }
+    }
 
     await loadQuestions(exam._id, true);
   };
 
-  const handleSubmit = async () => {
-    if (hasSubmitted.current || submitted || submitting || !selectedExam) return;
+  const handleSubmit = useCallback(async () => {
+    if (hasSubmitted.current || submitted || submitting || !selectedExam) {
+      return;
+    }
 
     hasSubmitted.current = true;
     setSubmitting(true);
 
     try {
       let scoreCount = 0;
+      const answeredCount = Object.values(answers).filter(Boolean).length;
 
-      questions.forEach((q, i) => {
-        const correct = q.correctAnswer || q.answer;
+      questions.forEach((question, index) => {
+        const correct = question.correctAnswer || question.answer;
         if (
-          answers[i] &&
-          String(answers[i]).toLowerCase().trim() ===
+          answers[index] &&
+          String(answers[index]).toLowerCase().trim() ===
             String(correct).toLowerCase().trim()
         ) {
-          scoreCount++;
+          scoreCount += 1;
         }
       });
 
       const total = questions.length;
-      const percentage =
-        total > 0 ? Number(((scoreCount / total) * 100).toFixed(2)) : 0;
+      const incorrectAnswers = Math.max(answeredCount - scoreCount, 0);
+      const unansweredAnswers = Math.max(total - answeredCount, 0);
+      const academicAccuracy = total > 0 ? round((scoreCount / total) * 100) : 0;
+
+      const weightedSuspicion = Object.entries(WARNING_WEIGHTS).reduce(
+        (sum, [field, weight]) => sum + (warningCounts[field] || 0) * weight,
+        0
+      );
+
+      const suspiciousScore = clamp(
+        round((weightedSuspicion / Math.max(30, total * 14 || 30)) * 100)
+      );
+      const integrityScore = clamp(round(100 - suspiciousScore));
+      const intelligenceScore = clamp(round(academicAccuracy * 0.74 + integrityScore * 0.26));
+      const trustFactor = computeTrustFactor(suspiciousScore);
 
       let user = { name: "Student", id: "" };
 
@@ -240,7 +513,9 @@ const Exam = () => {
         if (savedUser) {
           user = { ...user, ...JSON.parse(savedUser) };
         }
-      } catch {}
+      } catch (err) {
+        console.error("Failed to parse user for result submission:", err);
+      }
 
       const resultData = {
         examId: selectedExam._id,
@@ -248,30 +523,67 @@ const Exam = () => {
         testName: selectedExam.title || "Exam",
         score: scoreCount,
         total,
-        percentage,
-        status: percentage >= 50 ? "PASSED" : "FAILED",
-        warnings,
-        eyeWarnings,
-        headWarnings,
-        soundWarnings,
-        tabWarnings,
-        fullscreenWarnings,
-        copyWarnings,
-        rightClickWarnings,
-        cheatingPercent: Number(((warnings / 20) * 100).toFixed(2)),
+        answeredCount,
+        incorrectAnswers,
+        unansweredAnswers,
+        percentage: academicAccuracy,
+        academicAccuracy,
+        status: academicAccuracy >= 50 ? "PASSED" : "FAILED",
+        warnings: warningCounts.total,
+        eyeWarnings: warningCounts.eyeWarnings,
+        headWarnings: warningCounts.headWarnings,
+        soundWarnings: warningCounts.soundWarnings,
+        tabWarnings: warningCounts.tabWarnings,
+        fullscreenWarnings: warningCounts.fullscreenWarnings,
+        copyWarnings: warningCounts.copyWarnings,
+        pasteWarnings: warningCounts.pasteWarnings,
+        cutWarnings: warningCounts.cutWarnings,
+        rightClickWarnings: warningCounts.rightClickWarnings,
+        shortcutWarnings: warningCounts.shortcutWarnings,
+        screenshotWarnings: warningCounts.screenshotWarnings,
+        focusWarnings: warningCounts.focusWarnings,
+        visibilityWarnings: warningCounts.visibilityWarnings,
+        exitWarnings: warningCounts.exitWarnings,
+        faceMissingWarnings: warningCounts.faceMissingWarnings,
+        multipleFaceWarnings: warningCounts.multipleFaceWarnings,
+        screenShareWarnings: warningCounts.screenShareWarnings,
+        cheatingPercent: suspiciousScore,
+        integrityScore,
+        intelligenceScore,
+        suspiciousScore,
+        trustFactor,
+        activityLog,
       };
 
       await API.post("/api/results/submit", resultData);
       localStorage.setItem("examResult", JSON.stringify(resultData));
+      localStorage.removeItem(ACTIVE_SESSION_KEY);
       setSubmitted(true);
+
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+
       window.location.href = "/results";
     } catch (err) {
-      console.error("Submission Error:", err);
+      console.error("Submission error:", err);
+      localStorage.setItem(
+        "examResult",
+        JSON.stringify({
+          examId: selectedExam._id,
+          studentName: "Student",
+          testName: selectedExam.title || "Exam",
+          score: 0,
+          total: questions.length,
+          percentage: 0,
+          warnings: warningCounts.total,
+        })
+      );
       window.location.href = "/results";
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [activityLog, answers, questions, selectedExam, submitted, submitting, warningCounts]);
 
   const currentQuestion = questions[currentIdx];
   const currentQuestionText =
@@ -279,70 +591,112 @@ const Exam = () => {
   const currentOptions = Array.isArray(currentQuestion?.options)
     ? currentQuestion.options
     : [];
+  const answeredCount = Object.values(answers).filter(Boolean).length;
+  const remainingCount = Math.max(questions.length - answeredCount, 0);
+
+  const suspiciousScorePreview = useMemo(() => {
+    const weightedSuspicion = Object.entries(WARNING_WEIGHTS).reduce(
+      (sum, [field, weight]) => sum + (warningCounts[field] || 0) * weight,
+      0
+    );
+
+    return clamp(round((weightedSuspicion / Math.max(30, questions.length * 14 || 30)) * 100));
+  }, [questions.length, warningCounts]);
 
   if (!selectedExam) {
     return (
-      <div style={{ padding: "40px" }}>
-        <h2>Select Exam</h2>
+      <div style={styles.page}>
+        <div style={styles.hero}>
+          <div>
+            <div style={styles.heroKicker}>Student Exam Center</div>
+            <h1 style={styles.heroTitle}>Start exams with live AI proctoring and clear readiness checks</h1>
+            <p style={styles.heroText}>
+              Your camera, microphone, focus state, suspicious shortcuts, and movement signals
+              are all tracked during the exam and summarized professionally in the final report.
+            </p>
+          </div>
 
-        {loadingExams && <div style={loaderStyle}>Loading Exams...</div>}
+          <div style={styles.heroPanel}>
+            <div style={styles.heroMetric}>
+              <span>Camera</span>
+              <strong>{telemetry.cameraReady ? "Ready" : "Standby"}</strong>
+            </div>
+            <div style={styles.heroMetric}>
+              <span>Mic</span>
+              <strong>{telemetry.microphoneReady ? "Ready" : "Standby"}</strong>
+            </div>
+            <div style={styles.heroMetric}>
+              <span>Alerts tracked</span>
+              <strong>17 signals</strong>
+            </div>
+          </div>
+        </div>
 
-        {!loadingExams && errorMessage && (
-          <div style={errorBoxStyle}>{errorMessage}</div>
-        )}
+        {resumeNotice && <div style={styles.resumeNotice}>{resumeNotice}</div>}
+
+        {loadingExams && <div style={styles.loaderBox}>Loading exams...</div>}
+
+        {!loadingExams && errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
 
         {!loadingExams && !errorMessage && exams.length === 0 && (
-          <div style={emptyBoxStyle}>No exams available.</div>
+          <div style={styles.emptyBox}>No live or scheduled exams available right now.</div>
         )}
 
-        {!loadingExams &&
-          exams.map((exam) => (
-            <div key={exam._id} style={examCardStyle}>
-              <h3>{exam.title}</h3>
-              <p>Course: {exam.course}</p>
-              <p>Status: {exam.status}</p>
-              <p>Duration: {exam.duration} min</p>
-              <p>
-                Start:{" "}
-                {exam.startTime
-                  ? new Date(exam.startTime).toLocaleString()
-                  : "Any time"}
-              </p>
-              <p>Exam Key: {exam.examKey || "Not set"}</p>
+        <div style={styles.examGrid}>
+          {exams.map((exam) => (
+            <div key={exam._id} style={styles.examCard}>
+              <div style={styles.examCardTop}>
+                <div>
+                  <div style={styles.examStatus(exam.status)}>{exam.status}</div>
+                  <h3 style={styles.examTitle}>{exam.title}</h3>
+                  <p style={styles.examCourse}>{exam.course}</p>
+                </div>
+                <div style={styles.examDuration}>{exam.duration} min</div>
+              </div>
+
+              <div style={styles.examMetaGrid}>
+                <div>
+                  <span style={styles.metaLabel}>Start</span>
+                  <strong>{exam.startTime ? new Date(exam.startTime).toLocaleString() : "Any time"}</strong>
+                </div>
+                <div>
+                  <span style={styles.metaLabel}>Exam Key</span>
+                  <strong>{exam.examKey || "Not required"}</strong>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <span style={styles.metaLabel}>Syllabus</span>
+                  <strong>{exam.syllabus || "Teacher will update the outline soon."}</strong>
+                </div>
+              </div>
 
               <button
                 onClick={() => startExam(exam)}
                 style={{
-                  ...btnNext,
-                  opacity: exam.canStart ? 1 : 0.5,
+                  ...styles.primaryButton,
+                  opacity: exam.canStart ? 1 : 0.55,
                   cursor: exam.canStart ? "pointer" : "not-allowed",
                 }}
                 disabled={!exam.canStart}
               >
-                {exam.canStart ? "Start Exam" : "Waiting For Teacher"}
+                {exam.canStart ? "Start Secure Exam" : "Waiting For Teacher"}
               </button>
             </div>
           ))}
+        </div>
       </div>
     );
   }
 
   if (loadingQuestions && questions.length === 0) {
-    return <div style={loaderStyle}>Loading Questions...</div>;
+    return <div style={styles.loaderBox}>Loading questions...</div>;
   }
 
   if (errorMessage && questions.length === 0) {
     return (
-      <div style={loaderStyle}>
-        <div style={errorWrapperStyle}>
-          <div style={{ marginBottom: "20px" }}>{errorMessage}</div>
-          <button
-            onClick={() => {
-              setSelectedExam(null);
-              setErrorMessage("");
-            }}
-            style={btnPrev}
-          >
+      <div style={styles.centeredState}>
+        <div style={styles.stateCard}>
+          <div style={styles.errorBox}>{errorMessage}</div>
+          <button onClick={resetExamState} style={styles.secondaryButton}>
             Back To Exams
           </button>
         </div>
@@ -352,23 +706,15 @@ const Exam = () => {
 
   if (!loadingQuestions && questions.length === 0) {
     return (
-      <div style={loaderStyle}>
-        <div style={errorWrapperStyle}>
-          <div style={{ marginBottom: "20px" }}>
-            Teacher MCQs add kar raha hai. Yeh page auto-refresh ho raha hai.
+      <div style={styles.centeredState}>
+        <div style={styles.stateCard}>
+          <div style={{ marginBottom: "18px", color: "#475569" }}>
+            Teacher MCQs add kar raha hai. Yeh page auto-refresh hota rahega.
           </div>
-          <button onClick={() => loadQuestions(selectedExam._id, true)} style={btnNext}>
+          <button onClick={() => loadQuestions(selectedExam._id, true)} style={styles.primaryButton}>
             Refresh Now
           </button>
-          <button
-            onClick={() => {
-              setSelectedExam(null);
-              setQuestions([]);
-              setCurrentIdx(0);
-              setErrorMessage("");
-            }}
-            style={{ ...btnPrev, marginTop: "12px" }}
-          >
+          <button onClick={resetExamState} style={{ ...styles.secondaryButton, marginTop: "12px" }}>
             Back To Exams
           </button>
         </div>
@@ -377,117 +723,171 @@ const Exam = () => {
   }
 
   return (
-    <div style={containerStyle}>
-      <Proctoring addWarning={addWarning} />
+    <div style={styles.page}>
+      <Proctoring addWarning={addWarning} onTelemetryChange={setTelemetry} />
 
-      <div style={headerStyle}>
+      <div style={styles.headerCard}>
         <div>
-          <h2 style={{ margin: 0, color: "#1a2a6c" }}>{selectedExam.title}</h2>
-          <div style={{ fontSize: "12px", color: "#666" }}>
-            SESSION ID: {sessionIdRef.current}
+          <div style={styles.heroKicker}>Live assessment mode</div>
+          <h2 style={{ margin: "6px 0 8px 0", fontSize: "clamp(28px, 4vw, 42px)" }}>
+            {selectedExam.title}
+          </h2>
+          <div style={{ color: "#64748b" }}>
+            Session ID <strong>{sessionIdRef.current}</strong> · Exam Key{" "}
+            <strong>{selectedExam.examKey || "Open"}</strong>
           </div>
         </div>
 
-        <div style={timerBoxStyle}>
-          <Timer
-            duration={(selectedExam?.duration || 5) * 60}
-            onTimeUp={handleSubmit}
-          />
+        <div style={styles.headerMetrics}>
+          <div style={styles.metricCard}>
+            <span>Answered</span>
+            <strong>{answeredCount}</strong>
+          </div>
+          <div style={styles.metricCard}>
+            <span>Remaining</span>
+            <strong>{remainingCount}</strong>
+          </div>
+          <div style={{ ...styles.metricCard, minWidth: "270px" }}>
+            <Timer duration={(selectedExam?.duration || 5) * 60} onTimeUp={handleSubmit} />
+          </div>
         </div>
       </div>
 
-      <div style={mainLayoutStyle}>
-        <div style={questionAreaStyle}>
-          <div style={cardStyle}>
-            <div style={qHeaderStyle}>
-              <span style={badgeStyle}>
+      <div style={styles.examLayout}>
+        <div style={styles.questionCard}>
+          <div style={styles.questionHeader}>
+            <div>
+              <div style={styles.questionBadge}>
                 Question {currentIdx + 1} of {questions.length}
-              </span>
-
-              <div style={progressBarContainer}>
+              </div>
+              <div style={styles.progressTrack}>
                 <div
                   style={{
-                    ...progressBar,
+                    ...styles.progressBar,
                     width: `${((currentIdx + 1) / questions.length) * 100}%`,
                   }}
                 />
               </div>
             </div>
 
-            <h3 style={qTextStyle}>{currentQuestionText}</h3>
+            <div style={styles.integrityMini}>
+              <span>Suspicious Activity</span>
+              <strong>{suspiciousScorePreview}%</strong>
+            </div>
+          </div>
 
-            <div style={optionsContainer}>
-              {currentOptions.map((opt, j) => (
+          <h3 style={styles.questionText}>{currentQuestionText}</h3>
+
+          <div style={styles.optionGrid}>
+            {currentOptions.map((option, index) => {
+              const checked = answers[currentIdx] === option;
+
+              return (
                 <label
-                  key={j}
+                  key={`${option}-${index}`}
                   style={{
-                    ...optionStyle,
-                    backgroundColor:
-                      answers[currentIdx] === opt ? "#e3f2fd" : "#fff",
-                    borderColor:
-                      answers[currentIdx] === opt ? "#2196f3" : "#eee",
+                    ...styles.optionCard,
+                    borderColor: checked ? "#2563eb" : "rgba(148, 163, 184, 0.24)",
+                    background: checked
+                      ? "linear-gradient(135deg, rgba(37,99,235,0.08), rgba(6,182,212,0.08))"
+                      : "#fff",
                   }}
                 >
                   <input
                     type="radio"
-                    name={`q${currentIdx}`}
-                    checked={answers[currentIdx] === opt}
+                    name={`question-${currentIdx}`}
+                    checked={checked}
                     onChange={() =>
                       setAnswers((prev) => ({
                         ...prev,
-                        [currentIdx]: opt,
+                        [currentIdx]: option,
                       }))
                     }
-                    style={{ marginRight: "15px", transform: "scale(1.3)" }}
+                    style={{ width: "18px", height: "18px" }}
                   />
-                  {opt}
+                  <span>{option}</span>
                 </label>
-              ))}
-            </div>
+              );
+            })}
+          </div>
 
-            <div style={navigationStyle}>
+          <div style={styles.navigationRow}>
+            <button
+              disabled={currentIdx === 0}
+              onClick={() => setCurrentIdx((prev) => prev - 1)}
+              style={{
+                ...styles.secondaryButton,
+                opacity: currentIdx === 0 ? 0.45 : 1,
+                cursor: currentIdx === 0 ? "not-allowed" : "pointer",
+              }}
+            >
+              Back
+            </button>
+
+            {currentIdx < questions.length - 1 ? (
               <button
-                disabled={currentIdx === 0}
-                onClick={() => setCurrentIdx((prev) => prev - 1)}
-                style={btnPrev}
+                onClick={() => setCurrentIdx((prev) => prev + 1)}
+                style={styles.primaryButton}
               >
-                Back
+                Save & Next
               </button>
+            ) : (
+              <button onClick={handleSubmit} style={styles.submitButton}>
+                {submitting ? "Submitting..." : "Final Submit"}
+              </button>
+            )}
+          </div>
+        </div>
 
-              {currentIdx < questions.length - 1 ? (
-                <button
-                  onClick={() => setCurrentIdx((prev) => prev + 1)}
-                  style={btnNext}
-                >
-                  Save & Next
-                </button>
+        <aside style={styles.sidebar}>
+          <div style={styles.sidebarCard}>
+            <h4 style={styles.sidebarTitle}>Readiness Signals</h4>
+            <div style={styles.signalList}>
+              <SignalRow label="Camera" value={telemetry.cameraReady ? "Connected" : "Checking"} good={telemetry.cameraReady} />
+              <SignalRow label="Microphone" value={telemetry.microphoneReady ? "Connected" : "Checking"} good={telemetry.microphoneReady} />
+              <SignalRow label="Face Visibility" value={telemetry.faceVisible ? "Visible" : "Searching"} good={telemetry.faceVisible} />
+              <SignalRow label="Multi-face" value={telemetry.multipleFaces ? "Detected" : "Clear"} good={!telemetry.multipleFaces} />
+            </div>
+          </div>
+
+          <div style={styles.sidebarCard}>
+            <h4 style={styles.sidebarTitle}>Integrity Log</h4>
+            <div style={styles.signalList}>
+              <SignalRow label="Total Alerts" value={warningCounts.total} />
+              <SignalRow label="Eye Tracking" value={warningCounts.eyeWarnings} />
+              <SignalRow label="Head Movement" value={warningCounts.headWarnings} />
+              <SignalRow label="Audio" value={warningCounts.soundWarnings} />
+              <SignalRow label="Tab / Visibility" value={warningCounts.tabWarnings + warningCounts.visibilityWarnings} />
+              <SignalRow label="Clipboard" value={warningCounts.copyWarnings + warningCounts.pasteWarnings + warningCounts.cutWarnings} />
+              <SignalRow label="Screenshot" value={warningCounts.screenshotWarnings} />
+              <SignalRow label="Focus / Share" value={warningCounts.focusWarnings + warningCounts.screenShareWarnings} />
+            </div>
+          </div>
+
+          <div style={styles.sidebarCard}>
+            <h4 style={styles.sidebarTitle}>Recent Detections</h4>
+            <div style={{ display: "grid", gap: "10px" }}>
+              {activityLog.length === 0 ? (
+                <div style={{ color: "#64748b", fontSize: "14px" }}>No suspicious action recorded yet.</div>
               ) : (
-                <button onClick={handleSubmit} style={btnSubmit}>
-                  {submitting ? "Submitting..." : "Final Submit"}
-                </button>
+                activityLog.slice(0, 5).map((event, index) => (
+                  <div key={`${event.type}-${index}`} style={styles.eventCard}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                      <strong style={{ textTransform: "capitalize", color: "#0f172a" }}>{event.type}</strong>
+                      <span style={styles.severityBadge(event.severity)}>{event.severity}</span>
+                    </div>
+                    <div style={{ color: "#475569", marginTop: "8px", fontSize: "13px", lineHeight: 1.5 }}>
+                      {event.message}
+                    </div>
+                    <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "8px" }}>
+                      Count {event.count} · {new Date(event.occurredAt).toLocaleTimeString()}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
-        </div>
-
-        <div style={sidebarStyle}>
-          <h4 style={{ margin: "0 0 15px 0", color: "#ff4b2b" }}>
-            Integrity Log
-          </h4>
-
-          <div style={statBox}>
-            <div style={statItem}><span>Total Alerts</span><b>{warnings}</b></div>
-            <div style={statItem}><span>Eye Tracking</span><b>{eyeWarnings}</b></div>
-            <div style={statItem}><span>Head Posture</span><b>{headWarnings}</b></div>
-            <div style={statItem}><span>Sound</span><b>{soundWarnings}</b></div>
-            <div style={statItem}><span>Tab Switch</span><b>{tabWarnings}</b></div>
-            <div style={statItem}><span>Fullscreen</span><b>{fullscreenWarnings}</b></div>
-            <div style={statItem}><span>Copy Paste</span><b>{copyWarnings}</b></div>
-            <div style={statItem}><span>Right Click</span><b>{rightClickWarnings}</b></div>
-          </div>
-
-          <div style={securityBadge}>AI SHIELD ACTIVE</div>
-        </div>
+        </aside>
       </div>
 
       {showWarning && <WarningModal message={warningMessage} />}
@@ -495,177 +895,361 @@ const Exam = () => {
   );
 };
 
-const containerStyle = {
-  padding: "40px",
-  backgroundColor: "#f4f7f9",
-  minHeight: "100vh",
-  fontFamily: "'Poppins', sans-serif",
-};
-const headerStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  padding: "20px 30px",
-  backgroundColor: "#fff",
-  borderRadius: "15px",
-  boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-  marginBottom: "30px",
-};
-const timerBoxStyle = {
-  backgroundColor: "#fef9e7",
-  border: "1px solid #f39c12",
-  padding: "10px 25px",
-  borderRadius: "10px",
-  fontWeight: "bold",
-  fontSize: "18px",
-};
-const mainLayoutStyle = {
-  display: "grid",
-  gridTemplateColumns: "3fr 1fr",
-  gap: "30px",
-};
-const cardStyle = {
-  backgroundColor: "#fff",
-  padding: "40px",
-  borderRadius: "20px",
-  boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-};
-const qHeaderStyle = { marginBottom: "30px" };
-const badgeStyle = {
-  backgroundColor: "#e8f0fe",
-  color: "#1a73e8",
-  padding: "5px 15px",
-  borderRadius: "5px",
-  fontSize: "12px",
-  fontWeight: "bold",
-};
-const progressBarContainer = {
-  width: "100%",
-  height: "4px",
-  backgroundColor: "#eee",
-  marginTop: "15px",
-  borderRadius: "2px",
-};
-const progressBar = {
-  height: "100%",
-  backgroundColor: "#1a73e8",
-  transition: "width 0.4s",
-};
-const qTextStyle = {
-  fontSize: "24px",
-  color: "#2c3e50",
-  marginBottom: "30px",
-  fontWeight: "500",
-};
-const optionsContainer = { display: "grid", gap: "15px" };
-const optionStyle = {
-  display: "flex",
-  alignItems: "center",
-  padding: "20px",
-  border: "2px solid",
-  borderRadius: "12px",
-  cursor: "pointer",
-  transition: "0.3s",
-};
-const navigationStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  marginTop: "40px",
-};
-const sidebarStyle = {
-  backgroundColor: "#fff",
-  padding: "25px",
-  borderRadius: "20px",
-  boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-  height: "fit-content",
-};
-const statBox = { display: "grid", gap: "10px" };
-const statItem = {
-  display: "flex",
-  justifyContent: "space-between",
-  padding: "12px",
-  backgroundColor: "#fcfcfc",
-  borderRadius: "8px",
-  borderBottom: "1px solid #eee",
-  fontSize: "13px",
-};
-const securityBadge = {
-  marginTop: "20px",
-  textAlign: "center",
-  fontSize: "10px",
-  letterSpacing: "2px",
-  color: "#27ae60",
-  fontWeight: "bold",
-  border: "1px solid #27ae60",
-  padding: "5px",
-  borderRadius: "4px",
-};
-const btnNext = {
-  padding: "12px 35px",
-  backgroundColor: "#1a73e8",
-  color: "#fff",
-  border: "none",
-  borderRadius: "8px",
-  cursor: "pointer",
-  fontWeight: "bold",
-};
-const btnPrev = {
-  padding: "12px 35px",
-  backgroundColor: "#f1f3f4",
-  color: "#5f6368",
-  border: "none",
-  borderRadius: "8px",
-  cursor: "pointer",
-};
-const btnSubmit = {
-  padding: "12px 35px",
-  backgroundColor: "#27ae60",
-  color: "#fff",
-  border: "none",
-  borderRadius: "8px",
-  cursor: "pointer",
-  fontWeight: "bold",
-};
-const loaderStyle = {
-  display: "flex",
-  justifyContent: "center",
-  alignItems: "center",
-  height: "100vh",
-  fontSize: "20px",
-  fontWeight: "bold",
-  color: "#34495e",
-  textAlign: "center",
-};
-const questionAreaStyle = { position: "relative" };
-const examCardStyle = {
-  backgroundColor: "#fff",
-  padding: "20px",
-  borderRadius: "12px",
-  boxShadow: "0 4px 12px rgba(0,0,0,0.05)",
-  marginBottom: "16px",
-};
-const errorBoxStyle = {
-  backgroundColor: "#ffeaea",
-  color: "#c0392b",
-  padding: "14px 18px",
-  borderRadius: "10px",
-  marginBottom: "20px",
-};
-const emptyBoxStyle = {
-  backgroundColor: "#fff",
-  color: "#555",
-  padding: "20px",
-  borderRadius: "10px",
-  marginBottom: "20px",
-};
-const errorWrapperStyle = {
-  backgroundColor: "#fff",
-  padding: "30px",
-  borderRadius: "16px",
-  boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
+const SignalRow = ({ label, value, good }) => (
+  <div style={styles.signalRow}>
+    <span style={{ color: "#475569" }}>{label}</span>
+    <strong style={{ color: good === false ? "#dc2626" : "#0f172a" }}>{value}</strong>
+  </div>
+);
+
+const styles = {
+  page: {
+    minHeight: "calc(100vh - 104px)",
+    padding: "26px clamp(16px, 3vw, 34px) 40px",
+    background:
+      "radial-gradient(circle at top right, rgba(37,99,235,0.10), transparent 28%), linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)",
+  },
+  hero: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "22px",
+    padding: "32px",
+    borderRadius: "32px",
+    background: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 62%, #06b6d4 100%)",
+    color: "#fff",
+    boxShadow: "0 28px 60px rgba(37, 99, 235, 0.22)",
+    marginBottom: "24px",
+  },
+  heroKicker: {
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.14em",
+    color: "rgba(255,255,255,0.72)",
+  },
+  heroTitle: {
+    margin: "12px 0 10px 0",
+    fontSize: "clamp(32px, 5vw, 52px)",
+    lineHeight: 1.02,
+  },
+  heroText: {
+    margin: 0,
+    fontSize: "15px",
+    lineHeight: 1.75,
+    color: "rgba(255,255,255,0.82)",
+    maxWidth: "760px",
+  },
+  heroPanel: {
+    display: "grid",
+    gap: "14px",
+    alignContent: "start",
+  },
+  heroMetric: {
+    padding: "18px 20px",
+    borderRadius: "20px",
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "12px",
+  },
+  resumeNotice: {
+    padding: "16px 18px",
+    borderRadius: "18px",
+    background: "#fff7ed",
+    border: "1px solid #fdba74",
+    color: "#9a3412",
+    marginBottom: "22px",
+  },
+  loaderBox: {
+    minHeight: "420px",
+    display: "grid",
+    placeItems: "center",
+    textAlign: "center",
+    color: "#334155",
+    fontSize: "20px",
+    fontWeight: 700,
+  },
+  errorBox: {
+    padding: "14px 16px",
+    borderRadius: "16px",
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#b91c1c",
+  },
+  emptyBox: {
+    padding: "20px",
+    borderRadius: "20px",
+    background: "rgba(255,255,255,0.9)",
+    boxShadow: "0 18px 40px rgba(15, 23, 42, 0.06)",
+    color: "#475569",
+    marginBottom: "22px",
+  },
+  examGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "18px",
+  },
+  examCard: {
+    padding: "24px",
+    borderRadius: "28px",
+    background: "rgba(255,255,255,0.94)",
+    border: "1px solid rgba(148,163,184,0.16)",
+    boxShadow: "0 20px 40px rgba(15, 23, 42, 0.08)",
+  },
+  examCardTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "flex-start",
+    marginBottom: "18px",
+  },
+  examStatus: (status) => ({
+    display: "inline-flex",
+    padding: "7px 12px",
+    borderRadius: "999px",
+    background:
+      status === "live"
+        ? "#dcfce7"
+        : status === "scheduled"
+        ? "#dbeafe"
+        : "#e2e8f0",
+    color:
+      status === "live"
+        ? "#166534"
+        : status === "scheduled"
+        ? "#1d4ed8"
+        : "#475569",
+    textTransform: "capitalize",
+    fontSize: "12px",
+    fontWeight: 700,
+    marginBottom: "16px",
+  }),
+  examTitle: {
+    margin: 0,
+    fontSize: "26px",
+    color: "#0f172a",
+  },
+  examCourse: {
+    margin: "6px 0 0 0",
+    color: "#64748b",
+  },
+  examDuration: {
+    padding: "10px 12px",
+    borderRadius: "16px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 800,
+  },
+  examMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "16px",
+    marginBottom: "20px",
+  },
+  metaLabel: {
+    display: "block",
+    fontSize: "12px",
+    color: "#94a3b8",
+    marginBottom: "6px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  },
+  primaryButton: {
+    width: "100%",
+    border: "none",
+    padding: "15px 18px",
+    borderRadius: "18px",
+    background: "linear-gradient(135deg, #2563eb, #0ea5e9)",
+    color: "#fff",
+    fontWeight: 800,
+    boxShadow: "0 16px 32px rgba(37, 99, 235, 0.24)",
+  },
+  secondaryButton: {
+    border: "1px solid rgba(148,163,184,0.26)",
+    padding: "14px 18px",
+    borderRadius: "18px",
+    background: "#fff",
+    color: "#334155",
+    fontWeight: 700,
+  },
+  submitButton: {
+    border: "none",
+    padding: "14px 22px",
+    borderRadius: "18px",
+    background: "linear-gradient(135deg, #16a34a, #22c55e)",
+    color: "#fff",
+    fontWeight: 800,
+    boxShadow: "0 18px 34px rgba(34, 197, 94, 0.2)",
+  },
+  centeredState: {
+    minHeight: "calc(100vh - 104px)",
+    display: "grid",
+    placeItems: "center",
+    padding: "18px",
+  },
+  stateCard: {
+    width: "min(520px, 100%)",
+    padding: "30px",
+    borderRadius: "24px",
+    background: "#fff",
+    boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
+    textAlign: "center",
+  },
+  headerCard: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "18px",
+    padding: "28px",
+    borderRadius: "30px",
+    background: "rgba(255,255,255,0.92)",
+    boxShadow: "0 22px 48px rgba(15, 23, 42, 0.08)",
+    marginBottom: "22px",
+  },
+  headerMetrics: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+    gap: "12px",
+    alignItems: "stretch",
+  },
+  metricCard: {
+    padding: "18px",
+    borderRadius: "22px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.16)",
+    display: "grid",
+    gap: "10px",
+  },
+  examLayout: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: "22px",
+    alignItems: "start",
+  },
+  questionCard: {
+    padding: "28px",
+    borderRadius: "30px",
+    background: "rgba(255,255,255,0.96)",
+    boxShadow: "0 24px 46px rgba(15, 23, 42, 0.08)",
+  },
+  questionHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
+    marginBottom: "26px",
+  },
+  questionBadge: {
+    display: "inline-block",
+    padding: "9px 14px",
+    borderRadius: "999px",
+    background: "#dbeafe",
+    color: "#1d4ed8",
+    fontWeight: 800,
+    fontSize: "13px",
+    marginBottom: "12px",
+  },
+  progressTrack: {
+    width: "100%",
+    height: "8px",
+    borderRadius: "999px",
+    background: "#e2e8f0",
+    overflow: "hidden",
+  },
+  progressBar: {
+    height: "100%",
+    borderRadius: "999px",
+    background: "linear-gradient(90deg, #2563eb, #06b6d4)",
+  },
+  integrityMini: {
+    minWidth: "160px",
+    padding: "16px",
+    borderRadius: "22px",
+    background: "#fff7ed",
+    color: "#9a3412",
+    textAlign: "center",
+    display: "grid",
+    gap: "6px",
+  },
+  questionText: {
+    margin: "0 0 22px 0",
+    fontSize: "clamp(24px, 3vw, 34px)",
+    color: "#0f172a",
+    lineHeight: 1.2,
+  },
+  optionGrid: {
+    display: "grid",
+    gap: "14px",
+  },
+  optionCard: {
+    display: "flex",
+    alignItems: "center",
+    gap: "14px",
+    padding: "18px 20px",
+    borderRadius: "20px",
+    border: "1px solid rgba(148,163,184,0.2)",
+    transition: "all 0.2s ease",
+  },
+  navigationRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "14px",
+    marginTop: "28px",
+    flexWrap: "wrap",
+  },
+  sidebar: {
+    display: "grid",
+    gap: "18px",
+  },
+  sidebarCard: {
+    padding: "22px",
+    borderRadius: "26px",
+    background: "rgba(255,255,255,0.94)",
+    boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
+  },
+  sidebarTitle: {
+    margin: "0 0 16px 0",
+    fontSize: "20px",
+    color: "#0f172a",
+  },
+  signalList: {
+    display: "grid",
+    gap: "10px",
+  },
+  signalRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    padding: "12px 14px",
+    borderRadius: "16px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.12)",
+  },
+  eventCard: {
+    padding: "14px",
+    borderRadius: "18px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.14)",
+  },
+  severityBadge: (severity) => ({
+    padding: "5px 10px",
+    borderRadius: "999px",
+    fontSize: "11px",
+    textTransform: "uppercase",
+    fontWeight: 800,
+    background:
+      severity === "critical"
+        ? "#fee2e2"
+        : severity === "high"
+        ? "#ffedd5"
+        : "#dbeafe",
+    color:
+      severity === "critical"
+        ? "#b91c1c"
+        : severity === "high"
+        ? "#c2410c"
+        : "#1d4ed8",
+  }),
 };
 
 export default Exam;

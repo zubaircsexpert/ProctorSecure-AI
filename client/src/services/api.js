@@ -1,17 +1,23 @@
 import axios from "axios";
 
-const API = axios.create({
-  baseURL: "https://proctorsecure-ai-jkc2.onrender.com",
-});
+const browserHost = typeof window !== "undefined" ? window.location.hostname : "";
 
-API.interceptors.request.use((req) => {
+const baseURL =
+  import.meta.env.VITE_API_BASE_URL ||
+  (browserHost === "localhost" || browserHost === "127.0.0.1"
+    ? "http://localhost:5000"
+    : "https://proctorsecure-ai-jkc2.onrender.com");
+
+const API = axios.create({ baseURL });
+
+API.interceptors.request.use((request) => {
   const token = localStorage.getItem("token");
 
   if (token) {
-    req.headers.Authorization = `Bearer ${token}`;
+    request.headers.Authorization = `Bearer ${token}`;
   }
 
-  return req;
+  return request;
 });
 
 export default API;

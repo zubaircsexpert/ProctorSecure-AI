@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarDays, ClipboardList, Pencil, Play, Square, Trash2, XCircle } from "lucide-react";
 import NotificationManager from "./NotificationManager";
 import AssignmentManager from "./AssignmentManager";
 import ResultsList from "./ResultsList";
+import ExamChecker from "./ExamChecker";
 import API from "../../services/api";
 
 const TeacherPanel = () => {
@@ -46,22 +47,6 @@ const TeacherPanel = () => {
 
   const isExamEditing = Boolean(editingExamId);
 
-  useEffect(() => {
-    fetchExams();
-    const examInterval = setInterval(fetchExams, 10000);
-    return () => clearInterval(examInterval);
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === "notifications" && notifications.length === 0) {
-      fetchNotifications();
-    }
-
-    if (activeTab === "assignments" && assignments.length === 0) {
-      fetchAssignments();
-    }
-  }, [activeTab]);
-
   const toISODateTime = (value) => {
     return value ? new Date(value).toISOString() : null;
   };
@@ -89,32 +74,57 @@ const TeacherPanel = () => {
     setEditingExamId(null);
   };
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     try {
       const res = await API.get("/api/notifications/all");
       setNotifications(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Error fetching notifications:", err);
     }
-  };
+  }, []);
 
-  const fetchExams = async () => {
+  const fetchExams = useCallback(async () => {
     try {
       const res = await API.get("/api/exams/all");
       setExams(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Error fetching exams:", err);
     }
-  };
+  }, []);
 
-  const fetchAssignments = async () => {
+  const fetchAssignments = useCallback(async () => {
     try {
       const res = await API.get("/api/assignments/all");
       setAssignments(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Error fetching assignments:", err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const bootTimer = window.setTimeout(() => {
+      fetchExams();
+    }, 0);
+    const examInterval = setInterval(fetchExams, 10000);
+    return () => {
+      window.clearTimeout(bootTimer);
+      clearInterval(examInterval);
+    };
+  }, [fetchExams]);
+
+  useEffect(() => {
+    const bootTimer = window.setTimeout(() => {
+      if (activeTab === "notifications" && notifications.length === 0) {
+        fetchNotifications();
+      }
+
+      if (activeTab === "assignments" && assignments.length === 0) {
+        fetchAssignments();
+      }
+    }, 0);
+
+    return () => window.clearTimeout(bootTimer);
+  }, [activeTab, assignments.length, fetchAssignments, fetchNotifications, notifications.length]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -501,6 +511,9 @@ const TeacherPanel = () => {
         <button style={styles.tabBtn(activeTab === "studentResult")} onClick={() => setActiveTab("studentResult")}>
           Results
         </button>
+        <button style={styles.tabBtn(activeTab === "examCheck")} onClick={() => setActiveTab("examCheck")}>
+          Exam Check
+        </button>
       </div>
 
       {activeTab === "exams" && (
@@ -761,6 +774,8 @@ const TeacherPanel = () => {
       )}
 
       {activeTab === "studentResult" && <ResultsList />}
+
+      {activeTab === "examCheck" && <ExamChecker />}
     </div>
   );
 };

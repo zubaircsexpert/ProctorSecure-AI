@@ -1,64 +1,75 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   BrowserRouter as Router,
-  Routes,
+  Navigate,
   Route,
+  Routes,
   useLocation,
-  Navigate
 } from "react-router-dom";
 import "./App.css";
+import Navbar from "./components/Navbar";
+import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
-import Dashboard from "./pages/StudentPanel/Dashboard";
 import Register from "./pages/Register";
+import Dashboard from "./pages/StudentPanel/Dashboard";
 import Exam from "./pages/StudentPanel/Exam";
 import Results from "./pages/StudentPanel/Results";
-import Navbar from "./components/Navbar";
 import Notifications from "./pages/StudentPanel/Notifications";
+import AssignmentList from "./pages/StudentPanel/AssignmentList";
 import TeacherPanel from "./pages/TeacherPanel/TeacherPanel";
-import ProtectedRoute from "./components/ProtectedRoute";
-import AssignmentList from "./pages/StudentPanel/AssignmentList"; // Is line ko add karein
 
-// ================= NAVBAR CONTROL =================
+const NAVBAR_OFFSET = 104;
+
 const NavbarWrapper = () => {
   const location = useLocation();
+  const hideNavbar = location.pathname === "/" || location.pathname === "/register";
 
-  const hideNavbar =
-    location.pathname === "/" ||
-    location.pathname === "/register";
-
-  return !hideNavbar ? <Navbar /> : null;
+  return hideNavbar ? null : <Navbar />;
 };
 
-// ================= MAIN APP =================
-function App() {
-  const [user, setUser] = useState(null);
+const PageShell = ({ children, top = NAVBAR_OFFSET, style = {} }) => (
+  <div
+    style={{
+      minHeight: "100vh",
+      paddingTop: `${top}px`,
+      boxSizing: "border-box",
+      width: "100%",
+      ...style,
+    }}
+  >
+    {children}
+  </div>
+);
 
-  useEffect(() => {
-    const data = localStorage.getItem("user");
-    if (data && data !== "undefined") {
-      setUser(JSON.parse(data));
+function App() {
+  const [user] = useState(() => {
+    try {
+      const data = localStorage.getItem("user");
+      if (data && data !== "undefined") {
+        return JSON.parse(data);
+      }
+    } catch (err) {
+      console.error("Failed to parse saved user:", err);
     }
-  }, []);
+    return null;
+  });
 
   return (
     <Router>
-      {/* Navbar */}
       <NavbarWrapper />
 
       <Routes>
-        {/* PUBLIC ROUTES */}
         <Route path="/" element={<Login />} />
         <Route path="/register" element={<Register />} />
 
-        {/* STUDENT DASHBOARD */}
         <Route
           path="/dashboard"
           element={
             <ProtectedRoute>
               {user?.role === "student" ? (
-                <div style={{ paddingTop: "60px" }}>     
+                <PageShell>
                   <Dashboard />
-                </div>
+                </PageShell>
               ) : (
                 <Navigate to="/teacher-panel" replace />
               )}
@@ -66,15 +77,14 @@ function App() {
           }
         />
 
-        {/* TEACHER PANEL */}
         <Route
           path="/teacher-panel"
           element={
             <ProtectedRoute>
               {user?.role === "teacher" ? (
-                <div style={{ paddingTop: "40px" }}>
-                <TeacherPanel />
-                </div>
+                <PageShell>
+                  <TeacherPanel />
+                </PageShell>
               ) : (
                 <Navigate to="/dashboard" replace />
               )}
@@ -82,63 +92,98 @@ function App() {
           }
         />
 
-        {/* NOTIFICATIONS */}
         <Route
           path="/notifications"
           element={
             <ProtectedRoute>
-              <div style={{ paddingTop: "50px" }}> 
+              <PageShell>
                 <Notifications />
-              </div>
+              </PageShell>
             </ProtectedRoute>
           }
         />
 
-       {/* ✅ ASSIGNMENTS ROUTE (Fixed) */}
-<Route
-  path="/assignment-list"
-  element={
-    <ProtectedRoute>
-      <div style={{ paddingTop: "60px" }}>
-        {/* Sirf h2 nahi, pura component yahan aayega */}
-        <AssignmentList /> 
-      </div>
-    </ProtectedRoute>
-  }
-/>
-        {/* ✅ SCHEDULE ROUTE */}
+        <Route
+          path="/assignment-list"
+          element={
+            <ProtectedRoute>
+              <PageShell>
+                <AssignmentList />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
         <Route
           path="/schedule"
           element={
             <ProtectedRoute>
-              <div style={{ paddingTop: "60px", textAlign: "center" }}>
-                <h2>Academic Schedule</h2>
-              </div>
+              <PageShell>
+                <div
+                  style={{
+                    minHeight: "calc(100vh - 104px)",
+                    display: "grid",
+                    placeItems: "center",
+                    padding: "24px",
+                    textAlign: "center",
+                  }}
+                >
+                  <div
+                    style={{
+                      maxWidth: "720px",
+                      padding: "36px",
+                      borderRadius: "28px",
+                      background: "rgba(255,255,255,0.92)",
+                      boxShadow: "0 24px 48px rgba(15, 23, 42, 0.08)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        letterSpacing: "0.2em",
+                        textTransform: "uppercase",
+                        fontSize: "12px",
+                        color: "#7c3aed",
+                        marginBottom: "12px",
+                      }}
+                    >
+                      Academic Calendar
+                    </div>
+                    <h2 style={{ margin: 0, fontSize: "clamp(30px, 5vw, 48px)" }}>
+                      Schedule module is ready for your next update
+                    </h2>
+                    <p style={{ margin: "14px 0 0 0", color: "#64748b" }}>
+                      We kept this page clean and aligned below the navbar so future
+                      timetable content can drop in without layout overlap.
+                    </p>
+                  </div>
+                </div>
+              </PageShell>
             </ProtectedRoute>
           }
         />
 
-        {/* EXAM */}
         <Route
           path="/exam"
           element={
             <ProtectedRoute>
-              <Exam />
+              <PageShell>
+                <Exam />
+              </PageShell>
             </ProtectedRoute>
           }
         />
 
-        {/* RESULTS */}
         <Route
           path="/results"
           element={
             <ProtectedRoute>
-              <Results />
+              <PageShell>
+                <Results />
+              </PageShell>
             </ProtectedRoute>
           }
         />
 
-        {/* DEFAULT REDIRECT */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>

@@ -1,24 +1,28 @@
 import React, { useEffect, useState } from "react";
 import API from "../../services/api";
 
-const FILE_BASE_URL = "https://proctorsecure-ai-jkc2.onrender.com/uploads";
+const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
 const AssignmentList = () => {
   const [assignments, setAssignments] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState({});
 
-  useEffect(() => {
-    fetchAssignments();
-  }, []);
-
-  const fetchAssignments = async () => {
+  async function fetchAssignments() {
     try {
       const res = await API.get("/api/assignments/all");
       setAssignments(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Data fetch nahi ho raha", err);
     }
-  };
+  }
+
+  useEffect(() => {
+    const bootTimer = window.setTimeout(() => {
+      fetchAssignments();
+    }, 0);
+
+    return () => window.clearTimeout(bootTimer);
+  }, []);
 
   const getStudentName = () => {
     try {

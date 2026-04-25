@@ -1,98 +1,48 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
+  color: #0f172a;
+  background:
+    radial-gradient(circle at top left, rgba(99, 102, 241, 0.14), transparent 34%),
+    radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 30%),
+    linear-gradient(180deg, #f8fbff 0%, #edf3ff 100%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  color: #0f172a;
+  background: transparent;
 }
 
 a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
+  color: inherit;
+  text-decoration: none;
 }
 
-/* --- Responsive Body Logic --- */
-body {
-  margin: 0;
-  display: flex;
-  flex-direction: column; /* Mobile first approach: upar se niche */
-  align-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-  overflow-x: hidden; /* Screen se bahar jane se rokne ke liye */
-}
-
-/* Laptop/Desktop ke liye flex center wapis set karein */
-@media (min-width: 768px) {
-  body {
-    flex-direction: row; /* Baray screens par horizontal layout */
-    place-items: center;
-    justify-content: center;
-  }
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-  text-align: center;
-}
-
-/* Mobile par h1 chota karne ke liye */
-@media (max-width: 600px) {
-  h1 {
-    font-size: 2.2em;
-    padding: 0 15px;
-  }
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
 
 button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #17da93;
   cursor: pointer;
-  transition: border-color 0.25s;
-}
-
-/* Mobile par button ko width dena behtar rehta hai */
-@media (max-width: 480px) {
-  button {
-    width: 90%; 
-    margin: 10px 0;
-  }
-}
-
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
 }

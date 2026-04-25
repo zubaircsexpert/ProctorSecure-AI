@@ -136,7 +136,9 @@ const ResultsList = () => {
               <th style={styles.th}>Student</th>
               <th style={styles.th}>Exam/Test</th>
               <th style={styles.th}>Score</th>
+              <th style={styles.th}>Intelligence</th>
               <th style={styles.th}>Warnings</th>
+              <th style={styles.th}>Suspicious</th>
               <th style={styles.th}>Status</th>
               <th style={styles.th}>Submission Date</th>
               <th style={styles.th}>Actions</th>
@@ -165,6 +167,13 @@ const ResultsList = () => {
                   <span style={styles.subText}>({r.percentage || 0}%)</span>
                 </td>
 
+                <td style={styles.td}>
+                  <b>{r.intelligenceScore ?? r.percentage ?? 0}%</b>
+                  <span style={styles.subText}>
+                    Correct: {r.score || 0}, Wrong: {r.incorrectAnswers ?? 0}
+                  </span>
+                </td>
+
                 <td
                   style={{
                     ...styles.td,
@@ -178,6 +187,13 @@ const ResultsList = () => {
                   <span style={styles.subText}>
                     Eye: {r.eyeWarnings || 0}, Head: {r.headWarnings || 0}, Tab: {r.tabWarnings || 0}
                   </span>
+                </td>
+
+                <td style={styles.td}>
+                  <b style={{ color: (r.suspiciousScore || r.cheatingPercent || 0) > 35 ? "#dc2626" : "#0f766e" }}>
+                    {r.suspiciousScore ?? r.cheatingPercent ?? 0}%
+                  </b>
+                  <span style={styles.subText}>{r.trustFactor || "Reliable"}</span>
                 </td>
 
                 <td style={styles.td}>
