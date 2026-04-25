@@ -55,10 +55,13 @@ const Exam = () => {
       );
 
       setExams(examList);
-      setSelectedExam((prev) => {
-        if (!prev) return prev;
-        return examList.find((exam) => exam._id === prev._id) || prev;
-      });
+
+      if (selectedExam) {
+        const updatedExam = examList.find((exam) => exam._id === selectedExam._id);
+        if (updatedExam) {
+          setSelectedExam(updatedExam);
+        }
+      }
     } catch (err) {
       setErrorMessage(
         err.response?.data?.message ||
@@ -67,7 +70,7 @@ const Exam = () => {
     } finally {
       setLoadingExams(false);
     }
-  }, []);
+  }, [selectedExam]);
 
   const loadQuestions = useCallback(async (examId, initialLoad = false) => {
     try {
@@ -82,7 +85,9 @@ const Exam = () => {
       setErrorMessage("");
     } catch (err) {
       if (err.response?.status === 403) {
-        setErrorMessage(err.response?.data?.message || "Teacher ne access enable nahi ki.");
+        setErrorMessage(
+          err.response?.data?.message || "Teacher ne access enable nahi ki."
+        );
       } else {
         setErrorMessage("Failed to load questions.");
       }
@@ -119,6 +124,7 @@ const Exam = () => {
     if (!selectedExam || submitted) return;
 
     loadQuestions(selectedExam._id, true);
+
     const questionInterval = setInterval(() => {
       loadQuestions(selectedExam._id, false);
     }, 5000);
@@ -199,6 +205,7 @@ const Exam = () => {
     setAnswers({});
     setErrorMessage("");
     sessionIdRef.current = createSessionId();
+
     await loadQuestions(exam._id, true);
   };
 
@@ -279,9 +286,11 @@ const Exam = () => {
         <h2>Select Exam</h2>
 
         {loadingExams && <div style={loaderStyle}>Loading Exams...</div>}
+
         {!loadingExams && errorMessage && (
           <div style={errorBoxStyle}>{errorMessage}</div>
         )}
+
         {!loadingExams && !errorMessage && exams.length === 0 && (
           <div style={emptyBoxStyle}>No exams available.</div>
         )}
@@ -295,8 +304,12 @@ const Exam = () => {
               <p>Duration: {exam.duration} min</p>
               <p>
                 Start:{" "}
-                {exam.startTime ? new Date(exam.startTime).toLocaleString() : "Any time"}
+                {exam.startTime
+                  ? new Date(exam.startTime).toLocaleString()
+                  : "Any time"}
               </p>
+              <p>Exam Key: {exam.examKey || "Not set"}</p>
+
               <button
                 onClick={() => startExam(exam)}
                 style={{

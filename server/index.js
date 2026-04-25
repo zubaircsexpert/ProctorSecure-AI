@@ -117,19 +117,13 @@ const verifyToken = (req, res, next) => {
 };
 
 const buildExamPayload = (exam) => {
-  const now = new Date();
-  const startReached = !exam.startTime || now >= new Date(exam.startTime);
-  const endReached = !exam.endTime || now <= new Date(exam.endTime);
-
   return {
     ...exam.toObject(),
-    canStart:
-      exam.status === "live" &&
-      exam.accessGranted === true &&
-      startReached &&
-      endReached,
+    canStart: exam.status === "live" && exam.accessGranted === true,
   };
 };
+
+// ================= EXAMS =================
 
 app.post("/api/exams/add", verifyToken, async (req, res) => {
   try {
@@ -160,7 +154,7 @@ app.post("/api/exams/add", verifyToken, async (req, res) => {
     });
 
     await exam.save();
-    res.json({ message: "Exam Scheduled ✅", exam });
+    res.json({ message: "Exam Scheduled ✅", exam: buildExamPayload(exam) });
   } catch (err) {
     console.log("ADD EXAM ERROR:", err);
     res.status(500).json({ message: "Error ❌" });
@@ -183,7 +177,7 @@ app.put("/api/exams/update-status/:id", verifyToken, async (req, res) => {
 
     const updateData = {};
 
-    if (status) {
+    if (status !== undefined) {
       updateData.status = status;
     }
 
@@ -217,6 +211,25 @@ app.put("/api/exams/update-status/:id", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Error ❌" });
   }
 });
+
+app.delete("/api/exams/delete/:id", verifyToken, async (req, res) => {
+  try {
+    const exam = await Exam.findByIdAndDelete(req.params.id);
+
+    if (!exam) {
+      return res.status(404).json({ message: "Exam not found" });
+    }
+
+    await Question.deleteMany({ examId: req.params.id });
+
+    res.json({ message: "Exam deleted ✅" });
+  } catch (err) {
+    console.log("DELETE EXAM ERROR:", err);
+    res.status(500).json({ message: "Error ❌" });
+  }
+});
+
+// ================= QUESTIONS =================
 
 app.post("/api/questions/add", verifyToken, async (req, res) => {
   try {
@@ -269,19 +282,11 @@ app.get("/api/questions/:examId", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Exam not found ❌" });
     }
 
-    const now = new Date();
-    const startReached = !exam.startTime || now >= new Date(exam.startTime);
-    const endReached = !exam.endTime || now <= new Date(exam.endTime);
-
-    const canStart =
-      exam.status === "live" &&
-      exam.accessGranted === true &&
-      startReached &&
-      endReached;
+    const canStart = exam.status === "live" && exam.accessGranted === true;
 
     if (!canStart) {
       return res.status(403).json({
-        message: "Exam abhi live/access enabled nahi hua.",
+        message: "Teacher ne abhi exam allow nahi kiya.",
       });
     }
 
@@ -295,6 +300,8 @@ app.get("/api/questions/:examId", verifyToken, async (req, res) => {
     res.status(500).json({ message: "Failed to load questions" });
   }
 });
+
+// ================= RESULTS =================
 
 app.post("/api/results/submit", verifyToken, async (req, res) => {
   try {
