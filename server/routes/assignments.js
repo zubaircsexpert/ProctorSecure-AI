@@ -80,6 +80,14 @@ router.post("/upload", upload.single("file"), async (req, res) => {
   try {
     const { assignmentId, studentName } = req.body;
 
+    if (!assignmentId) {
+      return res.status(400).json({ message: "Assignment id is required" });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Please attach a file" });
+    }
+
     const assignment = await Assignment.findById(assignmentId);
 
     if (!assignment) {
@@ -105,6 +113,14 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 router.post("/give-marks", async (req, res) => {
   try {
     const { assignmentId, marks } = req.body;
+
+    if (!assignmentId) {
+      return res.status(400).json({ message: "Assignment id is required" });
+    }
+
+    if (!String(marks || "").trim()) {
+      return res.status(400).json({ message: "Marks are required" });
+    }
 
     const assignment = await Assignment.findById(assignmentId);
 

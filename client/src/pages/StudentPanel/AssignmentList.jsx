@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
+import React, { useEffect, useState } from "react";
+import API from "../../services/api";
+
+const FILE_BASE_URL = "https://proctorsecure-ai-jkc2.onrender.com/uploads";
 
 const AssignmentList = () => {
   const [assignments, setAssignments] = useState([]);
-  const [file, setFile] = useState(null);
+  const [selectedFiles, setSelectedFiles] = useState({});
 
   useEffect(() => {
     fetchAssignments();
@@ -11,15 +13,25 @@ const AssignmentList = () => {
 
   const fetchAssignments = async () => {
     try {
-     const res = await axios.get("https://proctorsecure-ai-jkc2.onrender.com/api/assignments/all");
-      setAssignments(res.data);
+      const res = await API.get("/api/assignments/all");
+      setAssignments(Array.isArray(res.data) ? res.data : []);
     } catch (err) {
       console.error("Data fetch nahi ho raha", err);
     }
   };
 
-  // ✅ Upload Function
+  const getStudentName = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "{}");
+      return user.name || "Student";
+    } catch {
+      return "Student";
+    }
+  };
+
   const handleUpload = async (assignmentId) => {
+    const file = selectedFiles[assignmentId];
+
     if (!file) {
       alert("Please select a file");
       return;
@@ -28,15 +40,19 @@ const AssignmentList = () => {
     const formData = new FormData();
     formData.append("file", file);
     formData.append("assignmentId", assignmentId);
-    formData.append("studentName", "Student"); // baad me login se dynamic kar lena
+    formData.append("studentName", getStudentName());
 
     try {
-      await axios.post("http://localhost:5000/api/assignments/upload", formData);
-      alert("Assignment Submitted ✅");
-      fetchAssignments(); // refresh data
+      await API.post("/api/assignments/upload", formData);
+      alert("Assignment Submitted");
+      setSelectedFiles((prev) => ({
+        ...prev,
+        [assignmentId]: null,
+      }));
+      fetchAssignments();
     } catch (err) {
       console.error(err);
-      alert("Upload Failed ❌");
+      alert(err.response?.data?.message || "Upload Failed");
     }
   };
 
@@ -58,25 +74,35 @@ const AssignmentList = () => {
           >
             <h3>{asm.title}</h3>
             <p>Due Date: {new Date(asm.dueDate).toLocaleDateString()}</p>
-            <p>Status: <b>{asm.status || "Pending"}</b></p>
-            <p>Marks: <b>{asm.marks}</b></p>
+            <p>
+              Status: <b>{asm.status || "Pending"}</b>
+            </p>
+            <p>
+              Marks: <b>{asm.marks}</b>
+            </p>
 
-            {/* Teacher PDF */}
             {asm.fileUrl && (
               <div style={{ marginTop: "10px" }}>
                 <a
-                  href={`https://proctorsecure-ai-jkc2.onrender.com/api/uploads/${asm.fileUrl}`}
+                  href={`${FILE_BASE_URL}/${asm.fileUrl}`}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  📄 View Assignment PDF
+                  View Assignment PDF
                 </a>
               </div>
             )}
 
-            {/* ✅ Student Upload */}
             <div style={{ marginTop: "10px" }}>
-              <input type="file" onChange={(e) => setFile(e.target.files[0])} />
+              <input
+                type="file"
+                onChange={(e) =>
+                  setSelectedFiles((prev) => ({
+                    ...prev,
+                    [asm._id]: e.target.files?.[0] || null,
+                  }))
+                }
+              />
 
               <button
                 onClick={() => handleUpload(asm._id)}
@@ -94,16 +120,15 @@ const AssignmentList = () => {
               </button>
             </div>
 
-            {/* ✅ Student Submitted File */}
             {asm.submissionUrl && (
               <div style={{ marginTop: "10px" }}>
                 <a
-                  href={`http://localhost:5000/uploads/${asm.submissionUrl}`}
+                  href={`${FILE_BASE_URL}/${asm.submissionUrl}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ color: "green" }}
                 >
-                  ✅ View Submitted File
+                  View Submitted File
                 </a>
               </div>
             )}

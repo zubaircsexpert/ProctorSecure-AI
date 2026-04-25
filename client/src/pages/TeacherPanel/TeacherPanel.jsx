@@ -279,6 +279,32 @@ const TeacherPanel = () => {
     }
   };
 
+  const handleGiveMarks = async (assignmentId) => {
+    const marks = marksInput[assignmentId];
+
+    if (!String(marks || "").trim()) {
+      alert("Please enter marks first");
+      return;
+    }
+
+    try {
+      await API.post("/api/assignments/give-marks", {
+        assignmentId,
+        marks,
+      });
+
+      setMarksInput((prev) => ({
+        ...prev,
+        [assignmentId]: "",
+      }));
+
+      fetchAssignments();
+      alert("Marks saved successfully");
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to save marks");
+    }
+  };
+
   const handleDelete = async (type, id) => {
     try {
       await API.delete(`/api/${type}/delete/${id}`);
@@ -728,6 +754,7 @@ const TeacherPanel = () => {
             assignments,
             marksInput,
             setMarksInput,
+            handleGiveMarks,
             handleDelete,
           }}
         />
