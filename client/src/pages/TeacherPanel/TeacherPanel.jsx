@@ -51,6 +51,10 @@ const TeacherPanel = () => {
     return () => clearInterval(examInterval);
   }, []);
 
+  const toISODateTime = (value) => {
+    return value ? new Date(value).toISOString() : null;
+  };
+
   const fetchNotifications = async () => {
     try {
       const res = await API.get("/api/notifications/all");
@@ -103,8 +107,8 @@ const TeacherPanel = () => {
         syllabus: examForm.syllabus,
         duration: Number(examForm.duration),
         examKey: examForm.examKey,
-        startTime: examForm.startTime || null,
-        endTime: examForm.endTime || null,
+        startTime: toISODateTime(examForm.startTime),
+        endTime: toISODateTime(examForm.endTime),
       };
 
       await API.post("/api/exams/add", payload);
@@ -132,6 +136,40 @@ const TeacherPanel = () => {
       fetchExams();
     } catch (err) {
       alert(err.response?.data?.message || "Failed to update exam");
+    }
+  };
+
+  const goLiveExam = async (exam) => {
+    await updateExamState(exam._id, {
+      status: "live",
+      accessGranted: true,
+    });
+  };
+
+  const stopExamAccess = async (exam) => {
+    await updateExamState(exam._id, {
+      status: "scheduled",
+      accessGranted: false,
+    });
+  };
+
+  const closeExam = async (exam) => {
+    await updateExamState(exam._id, {
+      status: "closed",
+      accessGranted: false,
+    });
+  };
+
+  const deleteExam = async (id) => {
+    const ok = window.confirm("Are you sure you want to delete this exam?");
+    if (!ok) return;
+
+    try {
+      await API.delete(`/api/exams/delete/${id}`);
+      fetchExams();
+      alert("Exam deleted ✅");
+    } catch (err) {
+      alert(err.response?.data?.message || "Failed to delete exam");
     }
   };
 
@@ -199,13 +237,30 @@ const TeacherPanel = () => {
     }
   };
 
+  const tabBtn = {
+    padding: "12px 20px",
+    borderRadius: "10px",
+    border: "1px solid #ddd",
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: "600",
+  };
+
+  const actionBtn = {
+    padding: "10px 18px",
+    borderRadius: "10px",
+    border: "none",
+    cursor: "pointer",
+    fontWeight: "700",
+  };
+
   return (
     <div style={{ padding: "40px", backgroundColor: "#f4f7f6" }}>
-      <div style={{ marginBottom: "20px" }}>
-        <button onClick={() => setActiveTab("notifications")}>Announcements</button>
-        <button onClick={() => setActiveTab("exams")}>Manage Exams</button>
-        <button onClick={() => setActiveTab("assignments")}>Assignments</button>
-        <button onClick={() => setActiveTab("studentResult")}>Results</button>
+      <div style={{ marginBottom: "20px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+        <button style={tabBtn} onClick={() => setActiveTab("notifications")}>Announcements</button>
+        <button style={tabBtn} onClick={() => setActiveTab("exams")}>Manage Exams</button>
+        <button style={tabBtn} onClick={() => setActiveTab("assignments")}>Assignments</button>
+        <button style={tabBtn} onClick={() => setActiveTab("studentResult")}>Results</button>
       </div>
 
       {activeTab === "exams" && (
@@ -250,7 +305,9 @@ const TeacherPanel = () => {
               value={examForm.endTime}
               onChange={(e) => setExamForm({ ...examForm, endTime: e.target.value })}
             />
-            <button type="submit">Schedule Exam</button>
+            <button style={{ ...actionBtn, background: "#1a73e8", color: "#fff" }} type="submit">
+              Schedule Exam
+            </button>
           </form>
 
           <hr />
@@ -260,52 +317,49 @@ const TeacherPanel = () => {
             <div
               key={ex._id}
               style={{
-                padding: "12px",
+                padding: "18px",
                 border: "1px solid #ddd",
-                marginBottom: "10px",
-                borderRadius: "8px",
+                marginBottom: "12px",
+                borderRadius: "14px",
                 background: "#fff",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.04)",
               }}
             >
-              <strong>{ex.title}</strong> ({ex.course})
+              <strong style={{ fontSize: "20px" }}>{ex.title}</strong> ({ex.course})
               <div>Status: <b>{ex.status}</b></div>
               <div>Access: <b>{ex.accessGranted ? "Enabled" : "Disabled"}</b></div>
               <div>Duration: {ex.duration} min</div>
+              <div>Exam Key: {ex.examKey || "Not set"}</div>
               <div>Start: {ex.startTime ? new Date(ex.startTime).toLocaleString() : "Not set"}</div>
               <div>End: {ex.endTime ? new Date(ex.endTime).toLocaleString() : "Not set"}</div>
 
-              <div style={{ marginTop: "10px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <div style={{ marginTop: "12px", display: "flex", gap: "10px", flexWrap: "wrap" }}>
                 <button
-                  onClick={() =>
-                    updateExamState(ex._id, {
-                      status: "live",
-                      accessGranted: true,
-                    })
-                  }
+                  style={{ ...actionBtn, background: "#16a34a", color: "#fff" }}
+                  onClick={() => goLiveExam(ex)}
                 >
                   Allow / Go Live
                 </button>
 
                 <button
-                  onClick={() =>
-                    updateExamState(ex._id, {
-                      status: "scheduled",
-                      accessGranted: false,
-                    })
-                  }
+                  style={{ ...actionBtn, background: "#f59e0b", color: "#fff" }}
+                  onClick={() => stopExamAccess(ex)}
                 >
                   Stop Access
                 </button>
 
                 <button
-                  onClick={() =>
-                    updateExamState(ex._id, {
-                      status: "closed",
-                      accessGranted: false,
-                    })
-                  }
+                  style={{ ...actionBtn, background: "#6b7280", color: "#fff" }}
+                  onClick={() => closeExam(ex)}
                 >
                   Close Exam
+                </button>
+
+                <button
+                  style={{ ...actionBtn, background: "#dc2626", color: "#fff" }}
+                  onClick={() => deleteExam(ex._id)}
+                >
+                  Delete Exam
                 </button>
               </div>
             </div>
@@ -358,7 +412,9 @@ const TeacherPanel = () => {
               value={questionForm.correctAnswer}
               onChange={(e) => setQuestionForm({ ...questionForm, correctAnswer: e.target.value })}
             />
-            <button type="submit">Add MCQ</button>
+            <button style={{ ...actionBtn, background: "#1a73e8", color: "#fff" }} type="submit">
+              Add MCQ
+            </button>
           </form>
         </div>
       )}
