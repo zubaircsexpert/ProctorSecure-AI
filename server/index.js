@@ -116,12 +116,27 @@ const verifyToken = (req, res, next) => {
   }
 };
 
-const verifyTeacher = (req, res, next) => {
-  if (req.user?.role !== "teacher") {
+const verifyTeacher = async (req, res, next) => {
+  if (req.user?.role === "teacher") {
+    return next();
+  }
+
+  if (!req.user?.userId) {
     return res.status(403).json({ message: "Only teachers can do this action." });
   }
 
-  next();
+  try {
+    const user = await User.findById(req.user.userId).select("role");
+
+    if (user?.role !== "teacher") {
+      return res.status(403).json({ message: "Only teachers can do this action." });
+    }
+
+    next();
+  } catch (err) {
+    console.log("VERIFY TEACHER ERROR:", err);
+    res.status(500).json({ message: "Role verification failed." });
+  }
 };
 
 const buildExamPayload = (exam) => {
