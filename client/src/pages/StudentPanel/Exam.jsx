@@ -139,10 +139,15 @@ const Exam = () => {
     framingStatus: "Center your face inside the camera frame.",
     audioLevel: 0,
     audioStatus: "Calibrating room",
+    trackingScore: 0,
+    detectionMode: "warmup",
+    cameraState: "Preparing camera",
   });
+  const [monitoringArmed, setMonitoringArmed] = useState(false);
 
   const hasSubmitted = useRef(false);
   const warningTimeoutRef = useRef(null);
+  const monitoringArmTimeoutRef = useRef(null);
   const sessionIdRef = useRef(createSessionId());
   const warningCountRef = useRef(initialWarningCounts);
 
@@ -238,6 +243,9 @@ const Exam = () => {
       if (warningTimeoutRef.current) {
         window.clearTimeout(warningTimeoutRef.current);
       }
+      if (monitoringArmTimeoutRef.current) {
+        window.clearTimeout(monitoringArmTimeoutRef.current);
+      }
     };
   }, [fetchExams]);
 
@@ -284,8 +292,27 @@ const Exam = () => {
     };
   }, [selectedExam, submitted]);
 
+  useEffect(() => {
+    if (!selectedExam || submitted) {
+      setMonitoringArmed(false);
+      return undefined;
+    }
+
+    setMonitoringArmed(false);
+    monitoringArmTimeoutRef.current = window.setTimeout(() => {
+      setMonitoringArmed(true);
+    }, 3500);
+
+    return () => {
+      if (monitoringArmTimeoutRef.current) {
+        window.clearTimeout(monitoringArmTimeoutRef.current);
+      }
+    };
+  }, [selectedExam, submitted]);
+
   const addWarning = useCallback((type, message) => {
     if (submitted || hasSubmitted.current) return;
+    if (!monitoringArmed && type !== "exit") return;
 
     const field = WARNING_FIELD_MAP[type];
     const nextTotal = (warningCountRef.current?.total || 0) + 1;
@@ -348,7 +375,7 @@ const Exam = () => {
     warningTimeoutRef.current = window.setTimeout(() => {
       setShowWarning(false);
     }, 4200);
-  }, [submitted]);
+  }, [monitoringArmed, submitted]);
 
   useEffect(() => {
     if (!selectedExam || submitted) {
@@ -392,15 +419,32 @@ const Exam = () => {
       const key = event.key.toLowerCase();
       const ctrlOrMeta = event.ctrlKey || event.metaKey;
 
+      if (ctrlOrMeta && ["c", "v", "x"].includes(key)) {
+        event.preventDefault();
+        if (key === "c") {
+          addWarning("copy", "Copy shortcut blocked during the exam.");
+        } else if (key === "v") {
+          addWarning("paste", "Paste shortcut blocked during the exam.");
+        } else {
+          addWarning("cut", "Cut shortcut blocked during the exam.");
+        }
+      }
+
       if (
         event.key === "PrintScreen" ||
         (event.metaKey && event.shiftKey && ["3", "4"].includes(key)) ||
         (event.ctrlKey && event.shiftKey && key === "s")
       ) {
+        event.preventDefault();
         addWarning("screenshot", "Screenshot shortcut detected.");
       }
 
-      if (ctrlOrMeta && ["a", "p", "u"].includes(key)) {
+      if (
+        event.key === "F12" ||
+        (ctrlOrMeta && event.shiftKey && ["i", "j", "c"].includes(key)) ||
+        (ctrlOrMeta && ["a", "p", "u"].includes(key))
+      ) {
+        event.preventDefault();
         addWarning("shortcut", `Restricted keyboard shortcut detected (${key.toUpperCase()}).`);
       }
     };
@@ -416,6 +460,10 @@ const Exam = () => {
       addWarning("focus", "Exam window lost focus.");
     };
 
+    const handlePageHide = () => {
+      addWarning("exit", "Exam page was backgrounded or closed.");
+    };
+
     document.addEventListener("copy", handleCopy);
     document.addEventListener("paste", handlePaste);
     document.addEventListener("cut", handleCut);
@@ -423,6 +471,7 @@ const Exam = () => {
     document.addEventListener("visibilitychange", handleVisibility);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("blur", handleWindowBlur);
+    window.addEventListener("pagehide", handlePageHide);
 
     if (shouldEnforceFullscreen) {
       document.addEventListener("fullscreenchange", handleFullscreen);
@@ -436,6 +485,7 @@ const Exam = () => {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("blur", handleWindowBlur);
+      window.removeEventListener("pagehide", handlePageHide);
 
       if (shouldEnforceFullscreen) {
         document.removeEventListener("fullscreenchange", handleFullscreen);
@@ -453,8 +503,12 @@ const Exam = () => {
     setSubmitting(false);
     setWarningCounts(initialWarningCounts);
     setActivityLog([]);
+    setMonitoringArmed(false);
     sessionIdRef.current = createSessionId();
     hasSubmitted.current = false;
+    if (monitoringArmTimeoutRef.current) {
+      window.clearTimeout(monitoringArmTimeoutRef.current);
+    }
     localStorage.removeItem(ACTIVE_SESSION_KEY);
   };
 
@@ -480,6 +534,7 @@ const Exam = () => {
       exitWarnings: resumeNotice ? 1 : 0,
       total: resumeNotice ? 1 : 0,
     });
+    setMonitoringArmed(false);
     setActivityLog(
       resumeNotice
         ? [
@@ -765,65 +820,61 @@ const Exam = () => {
 
   return (
     <div style={styles.page}>
-      <div
-        style={{
-          ...styles.headerCard,
-          padding: isPhone ? "20px" : "28px",
-          gap: isPhone ? "14px" : "18px",
-        }}
-      >
-        <div>
+      <div style={styles.liveHeader}>
+        <div style={{ minWidth: 0 }}>
           <div style={styles.heroKicker}>Live assessment mode</div>
-          <h2 style={{ margin: "6px 0 8px 0", fontSize: "clamp(28px, 4vw, 42px)" }}>
-            {selectedExam.title}
-          </h2>
-          <div style={{ color: "#64748b" }}>
-            Session ID <strong>{sessionIdRef.current}</strong> | Exam Key{" "}
-            <strong>{selectedExam.examKey || "Open"}</strong>
+          <h2 style={styles.liveTitle}>{selectedExam.title}</h2>
+          <div style={styles.liveMetaRow}>
+            <span style={styles.liveMetaPill}>Session {sessionIdRef.current}</span>
+            <span style={styles.liveMetaPill}>Key {selectedExam.examKey || "Open"}</span>
+            <span style={styles.liveMetaPill}>{selectedExam.course || "General course"}</span>
           </div>
         </div>
 
-        <div
-          style={{
-            ...styles.headerMetrics,
-            gridTemplateColumns: isPhone
-              ? "1fr"
-              : viewportWidth < 920
-              ? "repeat(2, minmax(140px, 1fr))"
-              : "repeat(3, minmax(140px, 1fr))",
-          }}
-        >
-          <div style={styles.metricCard}>
+        <div style={styles.liveHeaderMetrics}>
+          <div style={styles.liveMetricCard}>
             <span>Answered</span>
             <strong>{answeredCount}</strong>
           </div>
-          <div style={styles.metricCard}>
+          <div style={styles.liveMetricCard}>
             <span>Remaining</span>
             <strong>{remainingCount}</strong>
           </div>
-          <div style={{ ...styles.metricCard, minWidth: isPhone ? "auto" : "270px" }}>
+          <div style={styles.timerDock}>
             <Timer duration={(selectedExam?.duration || 5) * 60} onTimeUp={handleSubmit} />
           </div>
         </div>
       </div>
 
+      {!monitoringArmed ? (
+        <div style={styles.resumeNotice}>
+          AI monitoring is warming up. Camera permissions, fullscreen, and live movement checks
+          will arm automatically in a few seconds.
+        </div>
+      ) : null}
+
       <div
         style={{
-          ...styles.examLayout,
+          ...styles.examWorkspace,
           gridTemplateColumns: isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.5fr) minmax(360px, 420px)",
+            : "minmax(0, 1.65fr) minmax(360px, 430px)",
         }}
       >
-        <div style={{ ...styles.questionCard, padding: isPhone ? "18px" : "28px" }}>
+        <div
+          style={{
+            ...styles.questionCard,
+            minHeight: isCompactLayout ? "auto" : "calc(100vh - 180px)",
+          }}
+        >
           <div
             style={{
-              ...styles.questionHeader,
+              ...styles.questionTopBar,
               flexDirection: isPhone ? "column" : "row",
               alignItems: isPhone ? "stretch" : "center",
             }}
           >
-            <div>
+            <div style={{ minWidth: 0 }}>
               <div style={styles.questionBadge}>
                 Question {currentIdx + 1} of {questions.length}
               </div>
@@ -840,7 +891,7 @@ const Exam = () => {
             <div
               style={{
                 ...styles.integrityMini,
-                minWidth: isPhone ? "100%" : "160px",
+                minWidth: isPhone ? "100%" : "170px",
               }}
             >
               <span>Suspicious Activity</span>
@@ -848,39 +899,52 @@ const Exam = () => {
             </div>
           </div>
 
-          <h3 style={styles.questionText}>{currentQuestionText}</h3>
+          <div style={styles.questionScrollArea}>
+            <div style={styles.readinessBanner(telemetry.faceVisible && telemetry.cameraReady)}>
+              <strong>
+                {telemetry.faceVisible
+                  ? "Face is inside the exam frame."
+                  : "Keep your face visible inside the camera guide."}
+              </strong>
+              <span>
+                {telemetry.framingStatus || "Stay centered, well-lit, and keep your eyes on the screen."}
+              </span>
+            </div>
 
-          <div style={styles.optionGrid}>
-            {currentOptions.map((option, index) => {
-              const checked = answers[currentIdx] === option;
+            <h3 style={styles.questionText}>{currentQuestionText}</h3>
 
-              return (
-                <label
-                  key={`${option}-${index}`}
-                  style={{
-                    ...styles.optionCard,
-                    borderColor: checked ? "#2563eb" : "rgba(148, 163, 184, 0.24)",
-                    background: checked
-                      ? "linear-gradient(135deg, rgba(37,99,235,0.08), rgba(6,182,212,0.08))"
-                      : "#fff",
-                  }}
-                >
-                  <input
-                    type="radio"
-                    name={`question-${currentIdx}`}
-                    checked={checked}
-                    onChange={() =>
-                      setAnswers((prev) => ({
-                        ...prev,
-                        [currentIdx]: option,
-                      }))
-                    }
-                    style={{ width: "18px", height: "18px" }}
-                  />
-                  <span>{option}</span>
-                </label>
-              );
-            })}
+            <div style={styles.optionGrid}>
+              {currentOptions.map((option, index) => {
+                const checked = answers[currentIdx] === option;
+
+                return (
+                  <label
+                    key={`${option}-${index}`}
+                    style={{
+                      ...styles.optionCard,
+                      borderColor: checked ? "#2563eb" : "rgba(148, 163, 184, 0.24)",
+                      background: checked
+                        ? "linear-gradient(135deg, rgba(37,99,235,0.08), rgba(6,182,212,0.08))"
+                        : "#fff",
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name={`question-${currentIdx}`}
+                      checked={checked}
+                      onChange={() =>
+                        setAnswers((prev) => ({
+                          ...prev,
+                          [currentIdx]: option,
+                        }))
+                      }
+                      style={{ width: "18px", height: "18px" }}
+                    />
+                    <span>{option}</span>
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
           <div style={styles.navigationRow}>
@@ -915,18 +979,13 @@ const Exam = () => {
           </div>
         </div>
 
-        <aside
-          style={{
-            ...styles.sidebar,
-            order: isPhone ? -1 : 0,
-          }}
-        >
+        <aside style={{ ...styles.sidebar, order: isPhone ? -1 : 0 }}>
           <div
             style={{
-              ...styles.sidebarCard,
-              padding: isPhone ? "16px" : "22px",
+              ...styles.monitorRail,
               position: isCompactLayout ? "relative" : "sticky",
               top: isCompactLayout ? "auto" : "106px",
+              maxHeight: isCompactLayout ? "none" : "calc(100vh - 132px)",
             }}
           >
             <div style={styles.monitorHeader}>
@@ -934,11 +993,11 @@ const Exam = () => {
                 <div style={styles.monitorKicker}>AI monitoring console</div>
                 <h4 style={{ ...styles.sidebarTitle, marginBottom: "6px" }}>Camera + live alerts</h4>
                 <div style={styles.monitorCaption}>
-                  Face lock, posture, audio spikes, and detection guidance stay grouped in one place.
+                  Camera stays pinned here. Face guide, alerts, and detection status all stay in one rail.
                 </div>
               </div>
 
-              <div style={styles.voiceBadge}>Voice guide on</div>
+              <div style={styles.voiceBadge}>{monitoringArmed ? "Monitoring on" : "Warming up"}</div>
             </div>
 
             <Proctoring
@@ -952,7 +1011,7 @@ const Exam = () => {
               compact={isPhone}
             />
 
-            <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
+            <div style={styles.monitorSection}>
               <div style={styles.inlineSectionTitle}>Live alerts</div>
 
               {showWarning ? (
@@ -965,104 +1024,115 @@ const Exam = () => {
                 />
               ) : (
                 <div style={styles.alertPlaceholder}>
-                  No active alert. If your face, posture, or focus drifts, the guidance will appear
-                  here and speak automatically.
+                  No active alert. If face, eyes, focus, clipboard, or window state changes, alerts will show here.
                 </div>
               )}
             </div>
-          </div>
 
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
-            <h4 style={styles.sidebarTitle}>Readiness Signals</h4>
-            <div
-              style={{
-                ...styles.signalList,
-                gridTemplateColumns: "1fr",
-              }}
-            >
-              <SignalRow
-                label="Camera"
-                value={telemetry.cameraReady ? "Connected" : "Checking permissions"}
-                good={telemetry.cameraReady}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Microphone"
-                value={telemetry.microphoneReady ? "Connected" : "Checking permissions"}
-                good={telemetry.microphoneReady}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Face lock"
-                value={telemetry.faceStatus || (telemetry.faceVisible ? "Visible" : "Scanning")}
-                good={telemetry.faceVisible && !telemetry.multipleFaces}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Framing"
-                value={
-                  telemetry.framingStatus || "Center your face inside the camera frame."
-                }
-                good={telemetry.faceVisible}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Room audio"
-                value={`${telemetry.audioLevel || 0}% | ${
-                  telemetry.audioStatus || "Calibrating room"
-                }`}
-                good={(telemetry.audioLevel || 0) < 65}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Multi-face"
-                value={telemetry.multipleFaces ? "Detected" : "Single candidate"}
-                good={!telemetry.multipleFaces}
-                compact={isPhone}
-              />
+            <div style={styles.monitorSection}>
+              <div style={styles.inlineSectionTitle}>Readiness signals</div>
+              <div style={styles.monitorGrid}>
+                <SignalRow
+                  label="Camera"
+                  value={telemetry.cameraReady ? "Connected" : "Checking permissions"}
+                  good={telemetry.cameraReady}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Microphone"
+                  value={telemetry.microphoneReady ? "Connected" : "Optional / blocked"}
+                  good={telemetry.microphoneReady}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Face lock"
+                  value={telemetry.faceStatus || (telemetry.faceVisible ? "Visible" : "Scanning")}
+                  good={telemetry.faceVisible && !telemetry.multipleFaces}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Tracking"
+                  value={`${telemetry.trackingScore || 0}% | ${telemetry.detectionMode || "warmup"}`}
+                  good={(telemetry.trackingScore || 0) >= 70}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Framing"
+                  value={telemetry.framingStatus || "Center your face inside the camera frame."}
+                  good={telemetry.faceVisible}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Room audio"
+                  value={`${telemetry.audioLevel || 0}% | ${telemetry.audioStatus || "Calibrating room"}`}
+                  good={(telemetry.audioLevel || 0) < 65}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Multi-face"
+                  value={telemetry.multipleFaces ? "Detected" : "Single candidate"}
+                  good={!telemetry.multipleFaces}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Monitoring"
+                  value={monitoringArmed ? "Fully armed" : "Permission warmup"}
+                  good={monitoringArmed}
+                  compact={isPhone}
+                />
+              </div>
             </div>
-          </div>
 
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
-            <h4 style={styles.sidebarTitle}>Integrity Snapshot</h4>
-            <div
-              style={{
-                ...styles.signalList,
-                gridTemplateColumns: viewportWidth < 520 ? "1fr" : isPhone ? "1fr 1fr" : "1fr",
-              }}
-            >
-              <SignalRow label="Total Alerts" value={warningCounts.total} compact={isPhone} />
-              <SignalRow label="Eye Tracking" value={warningCounts.eyeWarnings} compact={isPhone} />
-              <SignalRow label="Head Movement" value={warningCounts.headWarnings} compact={isPhone} />
-              <SignalRow label="Audio" value={warningCounts.soundWarnings} compact={isPhone} />
-              <SignalRow label="Tab / Visibility" value={warningCounts.tabWarnings + warningCounts.visibilityWarnings} compact={isPhone} />
-              <SignalRow label="Clipboard" value={warningCounts.copyWarnings + warningCounts.pasteWarnings + warningCounts.cutWarnings} compact={isPhone} />
-              <SignalRow label="Screenshot" value={warningCounts.screenshotWarnings} compact={isPhone} />
-              <SignalRow label="Focus / Share" value={warningCounts.focusWarnings + warningCounts.screenShareWarnings} compact={isPhone} />
+            <div style={styles.monitorSection}>
+              <div style={styles.inlineSectionTitle}>Integrity snapshot</div>
+              <div style={styles.monitorGrid}>
+                <SignalRow label="Total Alerts" value={warningCounts.total} compact={isPhone} />
+                <SignalRow label="Eye Tracking" value={warningCounts.eyeWarnings} compact={isPhone} />
+                <SignalRow label="Head Movement" value={warningCounts.headWarnings} compact={isPhone} />
+                <SignalRow label="Audio" value={warningCounts.soundWarnings} compact={isPhone} />
+                <SignalRow
+                  label="Tab / Visibility"
+                  value={warningCounts.tabWarnings + warningCounts.visibilityWarnings}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Clipboard"
+                  value={warningCounts.copyWarnings + warningCounts.pasteWarnings + warningCounts.cutWarnings}
+                  compact={isPhone}
+                />
+                <SignalRow label="Screenshot" value={warningCounts.screenshotWarnings} compact={isPhone} />
+                <SignalRow
+                  label="Focus / Share"
+                  value={warningCounts.focusWarnings + warningCounts.screenShareWarnings}
+                  compact={isPhone}
+                />
+              </div>
             </div>
-          </div>
 
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
-            <h4 style={styles.sidebarTitle}>Recent Detections</h4>
-            <div style={{ display: "grid", gap: "10px" }}>
-              {activityLog.length === 0 ? (
-                <div style={{ color: "#64748b", fontSize: "14px" }}>No suspicious action recorded yet.</div>
-              ) : (
-                activityLog.slice(0, 5).map((event, index) => (
-                  <div key={`${event.type}-${index}`} style={styles.eventCard}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-                      <strong style={{ textTransform: "capitalize", color: "#0f172a" }}>{event.type}</strong>
-                      <span style={styles.severityBadge(event.severity)}>{event.severity}</span>
-                    </div>
-                    <div style={{ color: "#475569", marginTop: "8px", fontSize: "13px", lineHeight: 1.5 }}>
-                      {event.message}
-                    </div>
-                    <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "8px" }}>
-                      Count {event.count} | {new Date(event.occurredAt).toLocaleTimeString()}
-                    </div>
+            <div style={styles.monitorSection}>
+              <div style={styles.inlineSectionTitle}>Recent detections</div>
+              <div style={{ display: "grid", gap: "10px" }}>
+                {activityLog.length === 0 ? (
+                  <div style={{ color: "#64748b", fontSize: "14px" }}>
+                    No suspicious action recorded yet.
                   </div>
-                ))
-              )}
+                ) : (
+                  activityLog.slice(0, 5).map((event, index) => (
+                    <div key={`${event.type}-${index}`} style={styles.eventCard}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                        <strong style={{ textTransform: "capitalize", color: "#0f172a" }}>{event.type}</strong>
+                        <span style={styles.severityBadge(event.severity)}>{event.severity}</span>
+                      </div>
+                      <div style={{ color: "#475569", marginTop: "8px", fontSize: "13px", lineHeight: 1.5 }}>
+                        {event.message}
+                      </div>
+                      <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "8px" }}>
+                        Count {event.count} | {new Date(event.occurredAt).toLocaleTimeString()}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </aside>
@@ -1287,6 +1357,59 @@ const styles = {
     boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
     textAlign: "center",
   },
+  liveHeader: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "16px",
+    padding: "20px 24px",
+    borderRadius: "28px",
+    background: "rgba(255,255,255,0.94)",
+    boxShadow: "0 18px 40px rgba(15, 23, 42, 0.08)",
+    marginBottom: "18px",
+    alignItems: "start",
+  },
+  liveTitle: {
+    margin: "6px 0 10px 0",
+    fontSize: "clamp(26px, 4vw, 40px)",
+    color: "#0f172a",
+    lineHeight: 1.06,
+  },
+  liveMetaRow: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+  },
+  liveMetaPill: {
+    display: "inline-flex",
+    padding: "9px 12px",
+    borderRadius: "999px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 700,
+    fontSize: "13px",
+  },
+  liveHeaderMetrics: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+    gap: "12px",
+    alignItems: "stretch",
+  },
+  liveMetricCard: {
+    padding: "16px 18px",
+    borderRadius: "20px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.14)",
+    display: "grid",
+    gap: "8px",
+    color: "#0f172a",
+  },
+  timerDock: {
+    padding: "16px 18px",
+    borderRadius: "22px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.14)",
+    minWidth: "220px",
+  },
   headerCard: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
@@ -1317,11 +1440,26 @@ const styles = {
     gap: "24px",
     alignItems: "start",
   },
+  examWorkspace: {
+    display: "grid",
+    gap: "22px",
+    alignItems: "start",
+  },
   questionCard: {
     padding: "28px",
     borderRadius: "30px",
     background: "rgba(255,255,255,0.96)",
     boxShadow: "0 24px 46px rgba(15, 23, 42, 0.08)",
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    gap: "20px",
+    border: "1px solid rgba(148,163,184,0.12)",
+  },
+  questionTopBar: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "16px",
   },
   questionHeader: {
     display: "flex",
@@ -1330,6 +1468,22 @@ const styles = {
     gap: "16px",
     marginBottom: "26px",
   },
+  questionScrollArea: {
+    display: "grid",
+    alignContent: "start",
+    gap: "18px",
+    overflowY: "auto",
+    paddingRight: "4px",
+  },
+  readinessBanner: (good) => ({
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: good ? "#ecfdf5" : "#fff7ed",
+    border: `1px solid ${good ? "#bbf7d0" : "#fdba74"}`,
+    display: "grid",
+    gap: "6px",
+    color: good ? "#166534" : "#9a3412",
+  }),
   questionBadge: {
     display: "inline-block",
     padding: "9px 14px",
@@ -1391,6 +1545,16 @@ const styles = {
   sidebar: {
     display: "grid",
     gap: "18px",
+  },
+  monitorRail: {
+    padding: "20px",
+    borderRadius: "28px",
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid rgba(148,163,184,0.14)",
+    boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
+    display: "grid",
+    gap: "16px",
+    overflowY: "auto",
   },
   sidebarCard: {
     padding: "22px",
@@ -1454,6 +1618,15 @@ const styles = {
   },
   signalList: {
     display: "grid",
+    gap: "10px",
+  },
+  monitorSection: {
+    display: "grid",
+    gap: "10px",
+  },
+  monitorGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
     gap: "10px",
   },
   signalRow: {
