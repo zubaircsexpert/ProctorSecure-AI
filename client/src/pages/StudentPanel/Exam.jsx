@@ -110,6 +110,7 @@ const computeTrustFactor = (score) => {
 };
 
 const Exam = () => {
+  const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [questions, setQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -125,6 +126,8 @@ const Exam = () => {
   const [activityLog, setActivityLog] = useState([]);
   const [showWarning, setShowWarning] = useState(false);
   const [warningMessage, setWarningMessage] = useState("");
+  const [warningSeverity, setWarningSeverity] = useState("medium");
+  const [warningDisplayCount, setWarningDisplayCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [telemetry, setTelemetry] = useState({
@@ -137,6 +140,22 @@ const Exam = () => {
   const hasSubmitted = useRef(false);
   const warningTimeoutRef = useRef(null);
   const sessionIdRef = useRef(createSessionId());
+  const warningCountRef = useRef(initialWarningCounts);
+
+  const isPhone = viewportWidth < 768;
+  const isCompactLayout = viewportWidth < 1120;
+  const shouldEnforceFullscreen =
+    viewportWidth >= 1024 && typeof document !== "undefined" && document.fullscreenEnabled;
+
+  useEffect(() => {
+    const handleResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  useEffect(() => {
+    warningCountRef.current = warningCounts;
+  }, [warningCounts]);
 
   const fetchExams = useCallback(async () => {
     try {
@@ -265,6 +284,16 @@ const Exam = () => {
     if (submitted || hasSubmitted.current) return;
 
     const field = WARNING_FIELD_MAP[type];
+    const nextTotal = (warningCountRef.current?.total || 0) + 1;
+    warningCountRef.current = {
+      ...warningCountRef.current,
+      total: nextTotal,
+      ...(field
+        ? {
+            [field]: (warningCountRef.current?.[field] || 0) + 1,
+          }
+        : {}),
+    };
 
     setWarningCounts((prev) => ({
       ...prev,
@@ -304,6 +333,8 @@ const Exam = () => {
     });
 
     setWarningMessage(message);
+    setWarningSeverity(WARNING_SEVERITY[type] || "medium");
+    setWarningDisplayCount(nextTotal);
     setShowWarning(true);
 
     if (warningTimeoutRef.current) {
@@ -348,7 +379,7 @@ const Exam = () => {
     };
 
     const handleFullscreen = () => {
-      if (!document.fullscreenElement) {
+      if (shouldEnforceFullscreen && !document.fullscreenElement) {
         addWarning("fullscreen", "Fullscreen mode exited during the exam.");
       }
     };
@@ -386,9 +417,12 @@ const Exam = () => {
     document.addEventListener("cut", handleCut);
     document.addEventListener("contextmenu", handleRightClick);
     document.addEventListener("visibilitychange", handleVisibility);
-    document.addEventListener("fullscreenchange", handleFullscreen);
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("blur", handleWindowBlur);
+
+    if (shouldEnforceFullscreen) {
+      document.addEventListener("fullscreenchange", handleFullscreen);
+    }
 
     return () => {
       document.removeEventListener("copy", handleCopy);
@@ -396,11 +430,14 @@ const Exam = () => {
       document.removeEventListener("cut", handleCut);
       document.removeEventListener("contextmenu", handleRightClick);
       document.removeEventListener("visibilitychange", handleVisibility);
-      document.removeEventListener("fullscreenchange", handleFullscreen);
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("blur", handleWindowBlur);
+
+      if (shouldEnforceFullscreen) {
+        document.removeEventListener("fullscreenchange", handleFullscreen);
+      }
     };
-  }, [addWarning, selectedExam, submitted]);
+  }, [addWarning, selectedExam, shouldEnforceFullscreen, submitted]);
 
   const resetExamState = () => {
     setSelectedExam(null);
@@ -455,7 +492,7 @@ const Exam = () => {
     setErrorMessage("");
     sessionIdRef.current = createSessionId();
 
-    if (document.fullscreenEnabled && !document.fullscreenElement) {
+    if (shouldEnforceFullscreen && !document.fullscreenElement) {
       try {
         await document.documentElement.requestFullscreen();
       } catch (err) {
@@ -724,9 +761,13 @@ const Exam = () => {
 
   return (
     <div style={styles.page}>
-      <Proctoring addWarning={addWarning} onTelemetryChange={setTelemetry} />
-
-      <div style={styles.headerCard}>
+      <div
+        style={{
+          ...styles.headerCard,
+          padding: isPhone ? "20px" : "28px",
+          gap: isPhone ? "14px" : "18px",
+        }}
+      >
         <div>
           <div style={styles.heroKicker}>Live assessment mode</div>
           <h2 style={{ margin: "6px 0 8px 0", fontSize: "clamp(28px, 4vw, 42px)" }}>
@@ -738,7 +779,16 @@ const Exam = () => {
           </div>
         </div>
 
-        <div style={styles.headerMetrics}>
+        <div
+          style={{
+            ...styles.headerMetrics,
+            gridTemplateColumns: isPhone
+              ? "1fr"
+              : viewportWidth < 920
+              ? "repeat(2, minmax(140px, 1fr))"
+              : "repeat(3, minmax(140px, 1fr))",
+          }}
+        >
           <div style={styles.metricCard}>
             <span>Answered</span>
             <strong>{answeredCount}</strong>
@@ -747,15 +797,28 @@ const Exam = () => {
             <span>Remaining</span>
             <strong>{remainingCount}</strong>
           </div>
-          <div style={{ ...styles.metricCard, minWidth: "270px" }}>
+          <div style={{ ...styles.metricCard, minWidth: isPhone ? "auto" : "270px" }}>
             <Timer duration={(selectedExam?.duration || 5) * 60} onTimeUp={handleSubmit} />
           </div>
         </div>
       </div>
 
-      <div style={styles.examLayout}>
-        <div style={styles.questionCard}>
-          <div style={styles.questionHeader}>
+      <div
+        style={{
+          ...styles.examLayout,
+          gridTemplateColumns: isCompactLayout
+            ? "1fr"
+            : "minmax(0, 1.5fr) minmax(360px, 420px)",
+        }}
+      >
+        <div style={{ ...styles.questionCard, padding: isPhone ? "18px" : "28px" }}>
+          <div
+            style={{
+              ...styles.questionHeader,
+              flexDirection: isPhone ? "column" : "row",
+              alignItems: isPhone ? "stretch" : "center",
+            }}
+          >
             <div>
               <div style={styles.questionBadge}>
                 Question {currentIdx + 1} of {questions.length}
@@ -770,7 +833,12 @@ const Exam = () => {
               </div>
             </div>
 
-            <div style={styles.integrityMini}>
+            <div
+              style={{
+                ...styles.integrityMini,
+                minWidth: isPhone ? "100%" : "160px",
+              }}
+            >
               <span>Suspicious Activity</span>
               <strong>{suspiciousScorePreview}%</strong>
             </div>
@@ -817,6 +885,7 @@ const Exam = () => {
               onClick={() => setCurrentIdx((prev) => prev - 1)}
               style={{
                 ...styles.secondaryButton,
+                flex: isPhone ? "1 1 100%" : "0 0 auto",
                 opacity: currentIdx === 0 ? 0.45 : 1,
                 cursor: currentIdx === 0 ? "not-allowed" : "pointer",
               }}
@@ -827,12 +896,15 @@ const Exam = () => {
             {currentIdx < questions.length - 1 ? (
               <button
                 onClick={() => setCurrentIdx((prev) => prev + 1)}
-                style={styles.primaryButton}
+                style={{ ...styles.primaryButton, flex: isPhone ? "1 1 100%" : "0 0 auto" }}
               >
                 Save & Next
               </button>
             ) : (
-              <button onClick={handleSubmit} style={styles.submitButton}>
+              <button
+                onClick={handleSubmit}
+                style={{ ...styles.submitButton, flex: isPhone ? "1 1 100%" : "0 0 auto" }}
+              >
                 {submitting ? "Submitting..." : "Final Submit"}
               </button>
             )}
@@ -840,31 +912,57 @@ const Exam = () => {
         </div>
 
         <aside style={styles.sidebar}>
-          <div style={styles.sidebarCard}>
+          <div
+            style={{
+              ...styles.sidebarCard,
+              padding: isPhone ? "16px" : "22px",
+              position: isCompactLayout ? "relative" : "sticky",
+              top: isCompactLayout ? "auto" : "106px",
+            }}
+          >
+            <h4 style={{ ...styles.sidebarTitle, marginBottom: "14px" }}>Live Camera</h4>
+            <Proctoring
+              addWarning={addWarning}
+              onTelemetryChange={setTelemetry}
+              compact={isPhone}
+            />
+          </div>
+
+          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
             <h4 style={styles.sidebarTitle}>Readiness Signals</h4>
-            <div style={styles.signalList}>
-              <SignalRow label="Camera" value={telemetry.cameraReady ? "Connected" : "Checking"} good={telemetry.cameraReady} />
-              <SignalRow label="Microphone" value={telemetry.microphoneReady ? "Connected" : "Checking"} good={telemetry.microphoneReady} />
-              <SignalRow label="Face Visibility" value={telemetry.faceVisible ? "Visible" : "Searching"} good={telemetry.faceVisible} />
-              <SignalRow label="Multi-face" value={telemetry.multipleFaces ? "Detected" : "Clear"} good={!telemetry.multipleFaces} />
+            <div
+              style={{
+                ...styles.signalList,
+                gridTemplateColumns: viewportWidth < 520 ? "1fr" : isPhone ? "1fr 1fr" : "1fr",
+              }}
+            >
+              <SignalRow label="Camera" value={telemetry.cameraReady ? "Connected" : "Checking"} good={telemetry.cameraReady} compact={isPhone} />
+              <SignalRow label="Microphone" value={telemetry.microphoneReady ? "Connected" : "Checking"} good={telemetry.microphoneReady} compact={isPhone} />
+              <SignalRow label="Face Visibility" value={telemetry.faceVisible ? "Visible" : "Searching"} good={telemetry.faceVisible} compact={isPhone} />
+              <SignalRow label="Multi-face" value={telemetry.multipleFaces ? "Detected" : "Clear"} good={!telemetry.multipleFaces} compact={isPhone} />
             </div>
           </div>
 
-          <div style={styles.sidebarCard}>
+          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
             <h4 style={styles.sidebarTitle}>Integrity Log</h4>
-            <div style={styles.signalList}>
-              <SignalRow label="Total Alerts" value={warningCounts.total} />
-              <SignalRow label="Eye Tracking" value={warningCounts.eyeWarnings} />
-              <SignalRow label="Head Movement" value={warningCounts.headWarnings} />
-              <SignalRow label="Audio" value={warningCounts.soundWarnings} />
-              <SignalRow label="Tab / Visibility" value={warningCounts.tabWarnings + warningCounts.visibilityWarnings} />
-              <SignalRow label="Clipboard" value={warningCounts.copyWarnings + warningCounts.pasteWarnings + warningCounts.cutWarnings} />
-              <SignalRow label="Screenshot" value={warningCounts.screenshotWarnings} />
-              <SignalRow label="Focus / Share" value={warningCounts.focusWarnings + warningCounts.screenShareWarnings} />
+            <div
+              style={{
+                ...styles.signalList,
+                gridTemplateColumns: viewportWidth < 520 ? "1fr" : isPhone ? "1fr 1fr" : "1fr",
+              }}
+            >
+              <SignalRow label="Total Alerts" value={warningCounts.total} compact={isPhone} />
+              <SignalRow label="Eye Tracking" value={warningCounts.eyeWarnings} compact={isPhone} />
+              <SignalRow label="Head Movement" value={warningCounts.headWarnings} compact={isPhone} />
+              <SignalRow label="Audio" value={warningCounts.soundWarnings} compact={isPhone} />
+              <SignalRow label="Tab / Visibility" value={warningCounts.tabWarnings + warningCounts.visibilityWarnings} compact={isPhone} />
+              <SignalRow label="Clipboard" value={warningCounts.copyWarnings + warningCounts.pasteWarnings + warningCounts.cutWarnings} compact={isPhone} />
+              <SignalRow label="Screenshot" value={warningCounts.screenshotWarnings} compact={isPhone} />
+              <SignalRow label="Focus / Share" value={warningCounts.focusWarnings + warningCounts.screenShareWarnings} compact={isPhone} />
             </div>
           </div>
 
-          <div style={styles.sidebarCard}>
+          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
             <h4 style={styles.sidebarTitle}>Recent Detections</h4>
             <div style={{ display: "grid", gap: "10px" }}>
               {activityLog.length === 0 ? (
@@ -890,13 +988,27 @@ const Exam = () => {
         </aside>
       </div>
 
-      {showWarning && <WarningModal message={warningMessage} />}
+      {showWarning && (
+        <WarningModal
+          message={warningMessage}
+          severity={warningSeverity}
+          count={warningDisplayCount}
+          compact={isPhone}
+        />
+      )}
     </div>
   );
 };
 
-const SignalRow = ({ label, value, good }) => (
-  <div style={styles.signalRow}>
+const SignalRow = ({ label, value, good, compact = false }) => (
+  <div
+    style={{
+      ...styles.signalRow,
+      flexDirection: compact ? "column" : "row",
+      alignItems: compact ? "flex-start" : "center",
+      gap: compact ? "8px" : "12px",
+    }}
+  >
     <span style={{ color: "#475569" }}>{label}</span>
     <strong style={{ color: good === false ? "#dc2626" : "#0f172a" }}>{value}</strong>
   </div>

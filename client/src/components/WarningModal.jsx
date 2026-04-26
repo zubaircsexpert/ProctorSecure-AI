@@ -1,43 +1,99 @@
-const WarningModal = ({ message }) => {
+const severityPalette = {
+  medium: {
+    background: "linear-gradient(180deg, #fff9f2 0%, #ffffff 100%)",
+    border: "1px solid rgba(249, 115, 22, 0.16)",
+    accent: "#ea580c",
+  },
+  high: {
+    background: "linear-gradient(180deg, #fff7ed 0%, #ffffff 100%)",
+    border: "1px solid rgba(245, 158, 11, 0.18)",
+    accent: "#d97706",
+  },
+  critical: {
+    background: "linear-gradient(180deg, #fff1f2 0%, #ffffff 100%)",
+    border: "1px solid rgba(239, 68, 68, 0.18)",
+    accent: "#dc2626",
+  },
+};
+
+const WarningModal = ({ message, severity = "medium", count = 0, compact = false }) => {
+  const palette = severityPalette[severity] || severityPalette.medium;
+
   return (
     <div
       style={{
         position: "fixed",
-        inset: 0,
-        background: "rgba(15, 23, 42, 0.28)",
-        display: "grid",
-        placeItems: "center",
+        top: compact ? "96px" : "110px",
+        right: compact ? "12px" : "18px",
+        left: compact ? "12px" : "auto",
         zIndex: 2500,
-        padding: "20px",
+        pointerEvents: "none",
       }}
     >
       <div
         style={{
-          width: "min(420px, 100%)",
-          borderRadius: "26px",
-          padding: "24px",
-          background: "linear-gradient(180deg, #fff9f2 0%, #ffffff 100%)",
-          border: "1px solid rgba(249, 115, 22, 0.14)",
-          boxShadow: "0 28px 56px rgba(15, 23, 42, 0.18)",
+          width: compact ? "100%" : "min(380px, calc(100vw - 36px))",
+          borderRadius: compact ? "22px" : "24px",
+          padding: compact ? "16px 18px" : "18px 20px",
+          background: palette.background,
+          border: palette.border,
+          boxShadow: "0 20px 40px rgba(15, 23, 42, 0.16)",
           textAlign: "left",
+          backdropFilter: "blur(10px)",
         }}
       >
         <div
           style={{
-            fontSize: "12px",
-            fontWeight: 800,
-            letterSpacing: "0.12em",
-            textTransform: "uppercase",
-            color: "#ea580c",
-            marginBottom: "10px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: "12px",
+            marginBottom: "8px",
           }}
         >
-          Suspicious activity detected
+          <div
+            style={{
+              fontSize: "11px",
+              fontWeight: 800,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: palette.accent,
+            }}
+          >
+            Suspicious activity detected
+          </div>
+
+          <div
+            style={{
+              minWidth: "34px",
+              height: "34px",
+              borderRadius: "999px",
+              display: "grid",
+              placeItems: "center",
+              background: "rgba(15, 23, 42, 0.06)",
+              color: "#0f172a",
+              fontWeight: 800,
+              fontSize: "13px",
+            }}
+          >
+            {count}
+          </div>
         </div>
-        <h3 style={{ margin: "0 0 8px 0", fontSize: "24px", color: "#111827" }}>
-          Stay focused on the exam window
-        </h3>
-        <p style={{ margin: 0, color: "#475569", lineHeight: 1.6 }}>{message}</p>
+
+        <div
+          style={{
+            fontSize: compact ? "16px" : "18px",
+            fontWeight: 800,
+            color: "#111827",
+            marginBottom: "6px",
+          }}
+        >
+          Warning counted, exam continues
+        </div>
+
+        <p style={{ margin: 0, color: "#475569", lineHeight: 1.55, fontSize: compact ? "14px" : "15px" }}>
+          {message}
+        </p>
       </div>
     </div>
   );

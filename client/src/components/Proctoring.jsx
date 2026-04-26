@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
 
-const Proctoring = ({ addWarning, onTelemetryChange }) => {
+const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const detectionIntervalRef = useRef(null);
@@ -21,20 +21,26 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
   const [presenceLabel, setPresenceLabel] = useState("Scanning face");
   const [audioLevel, setAudioLevel] = useState(0);
 
-  const emitTelemetry = useCallback((payload) => {
-    if (typeof onTelemetryChange === "function") {
-      onTelemetryChange(payload);
-    }
-  }, [onTelemetryChange]);
+  const emitTelemetry = useCallback(
+    (payload) => {
+      if (typeof onTelemetryChange === "function") {
+        onTelemetryChange(payload);
+      }
+    },
+    [onTelemetryChange]
+  );
 
-  const triggerWarning = useCallback((type, message, cooldown = 4000) => {
-    const now = Date.now();
+  const triggerWarning = useCallback(
+    (type, message, cooldown = 4000) => {
+      const now = Date.now();
 
-    if (now - (lastWarningRef.current[type] || 0) > cooldown) {
-      addWarning(type, message);
-      lastWarningRef.current[type] = now;
-    }
-  }, [addWarning]);
+      if (now - (lastWarningRef.current[type] || 0) > cooldown) {
+        addWarning(type, message);
+        lastWarningRef.current[type] = now;
+      }
+    },
+    [addWarning]
+  );
 
   const startDetection = useCallback(() => {
     clearInterval(detectionIntervalRef.current);
@@ -48,7 +54,10 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
         const detections = await faceapi
           .detectAllFaces(
             videoRef.current,
-            new faceapi.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.45 })
+            new faceapi.TinyFaceDetectorOptions({
+              inputSize: compact ? 192 : 224,
+              scoreThreshold: 0.45,
+            })
           )
           .withFaceLandmarks();
 
@@ -100,8 +109,12 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
         const distRight = Math.abs(jaw[16].x - nosePoint.x);
         const yawRatio = distLeft / Math.max(distRight, 1);
 
-        const headTurned = shiftX > 0.22 || shiftY > 0.2 || yawRatio < 0.65 || yawRatio > 1.55;
-        const eyesShifted = eyeDrift > 0.085;
+        const headTurned =
+          shiftX > (compact ? 0.26 : 0.22) ||
+          shiftY > (compact ? 0.24 : 0.2) ||
+          yawRatio < 0.65 ||
+          yawRatio > 1.55;
+        const eyesShifted = eyeDrift > (compact ? 0.095 : 0.085);
 
         setPresenceLabel(headTurned ? "Head movement" : eyesShifted ? "Eye drift" : "Focused");
 
@@ -115,8 +128,8 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
       } catch (err) {
         console.error("Face detection error:", err);
       }
-    }, 900);
-  }, [emitTelemetry, triggerWarning]);
+    }, compact ? 1100 : 900);
+  }, [compact, emitTelemetry, triggerWarning]);
 
   const startAudioDetection = useCallback(async () => {
     if (!streamRef.current) {
@@ -148,12 +161,12 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
         if (averageLevel > 58) {
           triggerWarning("sound", "Talking or strong background noise detected.", 5000);
         }
-      }, 1600);
+      }, compact ? 2200 : 1600);
     } catch (err) {
       console.error("Audio monitoring error:", err);
       emitTelemetry({ microphoneReady: false });
     }
-  }, [emitTelemetry, triggerWarning]);
+  }, [compact, emitTelemetry, triggerWarning]);
 
   useEffect(() => {
     let mounted = true;
@@ -194,8 +207,8 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "user",
-            width: { ideal: 960 },
-            height: { ideal: 540 },
+            width: { ideal: compact ? 720 : 960 },
+            height: { ideal: compact ? 540 : 640 },
           },
           audio: true,
         });
@@ -234,22 +247,17 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
         streamRef.current.getTracks().forEach((track) => track.stop());
       }
     };
-  }, [addWarning, emitTelemetry, modelsLoaded, startAudioDetection, startDetection]);
+  }, [addWarning, compact, emitTelemetry, modelsLoaded, startAudioDetection, startDetection]);
 
   return (
     <div
       style={{
-        position: "fixed",
-        right: "18px",
-        bottom: "18px",
-        width: "min(260px, calc(100vw - 36px))",
-        borderRadius: "24px",
+        borderRadius: compact ? "24px" : "26px",
         overflow: "hidden",
-        background: "rgba(10, 18, 38, 0.88)",
+        background: "rgba(10, 18, 38, 0.96)",
         border: "1px solid rgba(255,255,255,0.08)",
-        boxShadow: "0 24px 46px rgba(15, 23, 42, 0.28)",
-        zIndex: 1900,
-        backdropFilter: "blur(16px)",
+        boxShadow: "0 24px 46px rgba(15, 23, 42, 0.18)",
+        width: "100%",
       }}
     >
       <div
@@ -258,9 +266,10 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
           alignItems: "center",
           justifyContent: "space-between",
           gap: "12px",
-          padding: "12px 14px 10px",
+          padding: compact ? "14px 14px 10px" : "14px 16px 12px",
           color: "#e2e8f0",
           fontSize: "12px",
+          flexWrap: compact ? "wrap" : "nowrap",
         }}
       >
         <div>
@@ -273,8 +282,11 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
           style={{
             padding: "6px 10px",
             borderRadius: "999px",
-            background: "rgba(34, 197, 94, 0.16)",
-            color: "#86efac",
+            background:
+              presenceLabel === "Focused"
+                ? "rgba(34, 197, 94, 0.18)"
+                : "rgba(249, 115, 22, 0.18)",
+            color: presenceLabel === "Focused" ? "#86efac" : "#fdba74",
             fontWeight: 700,
           }}
         >
@@ -282,49 +294,60 @@ const Proctoring = ({ addWarning, onTelemetryChange }) => {
         </div>
       </div>
 
-      <video
-        ref={videoRef}
-        autoPlay
-        muted
-        playsInline
-        style={{
-          width: "100%",
-          aspectRatio: "16 / 10",
-          objectFit: "cover",
-          display: "block",
-          background: "#020617",
-        }}
-      />
-
       <div
         style={{
-          padding: "12px 14px 14px",
+          padding: compact ? "0 14px 14px" : "0 16px 16px",
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
           gap: "12px",
-          color: "#e2e8f0",
         }}
       >
-        <div
+        <video
+          ref={videoRef}
+          autoPlay
+          muted
+          playsInline
           style={{
-            padding: "10px 12px",
-            borderRadius: "16px",
-            background: "rgba(255,255,255,0.06)",
+            width: "100%",
+            aspectRatio: compact ? "4 / 3" : "16 / 10",
+            objectFit: "cover",
+            display: "block",
+            background: "#020617",
+            borderRadius: compact ? "18px" : "20px",
+            border: "1px solid rgba(255,255,255,0.08)",
           }}
-        >
-          <div style={{ fontSize: "11px", color: "rgba(226,232,240,0.65)" }}>Face status</div>
-          <div style={{ fontSize: "14px", fontWeight: 700 }}>{presenceLabel}</div>
-        </div>
+        />
 
         <div
           style={{
-            padding: "10px 12px",
-            borderRadius: "16px",
-            background: "rgba(255,255,255,0.06)",
+            display: "grid",
+            gridTemplateColumns: compact ? "1fr 1fr" : "1fr 1fr",
+            gap: "10px",
+            color: "#e2e8f0",
           }}
         >
-          <div style={{ fontSize: "11px", color: "rgba(226,232,240,0.65)" }}>Audio meter</div>
-          <div style={{ fontSize: "14px", fontWeight: 700 }}>{audioLevel}%</div>
+          <div
+            style={{
+              padding: compact ? "10px 12px" : "12px 14px",
+              borderRadius: "16px",
+              background: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <div style={{ fontSize: "11px", color: "rgba(226,232,240,0.65)" }}>Face status</div>
+            <div style={{ fontSize: compact ? "13px" : "14px", fontWeight: 700 }}>
+              {presenceLabel}
+            </div>
+          </div>
+
+          <div
+            style={{
+              padding: compact ? "10px 12px" : "12px 14px",
+              borderRadius: "16px",
+              background: "rgba(255,255,255,0.06)",
+            }}
+          >
+            <div style={{ fontSize: "11px", color: "rgba(226,232,240,0.65)" }}>Audio meter</div>
+            <div style={{ fontSize: compact ? "13px" : "14px", fontWeight: 700 }}>{audioLevel}%</div>
+          </div>
         </div>
       </div>
     </div>
