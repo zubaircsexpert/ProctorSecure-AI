@@ -17,6 +17,17 @@ const resultSchema = new mongoose.Schema({
     ref: "User",
     required: true,
   },
+  teacherId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
+  classroomId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Classroom",
+    default: null,
+  },
+  classroomName: { type: String, default: "", trim: true },
   examId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Exam",
@@ -24,6 +35,7 @@ const resultSchema = new mongoose.Schema({
   },
   studentName: { type: String, required: true, trim: true },
   testName: { type: String, required: true, trim: true },
+  assessmentType: { type: String, default: "exam", trim: true },
   score: { type: Number, default: 0 },
   total: { type: Number, default: 0 },
   answeredCount: { type: Number, default: 0 },
@@ -62,5 +74,7 @@ const resultSchema = new mongoose.Schema({
   activityLog: { type: [activityLogSchema], default: [] },
   createdAt: { type: Date, default: Date.now },
 });
+
+resultSchema.index({ teacherId: 1, classroomId: 1, createdAt: -1 });
 
 export default mongoose.model("Result", resultSchema);

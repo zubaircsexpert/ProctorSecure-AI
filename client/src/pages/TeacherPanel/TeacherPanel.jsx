@@ -1,185 +1,462 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, ClipboardList, Pencil, Play, Square, Trash2, XCircle } from "lucide-react";
-import NotificationManager from "./NotificationManager";
-import AssignmentManager from "./AssignmentManager";
-import ResultsList from "./ResultsList";
-import ExamChecker from "./ExamChecker";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  BellRing,
+  BookOpenCheck,
+  BrainCircuit,
+  CalendarClock,
+  Check,
+  ClipboardCheck,
+  ExternalLink,
+  FileStack,
+  GraduationCap,
+  LayoutDashboard,
+  Pencil,
+  Play,
+  ShieldCheck,
+  Square,
+  Trash2,
+  UserCheck,
+  Users,
+  X,
+  XCircle,
+} from "lucide-react";
 import API from "../../services/api";
+import ExamChecker from "./ExamChecker";
 
-const TeacherPanel = () => {
-  const [activeTab, setActiveTab] = useState("exams");
+const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
-  const [notifications, setNotifications] = useState([]);
-  const [formData, setFormData] = useState({
-    title: "",
-    message: "",
-    type: "general",
-  });
-  const [isEditing, setIsEditing] = useState(false);
-  const [currentId, setCurrentId] = useState(null);
+const tabs = [
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "classrooms", label: "Classrooms", icon: GraduationCap },
+  { id: "approvals", label: "Approvals", icon: UserCheck },
+  { id: "exams", label: "Exams", icon: CalendarClock },
+  { id: "assignments", label: "Assignments", icon: FileStack },
+  { id: "announcements", label: "Announcements", icon: BellRing },
+  { id: "results", label: "Results", icon: ClipboardCheck },
+  { id: "examCheck", label: "Paper Check", icon: BookOpenCheck },
+];
 
+const emptyNotice = { type: "", text: "" };
+
+const initialClassroomForm = {
+  name: "",
+  department: "",
+  program: "",
+  section: "",
+  semester: "",
+  description: "",
+};
+
+const initialExamForm = {
+  classroomId: "",
+  course: "",
+  title: "",
+  syllabus: "",
+  duration: "",
+  examKey: "",
+  assessmentType: "exam",
+  instructions: "",
+  startTime: "",
+  endTime: "",
+};
+
+const initialQuestionForm = {
+  examId: "",
+  questionText: "",
+  optionA: "",
+  optionB: "",
+  optionC: "",
+  optionD: "",
+  correctAnswer: "",
+};
+
+const initialAssignmentForm = {
+  classroomId: "",
+  title: "",
+  dueDate: "",
+  description: "",
+};
+
+const initialNotificationForm = {
+  classroomId: "",
+  title: "",
+  message: "",
+  type: "general",
+  priority: "normal",
+  audience: "classroom",
+};
+
+const toLocalInputValue = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (number) => String(number).padStart(2, "0");
+
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(
+    date.getHours()
+  )}:${pad(date.getMinutes())}`;
+};
+
+const formatDateTime = (value, fallback = "Not scheduled") => {
+  if (!value) return fallback;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? fallback : date.toLocaleString();
+};
+
+const getDaysUntil = (value) => {
+  if (!value) return null;
+  const target = new Date(value).getTime();
+  if (Number.isNaN(target)) return null;
+  return Math.ceil((target - Date.now()) / (1000 * 60 * 60 * 24));
+};
+
+const buildUploadUrl = (relativePath) =>
+  relativePath ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}` : "";
+
+function TeacherPanel() {
+  const [activeTab, setActiveTab] = useState("overview");
+  const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState("");
+  const [notice, setNotice] = useState(emptyNotice);
+
+  const [profile, setProfile] = useState(null);
+  const [classrooms, setClassrooms] = useState([]);
+  const [approvalQueue, setApprovalQueue] = useState([]);
+  const [roster, setRoster] = useState([]);
   const [exams, setExams] = useState([]);
-  const [examForm, setExamForm] = useState({
-    course: "",
-    title: "",
-    syllabus: "",
-    duration: "",
-    examKey: "",
-    startTime: "",
-    endTime: "",
-  });
-  const [editingExamId, setEditingExamId] = useState(null);
-
+  const [questions, setQuestions] = useState([]);
   const [assignments, setAssignments] = useState([]);
-  const [assignForm, setAssignForm] = useState({ title: "", dueDate: "" });
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [marksInput, setMarksInput] = useState({});
+  const [notifications, setNotifications] = useState([]);
+  const [results, setResults] = useState([]);
 
-  const [questionForm, setQuestionForm] = useState({
-    examId: "",
-    questionText: "",
-    optionA: "",
-    optionB: "",
-    optionC: "",
-    optionD: "",
-    correctAnswer: "",
-  });
+  const [classroomForm, setClassroomForm] = useState(initialClassroomForm);
+  const [examForm, setExamForm] = useState(initialExamForm);
+  const [questionForm, setQuestionForm] = useState(initialQuestionForm);
+  const [assignmentForm, setAssignmentForm] = useState(initialAssignmentForm);
+  const [assignmentFile, setAssignmentFile] = useState(null);
+  const [notificationForm, setNotificationForm] = useState(initialNotificationForm);
+  const [editingExamId, setEditingExamId] = useState(null);
+  const [editingNotificationId, setEditingNotificationId] = useState(null);
+  const [submissionDrafts, setSubmissionDrafts] = useState({});
 
-  const isExamEditing = Boolean(editingExamId);
+  const classOptions = useMemo(
+    () => classrooms.map((classroom) => ({ value: classroom.id, label: classroom.label })),
+    [classrooms]
+  );
 
-  const toISODateTime = (value) => {
-    return value ? new Date(value).toISOString() : null;
-  };
+  const questionsByExam = useMemo(
+    () =>
+      questions.reduce((accumulator, question) => {
+        const key = String(question.examId);
+        accumulator[key] = accumulator[key] || [];
+        accumulator[key].push(question);
+        return accumulator;
+      }, {}),
+    [questions]
+  );
 
-  const toLocalInputValue = (value) => {
-    if (!value) return "";
-    const date = new Date(value);
-    const pad = (n) => String(n).padStart(2, "0");
+  const rosterByClassroom = useMemo(
+    () =>
+      roster.reduce((accumulator, student) => {
+        const key = student.classroomName || "Unassigned";
+        accumulator[key] = accumulator[key] || [];
+        accumulator[key].push(student);
+        return accumulator;
+      }, {}),
+    [roster]
+  );
 
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(
-      date.getDate()
-    )}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  };
+  const dashboardMetrics = useMemo(() => {
+    const liveExams = exams.filter((exam) => exam.status === "live").length;
+    const scheduledExams = exams.filter((exam) => exam.status === "scheduled").length;
+    const submissionsToReview = assignments.reduce(
+      (sum, assignment) =>
+        sum +
+        (assignment.submissions || []).filter((submission) => submission.status !== "Checked").length,
+      0
+    );
+    const flaggedResults = results.filter(
+      (result) => Number(result.suspiciousScore || result.cheatingPercent || 0) >= 35
+    ).length;
+
+    return {
+      classrooms: classrooms.length,
+      pendingApprovals: approvalQueue.length,
+      roster: roster.length,
+      liveExams,
+      scheduledExams,
+      submissionsToReview,
+      flaggedResults,
+      notifications: notifications.length,
+    };
+  }, [approvalQueue.length, assignments, classrooms.length, exams, notifications.length, results, roster.length]);
+
+  const aiCoach = useMemo(() => {
+    const nextExam = [...exams]
+      .filter((exam) => exam.status !== "closed")
+      .sort((left, right) => new Date(left.startTime || 0) - new Date(right.startTime || 0))[0];
+    const daysToExam = getDaysUntil(nextExam?.startTime);
+    const cards = [];
+
+    if (approvalQueue.length) {
+      cards.push(
+        `${approvalQueue.length} student approval request(s) are waiting. Clearing them early keeps classroom access clean before the next exam.`
+      );
+    }
+
+    if (nextExam && daysToExam !== null) {
+      if (daysToExam <= 1) {
+        cards.push(
+          `${nextExam.title} is close. Double-check exam key, question bank, and camera guidance before going live.`
+        );
+      } else {
+        cards.push(
+          `${nextExam.title} is in ${daysToExam} day(s). Use today for announcements and tomorrow for readiness checks.`
+        );
+      }
+    }
+
+    if (dashboardMetrics.flaggedResults > 0) {
+      cards.push(
+        `${dashboardMetrics.flaggedResults} result(s) have elevated suspicious score. Review integrity logs before final academic decisions.`
+      );
+    }
+
+    if (dashboardMetrics.submissionsToReview > 0) {
+      cards.push(
+        `${dashboardMetrics.submissionsToReview} assignment submission(s) still need review. Closing them keeps student dashboard signals accurate.`
+      );
+    }
+
+    if (!cards.length) {
+      cards.push(
+        "Your teacher workspace is in a healthy state. You can use this window to create the next class exam or publish a schedule update."
+      );
+    }
+
+    return cards.slice(0, 4);
+  }, [approvalQueue.length, dashboardMetrics.flaggedResults, dashboardMetrics.submissionsToReview, exams]);
+
+  const loadWorkspace = useCallback(async (silent = false) => {
+    if (!silent) {
+      setLoading(true);
+    }
+
+    const requests = await Promise.allSettled([
+      API.get("/api/auth/me"),
+      API.get("/api/classrooms/my"),
+      API.get("/api/teacher/approval-queue"),
+      API.get("/api/teacher/roster"),
+      API.get("/api/exams/all"),
+      API.get("/api/questions"),
+      API.get("/api/assignments/all"),
+      API.get("/api/notifications/all"),
+      API.get("/api/results"),
+    ]);
+
+    const [
+      profileRes,
+      classroomsRes,
+      approvalsRes,
+      rosterRes,
+      examsRes,
+      questionsRes,
+      assignmentsRes,
+      notificationsRes,
+      resultsRes,
+    ] = requests;
+
+    if (profileRes.status === "fulfilled") {
+      setProfile(profileRes.value.data?.user || null);
+    }
+
+    if (classroomsRes.status === "fulfilled") {
+      const nextClassrooms = Array.isArray(classroomsRes.value.data) ? classroomsRes.value.data : [];
+      setClassrooms(nextClassrooms);
+      setClassroomForm((prev) => ({
+        ...prev,
+        department: prev.department || profileRes.value?.data?.user?.department || "",
+      }));
+      setExamForm((prev) => ({
+        ...prev,
+        classroomId: prev.classroomId || nextClassrooms[0]?.id || "",
+      }));
+      setAssignmentForm((prev) => ({
+        ...prev,
+        classroomId: prev.classroomId || nextClassrooms[0]?.id || "",
+      }));
+      setNotificationForm((prev) => ({
+        ...prev,
+        classroomId: prev.classroomId || nextClassrooms[0]?.id || "",
+      }));
+    }
+
+    if (approvalsRes.status === "fulfilled") {
+      setApprovalQueue(Array.isArray(approvalsRes.value.data) ? approvalsRes.value.data : []);
+    }
+
+    if (rosterRes.status === "fulfilled") {
+      setRoster(Array.isArray(rosterRes.value.data) ? rosterRes.value.data : []);
+    }
+
+    if (examsRes.status === "fulfilled") {
+      setExams(Array.isArray(examsRes.value.data) ? examsRes.value.data : []);
+    }
+
+    if (questionsRes.status === "fulfilled") {
+      setQuestions(Array.isArray(questionsRes.value.data) ? questionsRes.value.data : []);
+    }
+
+    if (assignmentsRes.status === "fulfilled") {
+      setAssignments(Array.isArray(assignmentsRes.value.data) ? assignmentsRes.value.data : []);
+    }
+
+    if (notificationsRes.status === "fulfilled") {
+      setNotifications(Array.isArray(notificationsRes.value.data) ? notificationsRes.value.data : []);
+    }
+
+    if (resultsRes.status === "fulfilled") {
+      setResults(Array.isArray(resultsRes.value.data) ? resultsRes.value.data : []);
+    }
+
+    const hasFailure = requests.some((request) => request.status === "rejected");
+    if (hasFailure) {
+      setNotice({
+        type: "error",
+        text: "Some teacher workspace data could not be refreshed. Retry after a moment.",
+      });
+    }
+
+    if (!silent) {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadWorkspace();
+    const refreshTimer = window.setInterval(() => loadWorkspace(true), 15000);
+    return () => window.clearInterval(refreshTimer);
+  }, [loadWorkspace]);
 
   const resetExamForm = () => {
-    setExamForm({
-      course: "",
-      title: "",
-      syllabus: "",
-      duration: "",
-      examKey: "",
-      startTime: "",
-      endTime: "",
-    });
     setEditingExamId(null);
+    setExamForm((prev) => ({
+      ...initialExamForm,
+      classroomId: classrooms[0]?.id || prev.classroomId || "",
+    }));
   };
 
-  const fetchNotifications = useCallback(async () => {
-    try {
-      const res = await API.get("/api/notifications/all");
-      setNotifications(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Error fetching notifications:", err);
-    }
-  }, []);
+  const resetNotificationForm = () => {
+    setEditingNotificationId(null);
+    setNotificationForm((prev) => ({
+      ...initialNotificationForm,
+      classroomId: classrooms[0]?.id || prev.classroomId || "",
+    }));
+  };
 
-  const fetchExams = useCallback(async () => {
-    try {
-      const res = await API.get("/api/exams/all");
-      setExams(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Error fetching exams:", err);
-    }
-  }, []);
+  const handleCreateClassroom = async (event) => {
+    event.preventDefault();
+    setBusyKey("create-classroom");
+    setNotice(emptyNotice);
 
-  const fetchAssignments = useCallback(async () => {
     try {
-      const res = await API.get("/api/assignments/all");
-      setAssignments(Array.isArray(res.data) ? res.data : []);
-    } catch (err) {
-      console.error("Error fetching assignments:", err);
+      await API.post("/api/classrooms", classroomForm);
+      setClassroomForm({
+        ...initialClassroomForm,
+        department: classroomForm.department || profile?.department || "",
+      });
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "New classroom created successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to create classroom.",
+      });
+    } finally {
+      setBusyKey("");
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    const bootTimer = window.setTimeout(() => {
-      fetchExams();
-    }, 0);
-    const examInterval = setInterval(fetchExams, 10000);
-    return () => {
-      window.clearTimeout(bootTimer);
-      clearInterval(examInterval);
+  const handleApproval = async (studentId, action) => {
+    let rejectedReason = "";
+
+    if (action === "reject") {
+      rejectedReason =
+        window.prompt("Optional rejection reason for this student request:") || "";
+    }
+
+    setBusyKey(`approval-${studentId}-${action}`);
+    setNotice(emptyNotice);
+
+    try {
+      await API.put(`/api/teacher/approval-queue/${studentId}`, {
+        action,
+        rejectedReason,
+      });
+      await loadWorkspace(true);
+      setNotice({
+        type: "success",
+        text:
+          action === "approve"
+            ? "Student approved successfully."
+            : "Student request rejected successfully.",
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to update student approval.",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const handleExamSubmit = async (event) => {
+    event.preventDefault();
+    setBusyKey("save-exam");
+    setNotice(emptyNotice);
+
+    const payload = {
+      ...examForm,
+      duration: Number(examForm.duration),
+      startTime: examForm.startTime ? new Date(examForm.startTime).toISOString() : null,
+      endTime: examForm.endTime ? new Date(examForm.endTime).toISOString() : null,
     };
-  }, [fetchExams]);
-
-  useEffect(() => {
-    const bootTimer = window.setTimeout(() => {
-      if (activeTab === "notifications" && notifications.length === 0) {
-        fetchNotifications();
-      }
-
-      if (activeTab === "assignments" && assignments.length === 0) {
-        fetchAssignments();
-      }
-    }, 0);
-
-    return () => window.clearTimeout(bootTimer);
-  }, [activeTab, assignments.length, fetchAssignments, fetchNotifications, notifications.length]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (isEditing) {
-        await API.put(`/api/notifications/update/${currentId}`, formData);
-        setIsEditing(false);
-      } else {
-        await API.post("/api/notifications/add", formData);
-      }
-
-      setFormData({ title: "", message: "", type: "general" });
-      fetchNotifications();
-    } catch {
-      alert("Failed to save notification");
-    }
-  };
-
-  const handleExamPost = async (e) => {
-    e.preventDefault();
 
     try {
-      const payload = {
-        course: examForm.course,
-        title: examForm.title,
-        syllabus: examForm.syllabus,
-        duration: Number(examForm.duration),
-        examKey: examForm.examKey,
-        startTime: toISODateTime(examForm.startTime),
-        endTime: toISODateTime(examForm.endTime),
-      };
-
-      if (isExamEditing) {
+      if (editingExamId) {
         await API.put(`/api/exams/update/${editingExamId}`, payload);
-        alert("Exam Updated ✅");
       } else {
         await API.post("/api/exams/add", payload);
-        alert("Exam Scheduled ✅");
       }
 
       resetExamForm();
-      fetchExams();
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to save exam");
+      await loadWorkspace(true);
+      setNotice({
+        type: "success",
+        text: editingExamId ? "Exam updated successfully." : "Exam scheduled successfully.",
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to save exam.",
+      });
+    } finally {
+      setBusyKey("");
     }
   };
 
   const startEditExam = (exam) => {
     setEditingExamId(exam._id);
     setExamForm({
+      classroomId: exam.classroomId || classrooms[0]?.id || "",
       course: exam.course || "",
       title: exam.title || "",
       syllabus: exam.syllabus || "",
       duration: exam.duration || "",
       examKey: exam.examKey || "",
+      assessmentType: exam.assessmentType || "exam",
+      instructions: exam.instructions || "",
       startTime: toLocalInputValue(exam.startTime),
       endTime: toLocalInputValue(exam.endTime),
     });
@@ -187,63 +464,56 @@ const TeacherPanel = () => {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const updateExamState = async (id, payload) => {
+  const updateExamState = async (examId, payload, message) => {
+    setBusyKey(`exam-status-${examId}`);
+    setNotice(emptyNotice);
+
     try {
-      await API.put(`/api/exams/update-status/${id}`, payload);
-      fetchExams();
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to update exam");
+      await API.put(`/api/exams/update-status/${examId}`, payload);
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: message });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to update exam status.",
+      });
+    } finally {
+      setBusyKey("");
     }
   };
 
-  const goLiveExam = async (exam) => {
-    await updateExamState(exam._id, {
-      status: "live",
-      accessGranted: true,
-    });
-  };
+  const deleteExam = async (examId) => {
+    if (!window.confirm("Delete this exam and all linked MCQs?")) {
+      return;
+    }
 
-  const stopExamAccess = async (exam) => {
-    await updateExamState(exam._id, {
-      status: "scheduled",
-      accessGranted: false,
-    });
-  };
-
-  const closeExam = async (exam) => {
-    await updateExamState(exam._id, {
-      status: "closed",
-      accessGranted: false,
-    });
-  };
-
-  const deleteExam = async (id) => {
-    const ok = window.confirm("Are you sure you want to delete this exam?");
-    if (!ok) return;
+    setBusyKey(`delete-exam-${examId}`);
+    setNotice(emptyNotice);
 
     try {
-      await API.delete(`/api/exams/delete/${id}`);
-      fetchExams();
-
-      if (editingExamId === id) {
+      await API.delete(`/api/exams/delete/${examId}`);
+      if (editingExamId === examId) {
         resetExamForm();
       }
-
-      alert("Exam deleted ✅");
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to delete exam");
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Exam deleted successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to delete exam.",
+      });
+    } finally {
+      setBusyKey("");
     }
   };
 
-  const handleQuestionSubmit = async (e) => {
-    e.preventDefault();
-
-    if (!questionForm.examId) {
-      return alert("Select an exam first");
-    }
+  const handleQuestionSubmit = async (event) => {
+    event.preventDefault();
+    setBusyKey("add-question");
+    setNotice(emptyNotice);
 
     try {
-      const payload = {
+      await API.post("/api/questions/add", {
         examId: questionForm.examId,
         questionText: questionForm.questionText,
         options: [
@@ -253,531 +523,1929 @@ const TeacherPanel = () => {
           questionForm.optionD,
         ],
         correctAnswer: questionForm.correctAnswer,
-      };
-
-      await API.post("/api/questions/add", payload);
-
-      alert("MCQ Added Successfully ✅");
-      setQuestionForm({
-        examId: questionForm.examId,
-        questionText: "",
-        optionA: "",
-        optionB: "",
-        optionC: "",
-        optionD: "",
-        correctAnswer: "",
       });
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to add MCQ");
+
+      setQuestionForm((prev) => ({
+        ...initialQuestionForm,
+        examId: prev.examId,
+      }));
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "MCQ added successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to add question.",
+      });
+    } finally {
+      setBusyKey("");
     }
   };
 
-  const handleAssignPost = async (e) => {
-    e.preventDefault();
+  const handleAssignmentSubmit = async (event) => {
+    event.preventDefault();
+    setBusyKey("save-assignment");
+    setNotice(emptyNotice);
+
     try {
-      const data = new FormData();
-      data.append("title", assignForm.title);
-      data.append("dueDate", assignForm.dueDate);
-      if (selectedFile) data.append("file", selectedFile);
+      const formData = new FormData();
+      formData.append("classroomId", assignmentForm.classroomId);
+      formData.append("title", assignmentForm.title);
+      formData.append("dueDate", assignmentForm.dueDate);
+      formData.append("description", assignmentForm.description);
+      if (assignmentFile) {
+        formData.append("file", assignmentFile);
+      }
 
-      await API.post("/api/assignments/add", data);
-      setAssignForm({ title: "", dueDate: "" });
-      setSelectedFile(null);
-      fetchAssignments();
-    } catch {
-      alert("Failed to upload assignment");
+      await API.post("/api/assignments/add", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setAssignmentForm((prev) => ({
+        ...initialAssignmentForm,
+        classroomId: prev.classroomId || classrooms[0]?.id || "",
+      }));
+      setAssignmentFile(null);
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Assignment published successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to create assignment.",
+      });
+    } finally {
+      setBusyKey("");
     }
   };
 
-  const handleGiveMarks = async (assignmentId) => {
-    const marks = marksInput[assignmentId];
-
-    if (!String(marks || "").trim()) {
-      alert("Please enter marks first");
-      return;
-    }
+  const handleMarksSave = async (submissionId) => {
+    const draft = submissionDrafts[submissionId] || {};
+    setBusyKey(`submission-${submissionId}`);
+    setNotice(emptyNotice);
 
     try {
       await API.post("/api/assignments/give-marks", {
-        assignmentId,
-        marks,
+        submissionId,
+        marks: Number(draft.marks),
+        feedback: draft.feedback || "",
       });
 
-      setMarksInput((prev) => ({
-        ...prev,
-        [assignmentId]: "",
-      }));
-
-      fetchAssignments();
-      alert("Marks saved successfully");
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to save marks");
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Submission reviewed successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to save marks.",
+      });
+    } finally {
+      setBusyKey("");
     }
   };
 
-  const handleDelete = async (type, id) => {
+  const deleteAssignment = async (assignmentId) => {
+    if (!window.confirm("Delete this assignment and all linked submissions?")) {
+      return;
+    }
+
+    setBusyKey(`delete-assignment-${assignmentId}`);
+    setNotice(emptyNotice);
+
     try {
-      await API.delete(`/api/${type}/delete/${id}`);
-      if (type === "notifications") fetchNotifications();
-      else if (type === "assignments") fetchAssignments();
-      else if (type === "exams") fetchExams();
-    } catch {
-      alert("Delete failed");
+      await API.delete(`/api/assignments/delete/${assignmentId}`);
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Assignment deleted successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to delete assignment.",
+      });
+    } finally {
+      setBusyKey("");
     }
   };
 
-  const examStats = useMemo(() => {
-    const live = exams.filter((ex) => ex.status === "live").length;
-    const scheduled = exams.filter((ex) => ex.status === "scheduled").length;
-    const closed = exams.filter((ex) => ex.status === "closed").length;
-    return { live, scheduled, closed };
-  }, [exams]);
+  const handleNotificationSubmit = async (event) => {
+    event.preventDefault();
+    setBusyKey("save-notification");
+    setNotice(emptyNotice);
 
-  const styles = {
-    page: {
-      padding: "32px",
-      background:
-        "linear-gradient(180deg, #f6f8fb 0%, #eef3f8 100%)",
-      minHeight: "100vh",
-      color: "#172b4d",
-    },
-    nav: {
-      display: "flex",
-      gap: "10px",
-      flexWrap: "wrap",
-      marginBottom: "24px",
-    },
-    tabBtn: (active) => ({
-      padding: "12px 18px",
-      borderRadius: "999px",
-      border: active ? "1px solid #1d4ed8" : "1px solid #d6deeb",
-      background: active ? "#1d4ed8" : "#fff",
-      color: active ? "#fff" : "#243b53",
-      cursor: "pointer",
-      fontWeight: 700,
-      boxShadow: active ? "0 10px 25px rgba(29,78,216,0.18)" : "none",
-    }),
-    hero: {
-      display: "grid",
-      gridTemplateColumns: "2fr 1fr",
-      gap: "20px",
-      marginBottom: "24px",
-    },
-    heroCard: {
-      background: "linear-gradient(135deg, #123c6b 0%, #1d4ed8 100%)",
-      color: "#fff",
-      borderRadius: "24px",
-      padding: "28px",
-      boxShadow: "0 20px 35px rgba(18,60,107,0.16)",
-    },
-    statGrid: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr 1fr",
-      gap: "12px",
-    },
-    statCard: {
-      background: "#fff",
-      borderRadius: "20px",
-      padding: "20px",
-      boxShadow: "0 12px 25px rgba(15,23,42,0.06)",
-    },
-    section: {
-      background: "#fff",
-      borderRadius: "24px",
-      padding: "24px",
-      boxShadow: "0 14px 30px rgba(15,23,42,0.06)",
-      marginBottom: "24px",
-    },
-    sectionTitle: {
-      margin: "0 0 18px 0",
-      fontSize: "30px",
-      color: "#16324f",
-    },
-    subTitle: {
-      margin: "0 0 14px 0",
-      fontSize: "20px",
-      color: "#16324f",
-    },
-    formGrid: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: "14px",
-    },
-    input: {
-      width: "100%",
-      padding: "14px 16px",
-      borderRadius: "14px",
-      border: "1px solid #d6deeb",
-      background: "#f8fafc",
-      boxSizing: "border-box",
-      fontSize: "15px",
-    },
-    fullWidth: {
-      gridColumn: "1 / -1",
-    },
-    primaryBtn: {
-      padding: "14px 20px",
-      borderRadius: "14px",
-      border: "none",
-      background: "#1d4ed8",
-      color: "#fff",
-      cursor: "pointer",
-      fontWeight: 700,
-      boxShadow: "0 10px 20px rgba(29,78,216,0.16)",
-    },
-    ghostBtn: {
-      padding: "14px 20px",
-      borderRadius: "14px",
-      border: "1px solid #d6deeb",
-      background: "#fff",
-      color: "#334155",
-      cursor: "pointer",
-      fontWeight: 700,
-    },
-    examCard: {
-      border: "1px solid #e2e8f0",
-      borderRadius: "20px",
-      padding: "20px",
-      background: "#fcfdff",
-      boxShadow: "0 10px 24px rgba(15,23,42,0.04)",
-      marginBottom: "16px",
-    },
-    statusPill: (status) => ({
-      display: "inline-block",
-      padding: "6px 12px",
-      borderRadius: "999px",
-      fontSize: "12px",
-      fontWeight: 700,
-      background:
-        status === "live"
-          ? "#dcfce7"
-          : status === "closed"
-          ? "#f1f5f9"
-          : "#dbeafe",
-      color:
-        status === "live"
-          ? "#166534"
-          : status === "closed"
-          ? "#475569"
-          : "#1d4ed8",
-      textTransform: "capitalize",
-    }),
-    examTop: {
-      display: "flex",
-      justifyContent: "space-between",
-      gap: "16px",
-      alignItems: "flex-start",
-      flexWrap: "wrap",
-      marginBottom: "12px",
-    },
-    metaGrid: {
-      display: "grid",
-      gridTemplateColumns: "1fr 1fr",
-      gap: "10px 18px",
-      color: "#475569",
-      marginBottom: "16px",
-    },
-    actionRow: {
-      display: "flex",
-      gap: "10px",
-      flexWrap: "wrap",
-    },
-    actionBtn: (bg) => ({
-      padding: "11px 16px",
-      borderRadius: "12px",
-      border: "none",
-      background: bg,
-      color: "#fff",
-      cursor: "pointer",
-      fontWeight: 700,
-      display: "inline-flex",
-      alignItems: "center",
-      gap: "8px",
-    }),
+    const payload = {
+      ...notificationForm,
+      classroomId: notificationForm.audience === "classroom" ? notificationForm.classroomId : "",
+    };
+
+    try {
+      if (editingNotificationId) {
+        await API.put(`/api/notifications/update/${editingNotificationId}`, payload);
+      } else {
+        await API.post("/api/notifications/add", payload);
+      }
+
+      resetNotificationForm();
+      await loadWorkspace(true);
+      setNotice({
+        type: "success",
+        text: editingNotificationId
+          ? "Announcement updated successfully."
+          : "Announcement published successfully.",
+      });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to save announcement.",
+      });
+    } finally {
+      setBusyKey("");
+    }
   };
+
+  const startEditNotification = (notification) => {
+    setEditingNotificationId(notification._id);
+    setNotificationForm({
+      classroomId: notification.classroomId || classrooms[0]?.id || "",
+      title: notification.title || "",
+      message: notification.message || "",
+      type: notification.type || "general",
+      priority: notification.priority || "normal",
+      audience: notification.audience || "classroom",
+    });
+    setActiveTab("announcements");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const deleteNotification = async (notificationId) => {
+    if (!window.confirm("Delete this announcement?")) {
+      return;
+    }
+
+    setBusyKey(`delete-notification-${notificationId}`);
+    setNotice(emptyNotice);
+
+    try {
+      await API.delete(`/api/notifications/delete/${notificationId}`);
+      if (editingNotificationId === notificationId) {
+        resetNotificationForm();
+      }
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Announcement deleted successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to delete announcement.",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const deleteResult = async (resultId) => {
+    if (!window.confirm("Delete this result record?")) {
+      return;
+    }
+
+    setBusyKey(`delete-result-${resultId}`);
+    setNotice(emptyNotice);
+
+    try {
+      await API.delete(`/api/results/delete/${resultId}`);
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Result deleted successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to delete result.",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const topUpcomingExams = useMemo(
+    () =>
+      [...exams]
+        .filter((exam) => exam.status !== "closed")
+        .sort((left, right) => new Date(left.startTime || 0) - new Date(right.startTime || 0))
+        .slice(0, 3),
+    [exams]
+  );
+
+  if (loading) {
+    return (
+      <div style={styles.loaderState}>
+        <div style={styles.loaderOrb} />
+        <h2 style={{ margin: "18px 0 8px", color: "#0f172a" }}>Preparing teacher workspace</h2>
+        <p style={{ margin: 0, color: "#64748b" }}>
+          Loading classrooms, approvals, exams, assignments, and AI teaching signals.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.page}>
-      <div style={styles.nav}>
-        <button style={styles.tabBtn(activeTab === "notifications")} onClick={() => setActiveTab("notifications")}>
-          Announcements
-        </button>
-        <button style={styles.tabBtn(activeTab === "exams")} onClick={() => setActiveTab("exams")}>
-          Manage Exams
-        </button>
-        <button style={styles.tabBtn(activeTab === "assignments")} onClick={() => setActiveTab("assignments")}>
-          Assignments
-        </button>
-        <button style={styles.tabBtn(activeTab === "studentResult")} onClick={() => setActiveTab("studentResult")}>
-          Results
-        </button>
-        <button style={styles.tabBtn(activeTab === "examCheck")} onClick={() => setActiveTab("examCheck")}>
-          Exam Check
-        </button>
+      <section style={styles.hero}>
+        <div>
+          <div style={styles.heroKicker}>Teacher Command Center</div>
+          <h1 style={styles.heroTitle}>{profile?.name || "Teacher"} classroom operations hub</h1>
+          <p style={styles.heroText}>
+            {profile?.department || "Academic department"} | {classrooms.length} classroom(s) |
+            {` `}approval-gated onboarding, AI proctoring, and exam workflow control.
+          </p>
+        </div>
+
+        <div style={styles.heroMetricGrid}>
+          <MetricCard label="Classrooms" value={dashboardMetrics.classrooms} bright />
+          <MetricCard label="Pending Approvals" value={dashboardMetrics.pendingApprovals} bright />
+          <MetricCard label="Live Exams" value={dashboardMetrics.liveExams} bright />
+          <MetricCard label="Flagged Results" value={dashboardMetrics.flaggedResults} bright />
+        </div>
+      </section>
+
+      {notice.text ? (
+        <div style={notice.type === "error" ? styles.noticeError : styles.noticeSuccess}>
+          {notice.text}
+        </div>
+      ) : null}
+
+      <div style={styles.tabRow}>
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          const active = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setActiveTab(tab.id)}
+              style={styles.tabButton(active)}
+            >
+              <Icon size={16} />
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {activeTab === "exams" && (
-        <>
-          <div style={styles.hero}>
-            <div style={styles.heroCard}>
-              <div style={{ fontSize: "13px", opacity: 0.85, letterSpacing: "1px", textTransform: "uppercase" }}>
-                Teacher Control Center
+      {activeTab === "overview" && (
+        <div style={styles.sectionStack}>
+          <section style={styles.gridTwo}>
+            <div style={styles.card}>
+              <SectionHeader
+                kicker="AI Teacher Coach"
+                title="Recommended next actions"
+                icon={<BrainCircuit size={18} />}
+                iconTone={["#dbeafe", "#1d4ed8"]}
+              />
+
+              <div style={{ display: "grid", gap: "12px" }}>
+                {aiCoach.map((item) => (
+                  <div key={item} style={styles.coachCard}>
+                    <ShieldCheck size={16} color="#1d4ed8" />
+                    <span style={{ lineHeight: 1.65 }}>{item}</span>
+                  </div>
+                ))}
               </div>
-              <h1 style={{ margin: "10px 0 8px 0", fontSize: "40px" }}>
-                Schedule, edit, control, and monitor exams
-              </h1>
-              <p style={{ margin: 0, maxWidth: "700px", opacity: 0.92, lineHeight: 1.6 }}>
-                Create exam schedules, update timings or exam keys, enable student access when needed,
-                and manage MCQs from one place.
-              </p>
             </div>
 
-            <div style={styles.statGrid}>
-              <div style={styles.statCard}>
-                <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase" }}>Live</div>
-                <div style={{ fontSize: "34px", fontWeight: 800 }}>{examStats.live}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase" }}>Scheduled</div>
-                <div style={{ fontSize: "34px", fontWeight: 800 }}>{examStats.scheduled}</div>
-              </div>
-              <div style={styles.statCard}>
-                <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase" }}>Closed</div>
-                <div style={{ fontSize: "34px", fontWeight: 800 }}>{examStats.closed}</div>
+            <div style={styles.card}>
+              <SectionHeader
+                kicker="Quick Health"
+                title="Workspace snapshot"
+                icon={<LayoutDashboard size={18} />}
+                iconTone={["#dcfce7", "#166534"]}
+              />
+
+              <div style={styles.metricGrid}>
+                <MetricCard label="Approved Students" value={dashboardMetrics.roster} />
+                <MetricCard label="Scheduled Exams" value={dashboardMetrics.scheduledExams} />
+                <MetricCard
+                  label="Submissions To Review"
+                  value={dashboardMetrics.submissionsToReview}
+                />
+                <MetricCard label="Announcements" value={dashboardMetrics.notifications} />
               </div>
             </div>
-          </div>
+          </section>
 
-          <div style={styles.section}>
-            <h2 style={styles.sectionTitle}>
-              {isExamEditing ? "Edit Scheduled Exam" : "Create / Schedule Exam"}
-            </h2>
-
-            <form onSubmit={handleExamPost} style={styles.formGrid}>
-              <input
-                style={styles.input}
-                placeholder="Course"
-                value={examForm.course}
-                onChange={(e) => setExamForm({ ...examForm, course: e.target.value })}
+          <section style={styles.gridTwo}>
+            <div style={styles.card}>
+              <SectionHeader
+                kicker="Upcoming"
+                title="Next assessments"
+                icon={<CalendarClock size={18} />}
+                iconTone={["#fef3c7", "#b45309"]}
               />
-              <input
-                style={styles.input}
-                placeholder="Title"
-                value={examForm.title}
-                onChange={(e) => setExamForm({ ...examForm, title: e.target.value })}
-              />
-              <input
-                style={styles.input}
-                placeholder="Duration (min)"
-                type="number"
-                value={examForm.duration}
-                onChange={(e) => setExamForm({ ...examForm, duration: e.target.value })}
-              />
-              <input
-                style={styles.input}
-                placeholder="Exam Key (optional)"
-                value={examForm.examKey}
-                onChange={(e) => setExamForm({ ...examForm, examKey: e.target.value })}
-              />
-              <input
-                style={{ ...styles.input, ...styles.fullWidth }}
-                placeholder="Syllabus"
-                value={examForm.syllabus}
-                onChange={(e) => setExamForm({ ...examForm, syllabus: e.target.value })}
-              />
-              <div>
-                <label style={{ display: "block", marginBottom: "8px", color: "#475569", fontWeight: 600 }}>
-                  Start Time
-                </label>
-                <input
-                  style={styles.input}
-                  type="datetime-local"
-                  value={examForm.startTime}
-                  onChange={(e) => setExamForm({ ...examForm, startTime: e.target.value })}
-                />
-              </div>
-              <div>
-                <label style={{ display: "block", marginBottom: "8px", color: "#475569", fontWeight: 600 }}>
-                  End Time
-                </label>
-                <input
-                  style={styles.input}
-                  type="datetime-local"
-                  value={examForm.endTime}
-                  onChange={(e) => setExamForm({ ...examForm, endTime: e.target.value })}
-                />
-              </div>
 
-              <div style={{ ...styles.fullWidth, display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                <button style={styles.primaryBtn} type="submit">
-                  {isExamEditing ? "Update Exam" : "Schedule Exam"}
-                </button>
-
-                {isExamEditing && (
-                  <button type="button" style={styles.ghostBtn} onClick={resetExamForm}>
-                    Cancel Edit
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
-
-          <div style={styles.section}>
-            <h2 style={styles.sectionTitle}>Control Center</h2>
-
-            {!Array.isArray(exams) || exams.length === 0 ? (
-              <p style={{ color: "#64748b" }}>No exams found.</p>
-            ) : (
-              exams.map((ex) => (
-                <div key={ex._id} style={styles.examCard}>
-                  <div style={styles.examTop}>
-                    <div>
-                      <div style={{ fontSize: "28px", fontWeight: 800, color: "#102a43" }}>
-                        {ex.title}
+              {topUpcomingExams.length === 0 ? (
+                <EmptyState text="No exams are scheduled for your classrooms yet." />
+              ) : (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {topUpcomingExams.map((exam) => (
+                    <div key={exam._id} style={styles.timelineCard}>
+                      <div>
+                        <div style={styles.smallKicker}>{exam.assessmentType || "exam"}</div>
+                        <div style={styles.timelineTitle}>{exam.title}</div>
+                        <div style={styles.timelineText}>
+                          {exam.course} | {exam.classroomName}
+                        </div>
                       </div>
-                      <div style={{ color: "#64748b", marginTop: "4px" }}>
-                        {ex.course}
+                      <div style={styles.timelineMeta}>
+                        <strong>{formatDateTime(exam.startTime)}</strong>
+                        <span>{exam.duration} min</span>
                       </div>
                     </div>
-
-                    <span style={styles.statusPill(ex.status)}>{ex.status}</span>
-                  </div>
-
-                  <div style={styles.metaGrid}>
-                    <div><strong>Access:</strong> {ex.accessGranted ? "Enabled" : "Disabled"}</div>
-                    <div><strong>Duration:</strong> {ex.duration} min</div>
-                    <div><strong>Exam Key:</strong> {ex.examKey || "Not set"}</div>
-                    <div><strong>Start:</strong> {ex.startTime ? new Date(ex.startTime).toLocaleString() : "Not set"}</div>
-                    <div><strong>End:</strong> {ex.endTime ? new Date(ex.endTime).toLocaleString() : "Not set"}</div>
-                    <div><strong>Syllabus:</strong> {ex.syllabus || "Not added"}</div>
-                  </div>
-
-                  <div style={styles.actionRow}>
-                    <button style={styles.actionBtn("#1d4ed8")} type="button" onClick={() => startEditExam(ex)}>
-                      <Pencil size={16} /> Edit
-                    </button>
-                    <button style={styles.actionBtn("#16a34a")} type="button" onClick={() => goLiveExam(ex)}>
-                      <Play size={16} /> Allow / Go Live
-                    </button>
-                    <button style={styles.actionBtn("#f59e0b")} type="button" onClick={() => stopExamAccess(ex)}>
-                      <Square size={16} /> Stop Access
-                    </button>
-                    <button style={styles.actionBtn("#64748b")} type="button" onClick={() => closeExam(ex)}>
-                      <XCircle size={16} /> Close Exam
-                    </button>
-                    <button style={styles.actionBtn("#dc2626")} type="button" onClick={() => deleteExam(ex._id)}>
-                      <Trash2 size={16} /> Delete
-                    </button>
-                  </div>
+                  ))}
                 </div>
-              ))
-            )}
-          </div>
+              )}
+            </div>
 
-          <div style={styles.section}>
-            <h2 style={styles.sectionTitle}>Add MCQ</h2>
+            <div style={styles.card}>
+              <SectionHeader
+                kicker="Integrity Watch"
+                title="Students needing review"
+                icon={<Users size={18} />}
+                iconTone={["#fee2e2", "#b91c1c"]}
+              />
 
-            <form onSubmit={handleQuestionSubmit} style={styles.formGrid}>
-              <select
-                style={{ ...styles.input, ...styles.fullWidth }}
-                value={questionForm.examId}
-                onChange={(e) => setQuestionForm({ ...questionForm, examId: e.target.value })}
-              >
-                <option value="">Select Exam</option>
-                {Array.isArray(exams) &&
-                  exams
-                    .filter((ex) => ex.status !== "closed")
-                    .map((ex) => (
-                      <option key={ex._id} value={ex._id}>
-                        {ex.title}
-                      </option>
+              {results.filter((result) => Number(result.suspiciousScore || result.cheatingPercent || 0) >= 35)
+                .length === 0 ? (
+                <EmptyState text="No elevated suspicious result is waiting right now." />
+              ) : (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {results
+                    .filter((result) => Number(result.suspiciousScore || result.cheatingPercent || 0) >= 35)
+                    .slice(0, 4)
+                    .map((result) => (
+                      <div key={result._id} style={styles.alertCard}>
+                        <div>
+                          <div style={styles.timelineTitle}>{result.studentName || "Student"}</div>
+                          <div style={styles.timelineText}>
+                            {result.testName || "Exam"} | {result.classroomName || "Classroom"}
+                          </div>
+                        </div>
+                        <div style={styles.riskBadge}>
+                          {Number(result.suspiciousScore || result.cheatingPercent || 0)}%
+                        </div>
+                      </div>
                     ))}
-              </select>
-
-              <input
-                style={{ ...styles.input, ...styles.fullWidth }}
-                placeholder="Question"
-                value={questionForm.questionText}
-                onChange={(e) => setQuestionForm({ ...questionForm, questionText: e.target.value })}
-              />
-              <input
-                style={styles.input}
-                placeholder="Option A"
-                value={questionForm.optionA}
-                onChange={(e) => setQuestionForm({ ...questionForm, optionA: e.target.value })}
-              />
-              <input
-                style={styles.input}
-                placeholder="Option B"
-                value={questionForm.optionB}
-                onChange={(e) => setQuestionForm({ ...questionForm, optionB: e.target.value })}
-              />
-              <input
-                style={styles.input}
-                placeholder="Option C"
-                value={questionForm.optionC}
-                onChange={(e) => setQuestionForm({ ...questionForm, optionC: e.target.value })}
-              />
-              <input
-                style={styles.input}
-                placeholder="Option D"
-                value={questionForm.optionD}
-                onChange={(e) => setQuestionForm({ ...questionForm, optionD: e.target.value })}
-              />
-              <input
-                style={{ ...styles.input, ...styles.fullWidth }}
-                placeholder="Correct Answer"
-                value={questionForm.correctAnswer}
-                onChange={(e) => setQuestionForm({ ...questionForm, correctAnswer: e.target.value })}
-              />
-
-              <div style={styles.fullWidth}>
-                <button style={styles.primaryBtn} type="submit">
-                  <ClipboardList size={16} style={{ marginRight: "8px", verticalAlign: "middle" }} />
-                  Add MCQ
-                </button>
-              </div>
-            </form>
-          </div>
-        </>
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
       )}
 
-      {activeTab === "notifications" && (
-        <NotificationManager
-          {...{
-            formData,
-            setFormData,
-            isEditing,
-            setIsEditing,
-            handleSubmit,
-            notifications,
-            setCurrentId,
-            handleDelete,
-          }}
-        />
+      {activeTab === "classrooms" && (
+        <div style={styles.sectionStack}>
+          <section style={styles.gridTwo}>
+            <form onSubmit={handleCreateClassroom} style={styles.card}>
+              <SectionHeader
+                kicker="Create Classroom"
+                title="Add a new batch or section"
+                icon={<GraduationCap size={18} />}
+                iconTone={["#d1fae5", "#0f766e"]}
+              />
+
+              <div style={styles.formGrid}>
+                <Field
+                  label="Classroom Name"
+                  value={classroomForm.name}
+                  onChange={(value) => setClassroomForm((prev) => ({ ...prev, name: value }))}
+                  placeholder="BSCS Morning"
+                />
+                <Field
+                  label="Department"
+                  value={classroomForm.department}
+                  onChange={(value) => setClassroomForm((prev) => ({ ...prev, department: value }))}
+                  placeholder="Computer Science"
+                />
+                <Field
+                  label="Program"
+                  value={classroomForm.program}
+                  onChange={(value) => setClassroomForm((prev) => ({ ...prev, program: value }))}
+                  placeholder="BS Computer Science"
+                />
+                <Field
+                  label="Section"
+                  value={classroomForm.section}
+                  onChange={(value) => setClassroomForm((prev) => ({ ...prev, section: value }))}
+                  placeholder="A"
+                />
+                <Field
+                  label="Semester"
+                  value={classroomForm.semester}
+                  onChange={(value) => setClassroomForm((prev) => ({ ...prev, semester: value }))}
+                  placeholder="6th"
+                />
+                <TextAreaField
+                  label="Description"
+                  value={classroomForm.description}
+                  onChange={(value) => setClassroomForm((prev) => ({ ...prev, description: value }))}
+                  placeholder="Lab, session notes, or invite context."
+                  full
+                />
+              </div>
+
+              <button type="submit" style={styles.primaryButton} disabled={busyKey === "create-classroom"}>
+                {busyKey === "create-classroom" ? "Creating..." : "Create Classroom"}
+              </button>
+            </form>
+
+            <section style={styles.card}>
+              <SectionHeader
+                kicker="Managed Rooms"
+                title="All active classrooms"
+                icon={<Users size={18} />}
+                iconTone={["#ede9fe", "#6d28d9"]}
+              />
+
+              {classrooms.length === 0 ? (
+                <EmptyState text="No classroom found yet." />
+              ) : (
+                <div style={{ display: "grid", gap: "12px" }}>
+                  {classrooms.map((classroom) => (
+                    <div key={classroom.id} style={styles.classroomCard}>
+                      <div>
+                        <div style={styles.timelineTitle}>{classroom.label}</div>
+                        <div style={styles.timelineText}>
+                          Teacher {classroom.teacherName || profile?.name || "Faculty"}
+                        </div>
+                      </div>
+                      <div style={styles.classroomMeta}>
+                        <span>Invite {classroom.inviteCode || "N/A"}</span>
+                        <span>
+                          {roster.filter(
+                            (student) => String(student.classroomId || "") === String(classroom.id || "")
+                          ).length} approved
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </section>
+        </div>
+      )}
+
+      {activeTab === "approvals" && (
+        <div style={styles.sectionStack}>
+          <section style={styles.card}>
+            <SectionHeader
+              kicker="Pending Requests"
+              title="Student onboarding approvals"
+              icon={<UserCheck size={18} />}
+              iconTone={["#fef3c7", "#b45309"]}
+            />
+
+            {approvalQueue.length === 0 ? (
+              <EmptyState text="No student approval request is pending right now." />
+            ) : (
+              <div style={styles.cardGrid}>
+                {approvalQueue.map((student) => (
+                  <div key={student._id} style={styles.approvalCard}>
+                    <div style={styles.approvalTop}>
+                      <div>
+                        <div style={styles.timelineTitle}>{student.name}</div>
+                        <div style={styles.timelineText}>
+                          {student.rollNumber || "No roll number"} | {student.classroomName}
+                        </div>
+                      </div>
+                      <div style={styles.pendingBadge}>Pending</div>
+                    </div>
+
+                    <div style={styles.approvalMetaGrid}>
+                      <InfoPill label="Email" value={student.email} />
+                      <InfoPill label="Department" value={student.department || "N/A"} />
+                      <InfoPill label="Teacher" value={student.teacherName || "N/A"} />
+                      <InfoPill label="Requested" value={formatDateTime(student.createdAt, "N/A")} />
+                    </div>
+
+                    {student.studentIdCardUrl ? (
+                      <a
+                        href={buildUploadUrl(student.studentIdCardUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={styles.fileLink}
+                      >
+                        <ExternalLink size={14} />
+                        View ID Card
+                      </a>
+                    ) : null}
+
+                    <div style={styles.actionRow}>
+                      <button
+                        type="button"
+                        onClick={() => handleApproval(student._id, "approve")}
+                        style={styles.successButton}
+                        disabled={busyKey === `approval-${student._id}-approve`}
+                      >
+                        <Check size={16} />
+                        {busyKey === `approval-${student._id}-approve` ? "Approving..." : "Approve"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleApproval(student._id, "reject")}
+                        style={styles.dangerButton}
+                        disabled={busyKey === `approval-${student._id}-reject`}
+                      >
+                        <X size={16} />
+                        {busyKey === `approval-${student._id}-reject` ? "Rejecting..." : "Reject"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section style={styles.card}>
+            <SectionHeader
+              kicker="Approved Roster"
+              title="Students grouped by classroom"
+              icon={<Users size={18} />}
+              iconTone={["#dbeafe", "#1d4ed8"]}
+            />
+
+            {roster.length === 0 ? (
+              <EmptyState text="Approved roster is still empty." />
+            ) : (
+              <div style={styles.cardGrid}>
+                {Object.entries(rosterByClassroom).map(([classroomName, students]) => (
+                  <div key={classroomName} style={styles.rosterGroup}>
+                    <div style={styles.rosterTitle}>{classroomName}</div>
+                    <div style={{ display: "grid", gap: "10px" }}>
+                      {students.map((student) => (
+                        <div key={student._id} style={styles.rosterRow}>
+                          <strong>{student.name}</strong>
+                          <span>
+                            {student.rollNumber || "No roll number"} | {student.email}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {activeTab === "exams" && (
+        <div style={styles.sectionStack}>
+          <section style={styles.gridTwo}>
+            <form onSubmit={handleExamSubmit} style={styles.card}>
+              <SectionHeader
+                kicker={editingExamId ? "Edit Exam" : "Create Exam"}
+                title="Assessment publishing"
+                icon={<CalendarClock size={18} />}
+                iconTone={["#dbeafe", "#1d4ed8"]}
+              />
+
+              <div style={styles.formGrid}>
+                <SelectField
+                  label="Classroom"
+                  value={examForm.classroomId}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, classroomId: value }))}
+                  options={classOptions}
+                />
+                <SelectField
+                  label="Assessment Type"
+                  value={examForm.assessmentType}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, assessmentType: value }))}
+                  options={[
+                    { value: "exam", label: "Exam" },
+                    { value: "quiz", label: "Quiz" },
+                    { value: "test", label: "Test" },
+                  ]}
+                />
+                <Field
+                  label="Course"
+                  value={examForm.course}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, course: value }))}
+                  placeholder="Operating Systems"
+                />
+                <Field
+                  label="Title"
+                  value={examForm.title}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, title: value }))}
+                  placeholder="Midterm 1"
+                />
+                <Field
+                  label="Duration (minutes)"
+                  type="number"
+                  value={examForm.duration}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, duration: value }))}
+                  placeholder="60"
+                />
+                <Field
+                  label="Exam Key"
+                  value={examForm.examKey}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, examKey: value }))}
+                  placeholder="Optional secure key"
+                />
+                <TextAreaField
+                  label="Syllabus"
+                  value={examForm.syllabus}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, syllabus: value }))}
+                  placeholder="Modules, chapters, or focus topics"
+                  full
+                />
+                <TextAreaField
+                  label="Instructions"
+                  value={examForm.instructions}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, instructions: value }))}
+                  placeholder="Exam room rules or special guidance"
+                  full
+                />
+                <Field
+                  label="Start Time"
+                  type="datetime-local"
+                  value={examForm.startTime}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, startTime: value }))}
+                />
+                <Field
+                  label="End Time"
+                  type="datetime-local"
+                  value={examForm.endTime}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, endTime: value }))}
+                />
+              </div>
+
+              <div style={styles.actionRow}>
+                <button type="submit" style={styles.primaryButton} disabled={busyKey === "save-exam"}>
+                  {busyKey === "save-exam"
+                    ? "Saving..."
+                    : editingExamId
+                    ? "Update Exam"
+                    : "Schedule Exam"}
+                </button>
+                {editingExamId ? (
+                  <button type="button" style={styles.secondaryButton} onClick={resetExamForm}>
+                    Cancel Edit
+                  </button>
+                ) : null}
+              </div>
+            </form>
+
+            <form onSubmit={handleQuestionSubmit} style={styles.card}>
+              <SectionHeader
+                kicker="Question Bank"
+                title="Add MCQs to an exam"
+                icon={<ClipboardCheck size={18} />}
+                iconTone={["#ecfccb", "#3f6212"]}
+              />
+
+              <div style={styles.formGrid}>
+                <SelectField
+                  label="Exam"
+                  value={questionForm.examId}
+                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, examId: value }))}
+                  options={exams.map((exam) => ({
+                    value: exam._id,
+                    label: `${exam.title} | ${exam.classroomName}`,
+                  }))}
+                  full
+                />
+                <TextAreaField
+                  label="Question"
+                  value={questionForm.questionText}
+                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, questionText: value }))}
+                  placeholder="Enter question statement"
+                  full
+                />
+                <Field
+                  label="Option A"
+                  value={questionForm.optionA}
+                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionA: value }))}
+                />
+                <Field
+                  label="Option B"
+                  value={questionForm.optionB}
+                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionB: value }))}
+                />
+                <Field
+                  label="Option C"
+                  value={questionForm.optionC}
+                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionC: value }))}
+                />
+                <Field
+                  label="Option D"
+                  value={questionForm.optionD}
+                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionD: value }))}
+                />
+                <Field
+                  label="Correct Answer"
+                  value={questionForm.correctAnswer}
+                  onChange={(value) =>
+                    setQuestionForm((prev) => ({ ...prev, correctAnswer: value }))
+                  }
+                  placeholder="Exact option text"
+                />
+              </div>
+
+              <button type="submit" style={styles.primaryButton} disabled={busyKey === "add-question"}>
+                {busyKey === "add-question" ? "Saving..." : "Add MCQ"}
+              </button>
+            </form>
+          </section>
+
+          <section style={styles.card}>
+            <SectionHeader
+              kicker="Exam Control"
+              title="Scheduled and live assessments"
+              icon={<ShieldCheck size={18} />}
+              iconTone={["#fef3c7", "#b45309"]}
+            />
+
+            {exams.length === 0 ? (
+              <EmptyState text="No exam exists yet." />
+            ) : (
+              <div style={styles.cardGrid}>
+                {exams.map((exam) => (
+                  <div key={exam._id} style={styles.examCard}>
+                    <div style={styles.examTop}>
+                      <div>
+                        <div style={styles.smallKicker}>{exam.classroomName}</div>
+                        <div style={styles.timelineTitle}>{exam.title}</div>
+                        <div style={styles.timelineText}>
+                          {exam.course} | {exam.duration} minutes
+                        </div>
+                      </div>
+                      <div style={styles.statusBadge(exam.status)}>{exam.status}</div>
+                    </div>
+
+                    <div style={styles.approvalMetaGrid}>
+                      <InfoPill label="Start" value={formatDateTime(exam.startTime)} />
+                      <InfoPill label="End" value={formatDateTime(exam.endTime)} />
+                      <InfoPill label="Access" value={exam.accessGranted ? "Enabled" : "Locked"} />
+                      <InfoPill
+                        label="Questions"
+                        value={questionsByExam[String(exam._id)]?.length || 0}
+                      />
+                    </div>
+
+                    <div style={{ color: "#475569", lineHeight: 1.65, marginTop: "14px" }}>
+                      {exam.instructions || exam.syllabus || "No extra instructions added yet."}
+                    </div>
+
+                    <div style={styles.actionRow}>
+                      <button type="button" style={styles.secondaryButton} onClick={() => startEditExam(exam)}>
+                        <Pencil size={16} />
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        style={styles.successButton}
+                        onClick={() =>
+                          updateExamState(exam._id, { status: "live", accessGranted: true }, "Exam is now live.")
+                        }
+                        disabled={busyKey === `exam-status-${exam._id}`}
+                      >
+                        <Play size={16} />
+                        Go Live
+                      </button>
+                      <button
+                        type="button"
+                        style={styles.warningButton}
+                        onClick={() =>
+                          updateExamState(
+                            exam._id,
+                            { status: "scheduled", accessGranted: false },
+                            "Exam access stopped."
+                          )
+                        }
+                        disabled={busyKey === `exam-status-${exam._id}`}
+                      >
+                        <Square size={16} />
+                        Stop
+                      </button>
+                      <button
+                        type="button"
+                        style={styles.secondaryButton}
+                        onClick={() =>
+                          updateExamState(
+                            exam._id,
+                            { status: "closed", accessGranted: false },
+                            "Exam closed successfully."
+                          )
+                        }
+                        disabled={busyKey === `exam-status-${exam._id}`}
+                      >
+                        <XCircle size={16} />
+                        Close
+                      </button>
+                      <button
+                        type="button"
+                        style={styles.dangerButton}
+                        onClick={() => deleteExam(exam._id)}
+                        disabled={busyKey === `delete-exam-${exam._id}`}
+                      >
+                        <Trash2 size={16} />
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       )}
 
       {activeTab === "assignments" && (
-        <AssignmentManager
-          {...{
-            assignForm,
-            setAssignForm,
-            setSelectedFile,
-            handleAssignPost,
-            assignments,
-            marksInput,
-            setMarksInput,
-            handleGiveMarks,
-            handleDelete,
-          }}
-        />
+        <div style={styles.sectionStack}>
+          <section style={styles.gridTwo}>
+            <form onSubmit={handleAssignmentSubmit} style={styles.card}>
+              <SectionHeader
+                kicker="Publish Assignment"
+                title="Class task distribution"
+                icon={<FileStack size={18} />}
+                iconTone={["#d1fae5", "#0f766e"]}
+              />
+
+              <div style={styles.formGrid}>
+                <SelectField
+                  label="Classroom"
+                  value={assignmentForm.classroomId}
+                  onChange={(value) => setAssignmentForm((prev) => ({ ...prev, classroomId: value }))}
+                  options={classOptions}
+                />
+                <Field
+                  label="Title"
+                  value={assignmentForm.title}
+                  onChange={(value) => setAssignmentForm((prev) => ({ ...prev, title: value }))}
+                  placeholder="Lab Report 2"
+                />
+                <Field
+                  label="Due Date"
+                  type="date"
+                  value={assignmentForm.dueDate}
+                  onChange={(value) => setAssignmentForm((prev) => ({ ...prev, dueDate: value }))}
+                />
+                <TextAreaField
+                  label="Description"
+                  value={assignmentForm.description}
+                  onChange={(value) => setAssignmentForm((prev) => ({ ...prev, description: value }))}
+                  placeholder="Explain the assignment brief"
+                  full
+                />
+                <label style={{ ...styles.label, gridColumn: "1 / -1" }}>
+                  Assignment File
+                  <input
+                    type="file"
+                    accept=".pdf,image/*"
+                    onChange={(event) => setAssignmentFile(event.target.files?.[0] || null)}
+                    style={styles.fileInput}
+                  />
+                </label>
+              </div>
+
+              <button
+                type="submit"
+                style={styles.primaryButton}
+                disabled={busyKey === "save-assignment"}
+              >
+                {busyKey === "save-assignment" ? "Publishing..." : "Publish Assignment"}
+              </button>
+            </form>
+
+            <section style={styles.card}>
+              <SectionHeader
+                kicker="Review Queue"
+                title="Latest submissions needing marks"
+                icon={<ClipboardCheck size={18} />}
+                iconTone={["#dbeafe", "#1d4ed8"]}
+              />
+
+              {assignments.every(
+                (assignment) =>
+                  !assignment.submissions || assignment.submissions.every((submission) => submission.status === "Checked")
+              ) ? (
+                <EmptyState text="No submission is waiting for review right now." />
+              ) : (
+                <div style={styles.cardGrid}>
+                  {assignments.flatMap((assignment) =>
+                    (assignment.submissions || [])
+                      .filter((submission) => submission.status !== "Checked")
+                      .slice(0, 4)
+                      .map((submission) => (
+                        <div key={submission._id} style={styles.reviewCard}>
+                          <div style={styles.timelineTitle}>{submission.studentName}</div>
+                          <div style={styles.timelineText}>
+                            {assignment.title} | {submission.rollNumber || "No roll number"}
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+              )}
+            </section>
+          </section>
+
+          <section style={styles.card}>
+            <SectionHeader
+              kicker="Assignment Ledger"
+              title="All assignment posts and submissions"
+              icon={<FileStack size={18} />}
+              iconTone={["#fef3c7", "#b45309"]}
+            />
+
+            {assignments.length === 0 ? (
+              <EmptyState text="No assignment has been posted yet." />
+            ) : (
+              <div style={styles.cardGrid}>
+                {assignments.map((assignment) => (
+                  <div key={assignment._id} style={styles.assignmentCard}>
+                    <div style={styles.examTop}>
+                      <div>
+                        <div style={styles.smallKicker}>{assignment.classroomName}</div>
+                        <div style={styles.timelineTitle}>{assignment.title}</div>
+                        <div style={styles.timelineText}>
+                          Due {formatDateTime(assignment.dueDate, "No due date")}
+                        </div>
+                      </div>
+                      <div style={styles.countBadge}>
+                        {assignment.submissionCount || assignment.submissions?.length || 0} submissions
+                      </div>
+                    </div>
+
+                    {assignment.description ? (
+                      <div style={{ color: "#475569", lineHeight: 1.65, marginBottom: "14px" }}>
+                        {assignment.description}
+                      </div>
+                    ) : null}
+
+                    {assignment.fileUrl ? (
+                      <a
+                        href={buildUploadUrl(assignment.fileUrl)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={styles.fileLink}
+                      >
+                        <ExternalLink size={14} />
+                        View assignment file
+                      </a>
+                    ) : null}
+
+                    <div style={{ display: "grid", gap: "12px", marginTop: "16px" }}>
+                      {(assignment.submissions || []).length === 0 ? (
+                        <EmptyState text="No student submission yet for this assignment." compact />
+                      ) : (
+                        (assignment.submissions || []).map((submission) => {
+                          const draft = submissionDrafts[submission._id] || {
+                            marks: submission.marks ?? "",
+                            feedback: submission.feedback || "",
+                          };
+
+                          return (
+                            <div key={submission._id} style={styles.submissionRow}>
+                              <div style={styles.submissionHeader}>
+                                <div>
+                                  <strong>{submission.studentName}</strong>
+                                  <div style={styles.timelineText}>
+                                    {submission.rollNumber || "No roll number"} | {submission.status}
+                                  </div>
+                                </div>
+                                {submission.fileUrl ? (
+                                  <a
+                                    href={buildUploadUrl(submission.fileUrl)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    style={styles.fileLink}
+                                  >
+                                    <ExternalLink size={14} />
+                                    Open file
+                                  </a>
+                                ) : null}
+                              </div>
+
+                              <div style={styles.marksGrid}>
+                                <Field
+                                  label="Marks"
+                                  type="number"
+                                  value={draft.marks}
+                                  onChange={(value) =>
+                                    setSubmissionDrafts((prev) => ({
+                                      ...prev,
+                                      [submission._id]: {
+                                        ...draft,
+                                        marks: value,
+                                      },
+                                    }))
+                                  }
+                                />
+                                <TextAreaField
+                                  label="Feedback"
+                                  value={draft.feedback}
+                                  onChange={(value) =>
+                                    setSubmissionDrafts((prev) => ({
+                                      ...prev,
+                                      [submission._id]: {
+                                        ...draft,
+                                        feedback: value,
+                                      },
+                                    }))
+                                  }
+                                  placeholder="Optional teacher feedback"
+                                  full
+                                />
+                              </div>
+
+                              <button
+                                type="button"
+                                style={styles.successButton}
+                                onClick={() => handleMarksSave(submission._id)}
+                                disabled={busyKey === `submission-${submission._id}`}
+                              >
+                                <Check size={16} />
+                                {busyKey === `submission-${submission._id}`
+                                  ? "Saving..."
+                                  : "Save Review"}
+                              </button>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    <div style={styles.actionRow}>
+                      <button
+                        type="button"
+                        style={styles.dangerButton}
+                        onClick={() => deleteAssignment(assignment._id)}
+                        disabled={busyKey === `delete-assignment-${assignment._id}`}
+                      >
+                        <Trash2 size={16} />
+                        Delete Assignment
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
       )}
 
-      {activeTab === "studentResult" && <ResultsList />}
+      {activeTab === "announcements" && (
+        <div style={styles.sectionStack}>
+          <section style={styles.gridTwo}>
+            <form onSubmit={handleNotificationSubmit} style={styles.card}>
+              <SectionHeader
+                kicker={editingNotificationId ? "Edit Announcement" : "Publish Announcement"}
+                title="Teacher communication center"
+                icon={<BellRing size={18} />}
+                iconTone={["#dbeafe", "#1d4ed8"]}
+              />
+
+              <div style={styles.formGrid}>
+                <SelectField
+                  label="Audience"
+                  value={notificationForm.audience}
+                  onChange={(value) =>
+                    setNotificationForm((prev) => ({ ...prev, audience: value }))
+                  }
+                  options={[
+                    { value: "classroom", label: "Specific classroom" },
+                    { value: "all-students", label: "All students" },
+                    { value: "teachers", label: "Teachers" },
+                    { value: "all", label: "Everyone" },
+                  ]}
+                />
+                <SelectField
+                  label="Priority"
+                  value={notificationForm.priority}
+                  onChange={(value) =>
+                    setNotificationForm((prev) => ({ ...prev, priority: value }))
+                  }
+                  options={[
+                    { value: "normal", label: "Normal" },
+                    { value: "high", label: "High" },
+                  ]}
+                />
+                {notificationForm.audience === "classroom" ? (
+                  <SelectField
+                    label="Classroom"
+                    value={notificationForm.classroomId}
+                    onChange={(value) =>
+                      setNotificationForm((prev) => ({ ...prev, classroomId: value }))
+                    }
+                    options={classOptions}
+                    full
+                  />
+                ) : null}
+                <Field
+                  label="Title"
+                  value={notificationForm.title}
+                  onChange={(value) =>
+                    setNotificationForm((prev) => ({ ...prev, title: value }))
+                  }
+                  placeholder="Exam Room Reminder"
+                  full
+                />
+                <Field
+                  label="Type"
+                  value={notificationForm.type}
+                  onChange={(value) =>
+                    setNotificationForm((prev) => ({ ...prev, type: value }))
+                  }
+                  placeholder="general / approval / assignment"
+                />
+                <TextAreaField
+                  label="Message"
+                  value={notificationForm.message}
+                  onChange={(value) =>
+                    setNotificationForm((prev) => ({ ...prev, message: value }))
+                  }
+                  placeholder="Write the announcement body"
+                  full
+                />
+              </div>
+
+              <div style={styles.actionRow}>
+                <button
+                  type="submit"
+                  style={styles.primaryButton}
+                  disabled={busyKey === "save-notification"}
+                >
+                  {busyKey === "save-notification"
+                    ? "Saving..."
+                    : editingNotificationId
+                    ? "Update Announcement"
+                    : "Publish Announcement"}
+                </button>
+                {editingNotificationId ? (
+                  <button type="button" style={styles.secondaryButton} onClick={resetNotificationForm}>
+                    Cancel Edit
+                  </button>
+                ) : null}
+              </div>
+            </form>
+
+            <section style={styles.card}>
+              <SectionHeader
+                kicker="Live Feed"
+                title="Recent announcement records"
+                icon={<BellRing size={18} />}
+                iconTone={["#ecfccb", "#3f6212"]}
+              />
+
+              {notifications.length === 0 ? (
+                <EmptyState text="No announcement exists yet." />
+              ) : (
+                <div style={styles.cardGrid}>
+                  {notifications.slice(0, 6).map((notification) => (
+                    <div key={notification._id} style={styles.feedCard}>
+                      <div style={styles.examTop}>
+                        <div>
+                          <div style={styles.timelineTitle}>{notification.title}</div>
+                          <div style={styles.timelineText}>
+                            {notification.classroomName || notification.audience || "General"}
+                          </div>
+                        </div>
+                        <div style={styles.priorityBadge(notification.priority)}>
+                          {notification.priority || "normal"}
+                        </div>
+                      </div>
+
+                      <div style={{ color: "#475569", lineHeight: 1.65 }}>{notification.message}</div>
+
+                      <div style={styles.actionRow}>
+                        <button
+                          type="button"
+                          style={styles.secondaryButton}
+                          onClick={() => startEditNotification(notification)}
+                        >
+                          <Pencil size={16} />
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          style={styles.dangerButton}
+                          onClick={() => deleteNotification(notification._id)}
+                          disabled={busyKey === `delete-notification-${notification._id}`}
+                        >
+                          <Trash2 size={16} />
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </section>
+        </div>
+      )}
+
+      {activeTab === "results" && (
+        <section style={styles.card}>
+          <SectionHeader
+            kicker="Result Ledger"
+            title="Student academic and integrity outcomes"
+            icon={<ClipboardCheck size={18} />}
+            iconTone={["#dbeafe", "#1d4ed8"]}
+          />
+
+          {results.length === 0 ? (
+            <EmptyState text="No exam result exists yet." />
+          ) : (
+            <div style={styles.cardGrid}>
+              {results.map((result) => (
+                <div key={result._id} style={styles.resultCard}>
+                  <div style={styles.examTop}>
+                    <div>
+                      <div style={styles.timelineTitle}>{result.studentName || "Student"}</div>
+                      <div style={styles.timelineText}>
+                        {result.testName || "Exam"} | {result.classroomName || "Classroom"}
+                      </div>
+                    </div>
+                    <div style={styles.statusBadge(result.status || "saved")}>
+                      {result.status || "saved"}
+                    </div>
+                  </div>
+
+                  <div style={styles.approvalMetaGrid}>
+                    <InfoPill
+                      label="Score"
+                      value={`${result.score || 0}/${result.total || 0}`}
+                    />
+                    <InfoPill label="Percentage" value={`${result.percentage || 0}%`} />
+                    <InfoPill
+                      label="Suspicious"
+                      value={`${result.suspiciousScore || result.cheatingPercent || 0}%`}
+                    />
+                    <InfoPill label="Trust" value={result.trustFactor || "Reliable"} />
+                  </div>
+
+                  <div style={{ color: "#475569", lineHeight: 1.65 }}>
+                    Warnings {result.warnings || 0} | Eye {result.eyeWarnings || 0} | Head{" "}
+                    {result.headWarnings || 0} | Screenshot {result.screenshotWarnings || 0}
+                  </div>
+
+                  <div style={styles.actionRow}>
+                    <button
+                      type="button"
+                      style={styles.dangerButton}
+                      onClick={() => deleteResult(result._id)}
+                      disabled={busyKey === `delete-result-${result._id}`}
+                    >
+                      <Trash2 size={16} />
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {activeTab === "examCheck" && <ExamChecker />}
+
+      <style>{`
+        @keyframes spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
+}
+
+const SectionHeader = ({ kicker, title, icon, iconTone }) => (
+  <div style={styles.sectionHeader}>
+    <div>
+      <div style={styles.sectionKicker}>{kicker}</div>
+      <h2 style={styles.sectionTitle}>{title}</h2>
+    </div>
+    <div style={styles.iconBadge(iconTone[0], iconTone[1])}>{icon}</div>
+  </div>
+);
+
+const MetricCard = ({ label, value, bright = false }) => (
+  <div style={bright ? styles.heroStatCard : styles.metricCard}>
+    <span style={bright ? styles.heroStatLabel : styles.metricLabel}>{label}</span>
+    <strong style={bright ? styles.heroStatValue : styles.metricValue}>{value}</strong>
+  </div>
+);
+
+const InfoPill = ({ label, value }) => (
+  <div style={styles.infoPill}>
+    <span style={styles.metricLabel}>{label}</span>
+    <strong style={styles.infoPillValue}>{value}</strong>
+  </div>
+);
+
+const EmptyState = ({ text, compact = false }) => (
+  <div style={compact ? styles.emptyCompact : styles.emptyState}>{text}</div>
+);
+
+const Field = ({ label, value, onChange, placeholder = "", type = "text", full = false }) => (
+  <label style={{ ...styles.label, gridColumn: full ? "1 / -1" : "auto" }}>
+    {label}
+    <input
+      type={type}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      style={styles.input}
+    />
+  </label>
+);
+
+const SelectField = ({ label, value, onChange, options, full = false }) => (
+  <label style={{ ...styles.label, gridColumn: full ? "1 / -1" : "auto" }}>
+    {label}
+    <select value={value} onChange={(event) => onChange(event.target.value)} style={styles.input}>
+      <option value="">Select</option>
+      {options.map((option) => (
+        <option key={`${option.value}-${option.label}`} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  </label>
+);
+
+const TextAreaField = ({
+  label,
+  value,
+  onChange,
+  placeholder = "",
+  full = false,
+}) => (
+  <label style={{ ...styles.label, gridColumn: full ? "1 / -1" : "auto" }}>
+    {label}
+    <textarea
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder={placeholder}
+      style={{ ...styles.input, minHeight: "110px", resize: "vertical" }}
+    />
+  </label>
+);
+
+const styles = {
+  page: {
+    minHeight: "calc(100vh - 104px)",
+    padding: "26px clamp(16px, 3vw, 34px) 40px",
+    background:
+      "radial-gradient(circle at top right, rgba(37,99,235,0.10), transparent 28%), linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)",
+  },
+  loaderState: {
+    minHeight: "calc(100vh - 104px)",
+    display: "grid",
+    placeItems: "center",
+    textAlign: "center",
+    padding: "24px",
+  },
+  loaderOrb: {
+    width: "56px",
+    height: "56px",
+    borderRadius: "50%",
+    background: "conic-gradient(from 180deg, #0f766e, #2563eb, #0f766e)",
+    animation: "spin 1.1s linear infinite",
+  },
+  hero: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+    gap: "20px",
+    padding: "32px",
+    borderRadius: "32px",
+    background: "linear-gradient(135deg, #0f172a 0%, #123c6b 48%, #0f766e 100%)",
+    color: "#fff",
+    boxShadow: "0 28px 60px rgba(15, 23, 42, 0.18)",
+    marginBottom: "20px",
+  },
+  heroKicker: {
+    display: "inline-flex",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: "rgba(255,255,255,0.12)",
+    fontSize: "12px",
+    letterSpacing: "0.12em",
+    textTransform: "uppercase",
+    fontWeight: 800,
+  },
+  heroTitle: {
+    margin: "14px 0 12px 0",
+    fontSize: "clamp(34px, 5vw, 58px)",
+    lineHeight: 1.02,
+  },
+  heroText: {
+    margin: 0,
+    color: "rgba(255,255,255,0.82)",
+    lineHeight: 1.75,
+    fontSize: "15px",
+  },
+  heroMetricGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "12px",
+  },
+  heroStatCard: {
+    padding: "18px 20px",
+    borderRadius: "22px",
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.1)",
+    display: "grid",
+    gap: "8px",
+  },
+  heroStatLabel: {
+    color: "rgba(255,255,255,0.78)",
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  },
+  heroStatValue: {
+    fontSize: "30px",
+  },
+  noticeSuccess: {
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "#ecfdf5",
+    border: "1px solid #bbf7d0",
+    color: "#166534",
+    marginBottom: "18px",
+  },
+  noticeError: {
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "#fef2f2",
+    border: "1px solid #fecaca",
+    color: "#b91c1c",
+    marginBottom: "18px",
+  },
+  tabRow: {
+    display: "flex",
+    gap: "10px",
+    flexWrap: "wrap",
+    marginBottom: "20px",
+  },
+  tabButton: (active) => ({
+    border: active ? "1px solid #0f766e" : "1px solid rgba(148,163,184,0.2)",
+    background: active
+      ? "linear-gradient(135deg, rgba(15,118,110,0.1), rgba(37,99,235,0.08))"
+      : "#fff",
+    color: "#0f172a",
+    borderRadius: "16px",
+    padding: "12px 16px",
+    fontWeight: 800,
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+  }),
+  sectionStack: {
+    display: "grid",
+    gap: "18px",
+  },
+  gridTwo: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: "18px",
+  },
+  card: {
+    background: "rgba(255,255,255,0.96)",
+    borderRadius: "28px",
+    padding: "24px",
+    border: "1px solid rgba(148,163,184,0.14)",
+    boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
+  },
+  sectionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "flex-start",
+    marginBottom: "18px",
+  },
+  sectionKicker: {
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    color: "#2563eb",
+    fontWeight: 800,
+    marginBottom: "6px",
+  },
+  sectionTitle: {
+    margin: 0,
+    color: "#0f172a",
+    fontSize: "28px",
+    lineHeight: 1.15,
+  },
+  iconBadge: (background, color) => ({
+    width: "42px",
+    height: "42px",
+    borderRadius: "14px",
+    display: "grid",
+    placeItems: "center",
+    background,
+    color,
+    flexShrink: 0,
+  }),
+  coachCard: {
+    display: "flex",
+    gap: "12px",
+    padding: "15px 16px",
+    borderRadius: "18px",
+    background: "#f8fbff",
+    border: "1px solid rgba(37,99,235,0.12)",
+    color: "#334155",
+  },
+  metricGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "12px",
+  },
+  metricCard: {
+    padding: "16px 18px",
+    borderRadius: "20px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.14)",
+    display: "grid",
+    gap: "10px",
+  },
+  metricLabel: {
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "#64748b",
+  },
+  metricValue: {
+    fontSize: "26px",
+    color: "#0f172a",
+  },
+  timelineCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "16px",
+    flexWrap: "wrap",
+    padding: "16px 18px",
+    borderRadius: "20px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.14)",
+  },
+  timelineTitle: {
+    fontSize: "20px",
+    fontWeight: 800,
+    color: "#0f172a",
+  },
+  timelineText: {
+    color: "#475569",
+    marginTop: "6px",
+    lineHeight: 1.6,
+  },
+  timelineMeta: {
+    display: "grid",
+    gap: "6px",
+    color: "#475569",
+    minWidth: "180px",
+  },
+  alertCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "14px",
+    alignItems: "center",
+    padding: "16px 18px",
+    borderRadius: "20px",
+    background: "#fff7ed",
+    border: "1px solid rgba(249,115,22,0.14)",
+  },
+  riskBadge: {
+    padding: "10px 14px",
+    borderRadius: "999px",
+    background: "#fee2e2",
+    color: "#b91c1c",
+    fontWeight: 800,
+  },
+  formGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: "14px",
+    marginBottom: "18px",
+  },
+  label: {
+    display: "grid",
+    gap: "8px",
+    color: "#334155",
+    fontWeight: 700,
+    fontSize: "14px",
+  },
+  input: {
+    width: "100%",
+    padding: "14px 16px",
+    borderRadius: "16px",
+    border: "1px solid rgba(148,163,184,0.22)",
+    background: "#f8fafc",
+    boxSizing: "border-box",
+    fontSize: "15px",
+    color: "#0f172a",
+    fontFamily: "inherit",
+  },
+  fileInput: {
+    width: "100%",
+    padding: "13px 14px",
+    borderRadius: "16px",
+    border: "1px dashed rgba(37,99,235,0.28)",
+    background: "#eff6ff",
+    boxSizing: "border-box",
+    fontSize: "14px",
+  },
+  primaryButton: {
+    border: "none",
+    borderRadius: "18px",
+    padding: "15px 18px",
+    background: "linear-gradient(135deg, #1d4ed8, #0f766e)",
+    color: "#fff",
+    fontWeight: 800,
+    fontSize: "15px",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+    boxShadow: "0 18px 34px rgba(37, 99, 235, 0.18)",
+  },
+  secondaryButton: {
+    border: "1px solid rgba(148,163,184,0.24)",
+    borderRadius: "18px",
+    padding: "14px 18px",
+    background: "#fff",
+    color: "#0f172a",
+    fontWeight: 800,
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+  },
+  successButton: {
+    border: "none",
+    borderRadius: "18px",
+    padding: "14px 18px",
+    background: "#16a34a",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+  },
+  warningButton: {
+    border: "none",
+    borderRadius: "18px",
+    padding: "14px 18px",
+    background: "#f59e0b",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+  },
+  dangerButton: {
+    border: "none",
+    borderRadius: "18px",
+    padding: "14px 18px",
+    background: "#dc2626",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "10px",
+  },
+  actionRow: {
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    marginTop: "16px",
+  },
+  cardGrid: {
+    display: "grid",
+    gap: "16px",
+  },
+  classroomCard: {
+    padding: "18px",
+    borderRadius: "22px",
+    background: "#f8fbff",
+    border: "1px solid #dbe3ef",
+    display: "grid",
+    gap: "12px",
+  },
+  classroomMeta: {
+    display: "flex",
+    gap: "12px",
+    flexWrap: "wrap",
+    color: "#475569",
+  },
+  approvalCard: {
+    padding: "20px",
+    borderRadius: "24px",
+    background: "#fff",
+    border: "1px solid rgba(148,163,184,0.16)",
+    boxShadow: "0 16px 32px rgba(15, 23, 42, 0.06)",
+    display: "grid",
+    gap: "14px",
+  },
+  approvalTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "14px",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  pendingBadge: {
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: "#fff7ed",
+    color: "#c2410c",
+    fontWeight: 800,
+  },
+  approvalMetaGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+    gap: "10px",
+  },
+  infoPill: {
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.14)",
+    display: "grid",
+    gap: "8px",
+  },
+  infoPillValue: {
+    color: "#0f172a",
+    lineHeight: 1.5,
+  },
+  fileLink: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "fit-content",
+    padding: "10px 14px",
+    borderRadius: "999px",
+    textDecoration: "none",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 700,
+    fontSize: "13px",
+  },
+  rosterGroup: {
+    padding: "18px",
+    borderRadius: "22px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.14)",
+  },
+  rosterTitle: {
+    fontSize: "18px",
+    fontWeight: 800,
+    color: "#0f172a",
+    marginBottom: "12px",
+  },
+  rosterRow: {
+    padding: "12px 14px",
+    borderRadius: "16px",
+    background: "#fff",
+    border: "1px solid rgba(148,163,184,0.12)",
+    display: "grid",
+    gap: "4px",
+    color: "#475569",
+  },
+  smallKicker: {
+    fontSize: "12px",
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    color: "#64748b",
+  },
+  examCard: {
+    padding: "22px",
+    borderRadius: "26px",
+    background: "#fff",
+    border: "1px solid rgba(148,163,184,0.16)",
+    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.06)",
+  },
+  examTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "14px",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  statusBadge: (status) => ({
+    display: "inline-flex",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background:
+      status === "live"
+        ? "#dcfce7"
+        : status === "closed"
+        ? "#e2e8f0"
+        : status === "PASSED"
+        ? "#dcfce7"
+        : status === "FAILED"
+        ? "#fee2e2"
+        : "#dbeafe",
+    color:
+      status === "live"
+        ? "#166534"
+        : status === "closed"
+        ? "#475569"
+        : status === "PASSED"
+        ? "#166534"
+        : status === "FAILED"
+        ? "#b91c1c"
+        : "#1d4ed8",
+    fontWeight: 800,
+    textTransform: "capitalize",
+  }),
+  assignmentCard: {
+    padding: "22px",
+    borderRadius: "26px",
+    background: "#fff",
+    border: "1px solid rgba(148,163,184,0.16)",
+    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.06)",
+    display: "grid",
+    gap: "12px",
+  },
+  countBadge: {
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 800,
+  },
+  reviewCard: {
+    padding: "16px 18px",
+    borderRadius: "20px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.14)",
+  },
+  submissionRow: {
+    padding: "16px",
+    borderRadius: "20px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.14)",
+    display: "grid",
+    gap: "12px",
+  },
+  submissionHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "flex-start",
+    flexWrap: "wrap",
+  },
+  marksGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: "12px",
+  },
+  priorityBadge: (priority) => ({
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: priority === "high" ? "#fee2e2" : "#ecfccb",
+    color: priority === "high" ? "#b91c1c" : "#3f6212",
+    fontWeight: 800,
+    textTransform: "capitalize",
+  }),
+  feedCard: {
+    padding: "20px",
+    borderRadius: "22px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.14)",
+    display: "grid",
+    gap: "14px",
+  },
+  resultCard: {
+    padding: "22px",
+    borderRadius: "24px",
+    background: "#fff",
+    border: "1px solid rgba(148,163,184,0.14)",
+    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.06)",
+    display: "grid",
+    gap: "14px",
+  },
+  emptyState: {
+    padding: "20px",
+    borderRadius: "18px",
+    background: "#f8fafc",
+    border: "1px dashed rgba(148,163,184,0.26)",
+    color: "#64748b",
+  },
+  emptyCompact: {
+    padding: "16px",
+    borderRadius: "16px",
+    background: "#fff",
+    border: "1px dashed rgba(148,163,184,0.22)",
+    color: "#64748b",
+  },
 };
 
 export default TeacherPanel;

@@ -153,7 +153,7 @@ const Results = () => {
         <div>
           <div style={styles.heroKicker}>Final assessment report</div>
           <h1 style={styles.heroTitle}>
-            {result.testName || "Exam"} · {result.status || (derived.academicAccuracy >= 50 ? "PASSED" : "FAILED")}
+            {result.testName || "Exam"} | {result.status || (derived.academicAccuracy >= 50 ? "PASSED" : "FAILED")}
           </h1>
           <p style={styles.heroText}>
             Candidate <strong>{result.studentName || "Verified Student"}</strong> completed the exam
@@ -178,8 +178,8 @@ const Results = () => {
             <span style={styles.cardBigMuted}> / {derived.total}</span>
           </div>
           <div style={styles.cardSubText}>
-            Correct answers <strong>{derived.score}</strong> · Wrong answers{" "}
-            <strong>{derived.incorrectAnswers}</strong> · Unanswered{" "}
+            Correct answers <strong>{derived.score}</strong> | Wrong answers{" "}
+            <strong>{derived.incorrectAnswers}</strong> | Unanswered{" "}
             <strong>{derived.unansweredAnswers}</strong>
           </div>
           <Progress value={derived.academicAccuracy} tone="light" />

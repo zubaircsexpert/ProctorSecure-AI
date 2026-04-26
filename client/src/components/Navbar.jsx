@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { Bell, Menu, ShieldCheck, X } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import API from "../services/api";
 
 const NAV_HEIGHT = 84;
@@ -10,18 +10,18 @@ const getSavedUser = () => {
     const rawUser = localStorage.getItem("user");
     if (!rawUser || rawUser === "undefined") return null;
     return JSON.parse(rawUser);
-  } catch (err) {
-    console.error("Navbar user parse error:", err);
+  } catch (error) {
+    console.error("Navbar user parse error:", error);
     return null;
   }
 };
 
-const Navbar = () => {
+function Navbar() {
+  const location = useLocation();
+  const user = getSavedUser();
   const [notificationCount, setNotificationCount] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const location = useLocation();
-  const user = useMemo(() => getSavedUser(), []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -41,8 +41,8 @@ const Navbar = () => {
       try {
         const response = await API.get("/api/notifications/all");
         setNotificationCount(Array.isArray(response.data) ? response.data.length : 0);
-      } catch (err) {
-        console.error("Error fetching notifications:", err);
+      } catch (error) {
+        console.error("Navbar notification fetch error:", error);
       }
     };
 
@@ -56,6 +56,8 @@ const Navbar = () => {
   }
 
   const role = user.role;
+  const notificationTarget = role === "teacher" ? "/teacher-panel" : "/notifications";
+  const dashboardTarget = role === "teacher" ? "/teacher-panel" : "/dashboard";
   const navLinks =
     role === "teacher"
       ? [
@@ -89,13 +91,13 @@ const Navbar = () => {
         gap: "24px",
         padding: isMobile ? "16px 18px" : "16px 34px",
         background:
-          "linear-gradient(120deg, rgba(25,35,88,0.98) 0%, rgba(97,26,70,0.96) 44%, rgba(176,29,38,0.96) 100%)",
+          "linear-gradient(120deg, rgba(25,35,88,0.98) 0%, rgba(17,94,89,0.96) 46%, rgba(30,64,175,0.96) 100%)",
         boxShadow: "0 20px 45px rgba(15, 23, 42, 0.18)",
         backdropFilter: "blur(16px)",
       }}
     >
       <Link
-        to={role === "teacher" ? "/teacher-panel" : "/dashboard"}
+        to={dashboardTarget}
         style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}
       >
         <div
@@ -123,11 +125,11 @@ const Navbar = () => {
           >
             PROCTOR-AI
           </div>
-          {!isMobile && (
+          {!isMobile ? (
             <div style={{ color: "rgba(255,255,255,0.78)", fontSize: "12px" }}>
-              Secure exam intelligence suite
+              {role === "teacher" ? "Teacher operations suite" : "Secure exam intelligence suite"}
             </div>
-          )}
+          ) : null}
         </div>
       </Link>
 
@@ -144,7 +146,7 @@ const Navbar = () => {
             padding: isMobile ? "18px" : 0,
             borderRadius: isMobile ? "24px" : 0,
             background: isMobile
-              ? "linear-gradient(180deg, rgba(20,27,65,0.98), rgba(60,17,48,0.96))"
+              ? "linear-gradient(180deg, rgba(20,27,65,0.98), rgba(14,116,144,0.96))"
               : "transparent",
             border: isMobile ? "1px solid rgba(255,255,255,0.1)" : "none",
             boxShadow: isMobile ? "0 22px 40px rgba(15, 23, 42, 0.28)" : "none",
@@ -177,7 +179,21 @@ const Navbar = () => {
             );
           })}
 
+          <div
+            style={{
+              padding: isMobile ? "12px 14px" : "11px 16px",
+              borderRadius: "14px",
+              color: "#fff",
+              background: "rgba(255,255,255,0.08)",
+              border: "1px solid rgba(255,255,255,0.12)",
+              fontWeight: 700,
+            }}
+          >
+            {role === "teacher" ? "Teacher" : "Student"} | {user.name}
+          </div>
+
           <button
+            type="button"
             onClick={handleLogout}
             style={{
               border: "none",
@@ -188,6 +204,7 @@ const Navbar = () => {
               fontWeight: 800,
               boxShadow: "0 12px 24px rgba(255, 77, 79, 0.24)",
               minWidth: isMobile ? "100%" : "auto",
+              cursor: "pointer",
             }}
           >
             Logout
@@ -195,7 +212,7 @@ const Navbar = () => {
         </div>
 
         <Link
-          to="/notifications"
+          to={notificationTarget}
           style={{
             position: "relative",
             display: "grid",
@@ -208,7 +225,7 @@ const Navbar = () => {
           }}
         >
           <Bell color="#fff" size={isMobile ? 21 : 23} />
-          {notificationCount > 0 && (
+          {notificationCount > 0 ? (
             <span
               style={{
                 position: "absolute",
@@ -229,10 +246,10 @@ const Navbar = () => {
             >
               {notificationCount}
             </span>
-          )}
+          ) : null}
         </Link>
 
-        {isMobile && (
+        {isMobile ? (
           <button
             type="button"
             onClick={() => setIsMenuOpen((prev) => !prev)}
@@ -249,10 +266,10 @@ const Navbar = () => {
           >
             {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
           </button>
-        )}
+        ) : null}
       </div>
     </nav>
   );
-};
+}
 
 export default Navbar;

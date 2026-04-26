@@ -135,6 +135,10 @@ const Exam = () => {
     microphoneReady: false,
     faceVisible: false,
     multipleFaces: false,
+    faceStatus: "Aligning face",
+    framingStatus: "Center your face inside the camera frame.",
+    audioLevel: 0,
+    audioStatus: "Calibrating room",
   });
 
   const hasSubmitted = useRef(false);
@@ -343,7 +347,7 @@ const Exam = () => {
 
     warningTimeoutRef.current = window.setTimeout(() => {
       setShowWarning(false);
-    }, 2800);
+    }, 4200);
   }, [submitted]);
 
   useEffect(() => {
@@ -774,7 +778,7 @@ const Exam = () => {
             {selectedExam.title}
           </h2>
           <div style={{ color: "#64748b" }}>
-            Session ID <strong>{sessionIdRef.current}</strong> · Exam Key{" "}
+            Session ID <strong>{sessionIdRef.current}</strong> | Exam Key{" "}
             <strong>{selectedExam.examKey || "Open"}</strong>
           </div>
         </div>
@@ -911,7 +915,12 @@ const Exam = () => {
           </div>
         </div>
 
-        <aside style={styles.sidebar}>
+        <aside
+          style={{
+            ...styles.sidebar,
+            order: isPhone ? -1 : 0,
+          }}
+        >
           <div
             style={{
               ...styles.sidebarCard,
@@ -920,12 +929,47 @@ const Exam = () => {
               top: isCompactLayout ? "auto" : "106px",
             }}
           >
-            <h4 style={{ ...styles.sidebarTitle, marginBottom: "14px" }}>Live Camera</h4>
+            <div style={styles.monitorHeader}>
+              <div>
+                <div style={styles.monitorKicker}>AI monitoring console</div>
+                <h4 style={{ ...styles.sidebarTitle, marginBottom: "6px" }}>Camera + live alerts</h4>
+                <div style={styles.monitorCaption}>
+                  Face lock, posture, audio spikes, and detection guidance stay grouped in one place.
+                </div>
+              </div>
+
+              <div style={styles.voiceBadge}>Voice guide on</div>
+            </div>
+
             <Proctoring
               addWarning={addWarning}
-              onTelemetryChange={setTelemetry}
+              onTelemetryChange={(payload) =>
+                setTelemetry((prev) => ({
+                  ...prev,
+                  ...payload,
+                }))
+              }
               compact={isPhone}
             />
+
+            <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
+              <div style={styles.inlineSectionTitle}>Live alerts</div>
+
+              {showWarning ? (
+                <WarningModal
+                  message={warningMessage}
+                  severity={warningSeverity}
+                  count={warningDisplayCount}
+                  compact={isPhone}
+                  inline
+                />
+              ) : (
+                <div style={styles.alertPlaceholder}>
+                  No active alert. If your face, posture, or focus drifts, the guidance will appear
+                  here and speak automatically.
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
@@ -933,18 +977,54 @@ const Exam = () => {
             <div
               style={{
                 ...styles.signalList,
-                gridTemplateColumns: viewportWidth < 520 ? "1fr" : isPhone ? "1fr 1fr" : "1fr",
+                gridTemplateColumns: "1fr",
               }}
             >
-              <SignalRow label="Camera" value={telemetry.cameraReady ? "Connected" : "Checking"} good={telemetry.cameraReady} compact={isPhone} />
-              <SignalRow label="Microphone" value={telemetry.microphoneReady ? "Connected" : "Checking"} good={telemetry.microphoneReady} compact={isPhone} />
-              <SignalRow label="Face Visibility" value={telemetry.faceVisible ? "Visible" : "Searching"} good={telemetry.faceVisible} compact={isPhone} />
-              <SignalRow label="Multi-face" value={telemetry.multipleFaces ? "Detected" : "Clear"} good={!telemetry.multipleFaces} compact={isPhone} />
+              <SignalRow
+                label="Camera"
+                value={telemetry.cameraReady ? "Connected" : "Checking permissions"}
+                good={telemetry.cameraReady}
+                compact={isPhone}
+              />
+              <SignalRow
+                label="Microphone"
+                value={telemetry.microphoneReady ? "Connected" : "Checking permissions"}
+                good={telemetry.microphoneReady}
+                compact={isPhone}
+              />
+              <SignalRow
+                label="Face lock"
+                value={telemetry.faceStatus || (telemetry.faceVisible ? "Visible" : "Scanning")}
+                good={telemetry.faceVisible && !telemetry.multipleFaces}
+                compact={isPhone}
+              />
+              <SignalRow
+                label="Framing"
+                value={
+                  telemetry.framingStatus || "Center your face inside the camera frame."
+                }
+                good={telemetry.faceVisible}
+                compact={isPhone}
+              />
+              <SignalRow
+                label="Room audio"
+                value={`${telemetry.audioLevel || 0}% | ${
+                  telemetry.audioStatus || "Calibrating room"
+                }`}
+                good={(telemetry.audioLevel || 0) < 65}
+                compact={isPhone}
+              />
+              <SignalRow
+                label="Multi-face"
+                value={telemetry.multipleFaces ? "Detected" : "Single candidate"}
+                good={!telemetry.multipleFaces}
+                compact={isPhone}
+              />
             </div>
           </div>
 
           <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
-            <h4 style={styles.sidebarTitle}>Integrity Log</h4>
+            <h4 style={styles.sidebarTitle}>Integrity Snapshot</h4>
             <div
               style={{
                 ...styles.signalList,
@@ -978,7 +1058,7 @@ const Exam = () => {
                       {event.message}
                     </div>
                     <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "8px" }}>
-                      Count {event.count} · {new Date(event.occurredAt).toLocaleTimeString()}
+                      Count {event.count} | {new Date(event.occurredAt).toLocaleTimeString()}
                     </div>
                   </div>
                 ))
@@ -987,15 +1067,6 @@ const Exam = () => {
           </div>
         </aside>
       </div>
-
-      {showWarning && (
-        <WarningModal
-          message={warningMessage}
-          severity={warningSeverity}
-          count={warningDisplayCount}
-          compact={isPhone}
-        />
-      )}
     </div>
   );
 };
@@ -1004,13 +1075,21 @@ const SignalRow = ({ label, value, good, compact = false }) => (
   <div
     style={{
       ...styles.signalRow,
-      flexDirection: compact ? "column" : "row",
-      alignItems: compact ? "flex-start" : "center",
-      gap: compact ? "8px" : "12px",
+      gap: compact ? "6px" : "8px",
     }}
   >
-    <span style={{ color: "#475569" }}>{label}</span>
-    <strong style={{ color: good === false ? "#dc2626" : "#0f172a" }}>{value}</strong>
+    <span style={{ color: "#64748b", fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+      {label}
+    </span>
+    <strong
+      style={{
+        color: good === false ? "#b91c1c" : good === true ? "#166534" : "#0f172a",
+        fontSize: compact ? "14px" : "15px",
+        lineHeight: 1.45,
+      }}
+    >
+      {value}
+    </strong>
   </div>
 );
 
@@ -1235,7 +1314,7 @@ const styles = {
   examLayout: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "22px",
+    gap: "24px",
     alignItems: "start",
   },
   questionCard: {
@@ -1316,7 +1395,8 @@ const styles = {
   sidebarCard: {
     padding: "22px",
     borderRadius: "26px",
-    background: "rgba(255,255,255,0.94)",
+    background: "rgba(255,255,255,0.96)",
+    border: "1px solid rgba(148,163,184,0.14)",
     boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
   },
   sidebarTitle: {
@@ -1324,16 +1404,62 @@ const styles = {
     fontSize: "20px",
     color: "#0f172a",
   },
+  monitorHeader: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "12px",
+    marginBottom: "14px",
+    flexWrap: "wrap",
+  },
+  monitorKicker: {
+    fontSize: "11px",
+    textTransform: "uppercase",
+    letterSpacing: "0.14em",
+    color: "#2563eb",
+    fontWeight: 800,
+    marginBottom: "6px",
+  },
+  monitorCaption: {
+    color: "#64748b",
+    fontSize: "14px",
+    lineHeight: 1.55,
+  },
+  voiceBadge: {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 800,
+    fontSize: "12px",
+    whiteSpace: "nowrap",
+  },
+  inlineSectionTitle: {
+    fontSize: "12px",
+    fontWeight: 800,
+    textTransform: "uppercase",
+    letterSpacing: "0.12em",
+    color: "#2563eb",
+  },
+  alertPlaceholder: {
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "#f8fbff",
+    border: "1px dashed rgba(37, 99, 235, 0.24)",
+    color: "#475569",
+    lineHeight: 1.6,
+    fontSize: "14px",
+  },
   signalList: {
     display: "grid",
     gap: "10px",
   },
   signalRow: {
-    display: "flex",
-    justifyContent: "space-between",
-    gap: "12px",
-    padding: "12px 14px",
-    borderRadius: "16px",
+    display: "grid",
+    padding: "14px 15px",
+    borderRadius: "18px",
     background: "#f8fbff",
     border: "1px solid rgba(148,163,184,0.12)",
   },

@@ -16,25 +16,47 @@ const severityPalette = {
   },
 };
 
-const WarningModal = ({ message, severity = "medium", count = 0, compact = false }) => {
+const WarningModal = ({
+  message,
+  severity = "medium",
+  count = 0,
+  compact = false,
+  inline = false,
+}) => {
   const palette = severityPalette[severity] || severityPalette.medium;
+  const heading = inline ? "Live alert" : "Suspicious activity detected";
+  const title =
+    severity === "critical"
+      ? inline
+        ? "Immediate correction needed"
+        : "Critical warning counted"
+      : inline
+      ? "Adjust posture and continue"
+      : "Warning counted, exam continues";
 
   return (
     <div
       style={{
-        position: "fixed",
-        top: compact ? "96px" : "110px",
-        right: compact ? "12px" : "18px",
-        left: compact ? "12px" : "auto",
-        zIndex: 2500,
+        position: inline ? "relative" : "fixed",
+        top: inline ? "auto" : compact ? "96px" : "110px",
+        right: inline ? "auto" : compact ? "12px" : "18px",
+        left: inline ? "auto" : compact ? "12px" : "auto",
+        zIndex: inline ? "auto" : 2500,
         pointerEvents: "none",
+        width: "100%",
       }}
     >
       <div
         style={{
-          width: compact ? "100%" : "min(380px, calc(100vw - 36px))",
+          width: inline ? "100%" : compact ? "100%" : "min(380px, calc(100vw - 36px))",
           borderRadius: compact ? "22px" : "24px",
-          padding: compact ? "16px 18px" : "18px 20px",
+          padding: inline
+            ? compact
+              ? "14px 16px"
+              : "16px 18px"
+            : compact
+            ? "16px 18px"
+            : "18px 20px",
           background: palette.background,
           border: palette.border,
           boxShadow: "0 20px 40px rgba(15, 23, 42, 0.16)",
@@ -60,7 +82,7 @@ const WarningModal = ({ message, severity = "medium", count = 0, compact = false
               color: palette.accent,
             }}
           >
-            Suspicious activity detected
+            {heading}
           </div>
 
           <div
@@ -88,7 +110,7 @@ const WarningModal = ({ message, severity = "medium", count = 0, compact = false
             marginBottom: "6px",
           }}
         >
-          Warning counted, exam continues
+          {title}
         </div>
 
         <p style={{ margin: 0, color: "#475569", lineHeight: 1.55, fontSize: compact ? "14px" : "15px" }}>

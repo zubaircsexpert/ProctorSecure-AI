@@ -18,6 +18,18 @@ const submissionSchema = new mongoose.Schema({
     required: true 
   },
 
+  studentName: {
+    type: String,
+    default: "",
+    trim: true
+  },
+
+  rollNumber: {
+    type: String,
+    default: "",
+    trim: true
+  },
+
   marks: { 
     type: Number, 
     default: 0 
@@ -32,6 +44,11 @@ const submissionSchema = new mongoose.Schema({
   feedback: {
     type: String,
     default: ""
+  },
+
+  reviewedAt: {
+    type: Date,
+    default: null
   },
 
   submittedAt: {
