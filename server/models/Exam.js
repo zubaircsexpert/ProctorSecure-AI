@@ -19,10 +19,19 @@ const examSchema = new mongoose.Schema({
   duration: { type: Number, required: true },
   assessmentType: {
     type: String,
-    enum: ["exam", "quiz", "practice"],
+    enum: ["exam", "quiz", "practice", "test"],
     default: "exam",
   },
+  responseMode: {
+    type: String,
+    enum: ["mcq", "written"],
+    default: "mcq",
+  },
   instructions: { type: String, default: "" },
+  submissionPrompt: { type: String, default: "" },
+  requiresCamera: { type: Boolean, default: true },
+  requiresMicrophone: { type: Boolean, default: true },
+  requiresScreenShare: { type: Boolean, default: true },
   examKey: { type: String, default: "" },
   status: {
     type: String,

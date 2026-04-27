@@ -72,6 +72,8 @@ const Proctoring = ({
   addWarning,
   onTelemetryChange,
   onEvidenceCapture,
+  videoStream = null,
+  audioStream = null,
   compact = false,
 }) => {
   const videoRef = useRef(null);
@@ -815,46 +817,50 @@ const Proctoring = ({
           frameRate: { ideal: compact ? 24 : 30 },
         };
 
-        let videoStream = null;
-        let audioStream = null;
+        let nextVideoStream = videoStream || null;
+        let nextAudioStream = audioStream || null;
 
-        try {
-          const combinedStream = await navigator.mediaDevices.getUserMedia({
-            video: videoConstraints,
-            audio: true,
-          });
-          videoStream = combinedStream;
-          audioStream = combinedStream;
-        } catch (combinedError) {
-          console.error("Combined media request fallback:", combinedError);
-          videoStream = await navigator.mediaDevices.getUserMedia({
-            video: videoConstraints,
-            audio: false,
-          });
-
+        if (!nextVideoStream) {
           try {
-            audioStream = await navigator.mediaDevices.getUserMedia({
-              video: false,
+            const combinedStream = await navigator.mediaDevices.getUserMedia({
+              video: videoConstraints,
               audio: true,
             });
-          } catch (audioError) {
-            console.error("Audio-only request failed:", audioError);
+            nextVideoStream = combinedStream;
+            nextAudioStream = nextAudioStream || combinedStream;
+          } catch (combinedError) {
+            console.error("Combined media request fallback:", combinedError);
+            nextVideoStream = await navigator.mediaDevices.getUserMedia({
+              video: videoConstraints,
+              audio: false,
+            });
+
+            if (!nextAudioStream) {
+              try {
+                nextAudioStream = await navigator.mediaDevices.getUserMedia({
+                  video: false,
+                  audio: true,
+                });
+              } catch (audioError) {
+                console.error("Audio-only request failed:", audioError);
+              }
+            }
           }
         }
 
         if (!active) {
-          videoStream?.getTracks().forEach((track) => track.stop());
-          if (audioStream && audioStream !== videoStream) {
-            audioStream.getTracks().forEach((track) => track.stop());
+          nextVideoStream?.getTracks().forEach((track) => track.stop());
+          if (nextAudioStream && nextAudioStream !== nextVideoStream) {
+            nextAudioStream.getTracks().forEach((track) => track.stop());
           }
           return;
         }
 
-        streamRef.current = videoStream;
-        audioStreamRef.current = audioStream;
+        streamRef.current = nextVideoStream;
+        audioStreamRef.current = nextAudioStream;
 
         if (videoRef.current) {
-          videoRef.current.srcObject = videoStream;
+          videoRef.current.srcObject = nextVideoStream;
           await videoRef.current.play();
         }
 
@@ -870,7 +876,7 @@ const Proctoring = ({
 
         await loadFallbackModels();
         await startFaceTracking();
-        await startAudioDetection(audioStream);
+        await startAudioDetection(nextAudioStream);
       } catch (error) {
         console.error("Camera error:", error);
         setCameraState("Camera blocked");
@@ -910,11 +916,15 @@ const Proctoring = ({
       }
 
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
+        if (!videoStream) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+        }
       }
 
       if (audioStreamRef.current && audioStreamRef.current !== streamRef.current) {
-        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+        if (!audioStream) {
+          audioStreamRef.current.getTracks().forEach((track) => track.stop());
+        }
       }
 
       if (canvas) {
@@ -930,6 +940,8 @@ const Proctoring = ({
     startAudioDetection,
     startFaceTracking,
     updateTrackingScore,
+    videoStream,
+    audioStream,
   ]);
 
   const tone = getPresenceTone(presenceLabel);

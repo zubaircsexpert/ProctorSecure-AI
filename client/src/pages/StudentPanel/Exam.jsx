@@ -5,6 +5,7 @@ import Proctoring from "../../components/Proctoring";
 import WarningModal from "../../components/WarningModal";
 
 const ACTIVE_SESSION_KEY = "proctor-ai-active-exam";
+const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
 const WARNING_FIELD_MAP = {
   eye: "eyeWarnings",
@@ -87,6 +88,13 @@ const initialWarningCounts = {
   screenShareWarnings: 0,
 };
 
+const initialAccessChecklist = {
+  camera: false,
+  microphone: false,
+  screen: false,
+  fullscreen: false,
+};
+
 const createSessionId = () => Math.random().toString(36).slice(2, 11).toUpperCase();
 
 const extractList = (payload, keys = []) => {
@@ -114,6 +122,8 @@ const Exam = () => {
   const [questions, setQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState({});
+  const [writtenAnswer, setWrittenAnswer] = useState("");
+  const [writtenFile, setWrittenFile] = useState(null);
   const [exams, setExams] = useState([]);
   const [selectedExam, setSelectedExam] = useState(null);
 
@@ -121,6 +131,8 @@ const Exam = () => {
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [resumeNotice, setResumeNotice] = useState("");
+  const [permissionError, setPermissionError] = useState("");
+  const [accessChecklist, setAccessChecklist] = useState(initialAccessChecklist);
 
   const [warningCounts, setWarningCounts] = useState(initialWarningCounts);
   const [activityLog, setActivityLog] = useState([]);
@@ -141,6 +153,7 @@ const Exam = () => {
     multipleFaces: false,
     faceStatus: "Aligning face",
     framingStatus: "Center your face inside the camera frame.",
+    screenReady: false,
     audioLevel: 0,
     audioStatus: "Calibrating room",
     trackingScore: 0,
@@ -152,8 +165,12 @@ const Exam = () => {
   const hasSubmitted = useRef(false);
   const warningTimeoutRef = useRef(null);
   const monitoringArmTimeoutRef = useRef(null);
+  const autoAdvanceTimeoutRef = useRef(null);
   const sessionIdRef = useRef(createSessionId());
   const warningCountRef = useRef(initialWarningCounts);
+  const cameraStreamRef = useRef(null);
+  const audioStreamRef = useRef(null);
+  const screenStreamRef = useRef(null);
 
   const isPhone = viewportWidth < 768;
   const isCompactLayout = viewportWidth < 1120;
@@ -169,6 +186,107 @@ const Exam = () => {
   useEffect(() => {
     warningCountRef.current = warningCounts;
   }, [warningCounts]);
+
+  const stopMediaSession = useCallback(() => {
+    [cameraStreamRef.current, audioStreamRef.current, screenStreamRef.current].forEach((stream) => {
+      stream?.getTracks?.().forEach((track) => track.stop());
+    });
+
+    cameraStreamRef.current = null;
+    audioStreamRef.current = null;
+    screenStreamRef.current = null;
+    setAccessChecklist(initialAccessChecklist);
+    setTelemetry((prev) => ({
+      ...prev,
+      cameraReady: false,
+      microphoneReady: false,
+      screenReady: false,
+      cameraState: "Preparing camera",
+    }));
+  }, []);
+
+  const requestExamAccess = useCallback(
+    async (exam) => {
+      stopMediaSession();
+      setPermissionError("");
+
+      const nextAccess = { ...initialAccessChecklist };
+      const requireCamera = exam?.requiresCamera !== false;
+      const requireMicrophone = exam?.requiresMicrophone !== false;
+      const requireScreenShare = exam?.requiresScreenShare !== false;
+
+      try {
+        if ((requireCamera || requireMicrophone) && navigator.mediaDevices?.getUserMedia) {
+          const combinedStream = await navigator.mediaDevices.getUserMedia({
+            video: requireCamera,
+            audio: requireMicrophone,
+          });
+          cameraStreamRef.current = requireCamera ? combinedStream : null;
+          audioStreamRef.current = requireMicrophone ? combinedStream : null;
+          nextAccess.camera = requireCamera ? combinedStream.getVideoTracks().length > 0 : true;
+          nextAccess.microphone = requireMicrophone ? combinedStream.getAudioTracks().length > 0 : true;
+        } else {
+          nextAccess.camera = !requireCamera;
+          nextAccess.microphone = !requireMicrophone;
+        }
+
+        if (requireScreenShare) {
+          if (!navigator.mediaDevices?.getDisplayMedia) {
+            throw new Error("Screen sharing is not supported in this browser.");
+          }
+
+          const displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 10, max: 15 } },
+            audio: false,
+          });
+          screenStreamRef.current = displayStream;
+          nextAccess.screen = displayStream.getVideoTracks().length > 0;
+
+          const screenTrack = displayStream.getVideoTracks()[0];
+          if (screenTrack) {
+            screenTrack.onended = () => {
+              setAccessChecklist((prev) => ({ ...prev, screen: false }));
+              setTelemetry((prev) => ({ ...prev, screenReady: false }));
+              addWarning("screenShare", "Screen sharing stopped during the exam.");
+            };
+          }
+        } else {
+          nextAccess.screen = true;
+        }
+
+        if (shouldEnforceFullscreen) {
+          const entered = document.fullscreenElement
+            ? true
+            : await document.documentElement.requestFullscreen().catch(() => null);
+          const isFullscreen = Boolean(document.fullscreenElement || entered);
+          if (!isFullscreen) {
+            throw new Error("Fullscreen permission is required before the exam can begin.");
+          }
+          nextAccess.fullscreen = true;
+        } else {
+          nextAccess.fullscreen = true;
+        }
+
+        setAccessChecklist(nextAccess);
+        setFullscreenActive(nextAccess.fullscreen);
+        setTelemetry((prev) => ({
+          ...prev,
+          cameraReady: nextAccess.camera,
+          microphoneReady: nextAccess.microphone,
+          screenReady: nextAccess.screen,
+          cameraState: nextAccess.camera ? "Camera live" : prev.cameraState,
+        }));
+      } catch (error) {
+        stopMediaSession();
+        setPermissionError(
+          error?.message ||
+            "Camera, microphone, screen sharing, and fullscreen access are required to start this exam."
+        );
+        throw error;
+      }
+    },
+    [addWarning, shouldEnforceFullscreen, stopMediaSession]
+  );
 
   const fetchExams = useCallback(async () => {
     try {
@@ -250,11 +368,21 @@ const Exam = () => {
       if (monitoringArmTimeoutRef.current) {
         window.clearTimeout(monitoringArmTimeoutRef.current);
       }
+      if (autoAdvanceTimeoutRef.current) {
+        window.clearTimeout(autoAdvanceTimeoutRef.current);
+      }
+      stopMediaSession();
     };
-  }, [fetchExams]);
+  }, [fetchExams, stopMediaSession]);
 
   useEffect(() => {
     if (!selectedExam || submitted) {
+      return undefined;
+    }
+
+    if ((selectedExam.responseMode || "mcq") !== "mcq") {
+      setQuestions([]);
+      setLoadingQuestions(false);
       return undefined;
     }
 
@@ -305,7 +433,7 @@ const Exam = () => {
     setMonitoringArmed(false);
     monitoringArmTimeoutRef.current = window.setTimeout(() => {
       setMonitoringArmed(true);
-    }, 3500);
+    }, 900);
 
     return () => {
       if (monitoringArmTimeoutRef.current) {
@@ -422,7 +550,9 @@ const Exam = () => {
     };
 
     const handleFullscreen = () => {
-      setFullscreenActive(Boolean(document.fullscreenElement));
+      const nextFullscreen = Boolean(document.fullscreenElement);
+      setFullscreenActive(nextFullscreen);
+      setAccessChecklist((prev) => ({ ...prev, fullscreen: nextFullscreen }));
       if (shouldEnforceFullscreen && !document.fullscreenElement) {
         addWarning("fullscreen", "Fullscreen mode exited during the exam.");
       }
@@ -507,11 +637,15 @@ const Exam = () => {
   }, [addWarning, selectedExam, shouldEnforceFullscreen, submitted]);
 
   const resetExamState = () => {
+    stopMediaSession();
     setSelectedExam(null);
     setQuestions([]);
     setCurrentIdx(0);
     setAnswers({});
+    setWrittenAnswer("");
+    setWrittenFile(null);
     setErrorMessage("");
+    setPermissionError("");
     setSubmitted(false);
     setSubmitting(false);
     setWarningCounts(initialWarningCounts);
@@ -519,10 +653,14 @@ const Exam = () => {
     setMonitoringArmed(false);
     setEvidenceShots([]);
     setFullscreenActive(false);
+    setAccessChecklist(initialAccessChecklist);
     sessionIdRef.current = createSessionId();
     hasSubmitted.current = false;
     if (monitoringArmTimeoutRef.current) {
       window.clearTimeout(monitoringArmTimeoutRef.current);
+    }
+    if (autoAdvanceTimeoutRef.current) {
+      window.clearTimeout(autoAdvanceTimeoutRef.current);
     }
     localStorage.removeItem(ACTIVE_SESSION_KEY);
   };
@@ -540,7 +678,10 @@ const Exam = () => {
 
     hasSubmitted.current = false;
     setSubmitted(false);
-    setSelectedExam(exam);
+    setLoadingQuestions(true);
+    setPermissionError("");
+    setWrittenAnswer("");
+    setWrittenFile(null);
     setQuestions([]);
     setCurrentIdx(0);
     setAnswers({});
@@ -567,16 +708,31 @@ const Exam = () => {
     setErrorMessage("");
     sessionIdRef.current = createSessionId();
 
-    if (shouldEnforceFullscreen && !document.fullscreenElement) {
-      try {
-        await document.documentElement.requestFullscreen();
-        setFullscreenActive(Boolean(document.fullscreenElement));
-      } catch (err) {
-        console.error("Fullscreen request failed:", err);
+    try {
+      if (shouldEnforceFullscreen && !document.fullscreenElement) {
+        const enteredFullscreen = await document.documentElement.requestFullscreen().catch(() => null);
+        if (!document.fullscreenElement && !enteredFullscreen) {
+          throw new Error("Fullscreen must be allowed before the exam can start.");
+        }
+      }
+
+      await requestExamAccess(exam);
+      setSelectedExam(exam);
+
+      if ((exam.responseMode || "mcq") === "mcq") {
+        await loadQuestions(exam._id, true);
+      } else {
+        setQuestions([]);
+        setLoadingQuestions(false);
+      }
+    } catch (err) {
+      console.error("Exam permission flow failed:", err);
+      setSelectedExam(null);
+      setLoadingQuestions(false);
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
       }
     }
-
-    await loadQuestions(exam._id, true);
   };
 
   const handleSubmit = useCallback(async () => {
@@ -588,6 +744,108 @@ const Exam = () => {
     setSubmitting(true);
 
     try {
+      const responseMode = selectedExam.responseMode || "mcq";
+      const isWrittenMode = responseMode === "written";
+      const weightedSuspicion = Object.entries(WARNING_WEIGHTS).reduce(
+        (sum, [field, weight]) => sum + (warningCounts[field] || 0) * weight,
+        0
+      );
+      const suspicionBase = isWrittenMode ? 30 : Math.max(30, questions.length * 14 || 30);
+      const suspiciousScore = clamp(round((weightedSuspicion / suspicionBase) * 100));
+      const integrityScore = clamp(round(100 - suspiciousScore));
+      const trustFactor = computeTrustFactor(suspiciousScore);
+
+      let user = { name: "Student", id: "" };
+
+      try {
+        const savedUser = localStorage.getItem("user");
+        if (savedUser) {
+          user = { ...user, ...JSON.parse(savedUser) };
+        }
+      } catch (err) {
+        console.error("Failed to parse user for result submission:", err);
+      }
+
+      if (isWrittenMode) {
+        const trimmedAnswer = writtenAnswer.trim();
+        if (!trimmedAnswer && !writtenFile) {
+          throw new Error("Type your written answer or upload an answer sheet before final submit.");
+        }
+
+        const writtenPayload = {
+          answeredCount: trimmedAnswer || writtenFile ? 1 : 0,
+          incorrectAnswers: 0,
+          unansweredAnswers: trimmedAnswer || writtenFile ? 0 : 1,
+          score: 0,
+          total: 1,
+          percentage: 0,
+          academicAccuracy: 0,
+          status: "UNDER_REVIEW",
+          warnings: warningCounts.total,
+          eyeWarnings: warningCounts.eyeWarnings,
+          headWarnings: warningCounts.headWarnings,
+          soundWarnings: warningCounts.soundWarnings,
+          tabWarnings: warningCounts.tabWarnings,
+          fullscreenWarnings: warningCounts.fullscreenWarnings,
+          copyWarnings: warningCounts.copyWarnings,
+          pasteWarnings: warningCounts.pasteWarnings,
+          cutWarnings: warningCounts.cutWarnings,
+          rightClickWarnings: warningCounts.rightClickWarnings,
+          shortcutWarnings: warningCounts.shortcutWarnings,
+          screenshotWarnings: warningCounts.screenshotWarnings,
+          focusWarnings: warningCounts.focusWarnings,
+          visibilityWarnings: warningCounts.visibilityWarnings,
+          exitWarnings: warningCounts.exitWarnings,
+          faceMissingWarnings: warningCounts.faceMissingWarnings,
+          multipleFaceWarnings: warningCounts.multipleFaceWarnings,
+          screenShareWarnings: warningCounts.screenShareWarnings,
+          cheatingPercent: suspiciousScore,
+          integrityScore,
+          intelligenceScore: integrityScore,
+          suspiciousScore,
+          trustFactor,
+          activityLog,
+          evidenceShots,
+        };
+
+        const formData = new FormData();
+        formData.append("examId", selectedExam._id);
+        formData.append("studentName", user.name || "Student");
+        formData.append("testName", selectedExam.title || "Written Exam");
+        formData.append("writtenAnswer", trimmedAnswer);
+        formData.append("payload", JSON.stringify(writtenPayload));
+        if (writtenFile) {
+          formData.append("file", writtenFile);
+        }
+
+        const response = await API.post("/api/results/submit-written", formData, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+
+        const savedWrittenResult = response?.data?.result || {
+          examId: selectedExam._id,
+          studentName: user.name || "Student",
+          testName: selectedExam.title || "Written Exam",
+          status: "UNDER_REVIEW",
+          suspiciousScore,
+          trustFactor,
+          writtenAnswer: trimmedAnswer,
+          evidenceShots,
+        };
+
+        localStorage.setItem("examResult", JSON.stringify(savedWrittenResult));
+        localStorage.removeItem(ACTIVE_SESSION_KEY);
+        setSubmitted(true);
+        stopMediaSession();
+
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+
+        window.location.href = "/results";
+        return;
+      }
+
       let scoreCount = 0;
       const answeredCount = Object.values(answers).filter(Boolean).length;
 
@@ -606,29 +864,7 @@ const Exam = () => {
       const incorrectAnswers = Math.max(answeredCount - scoreCount, 0);
       const unansweredAnswers = Math.max(total - answeredCount, 0);
       const academicAccuracy = total > 0 ? round((scoreCount / total) * 100) : 0;
-
-      const weightedSuspicion = Object.entries(WARNING_WEIGHTS).reduce(
-        (sum, [field, weight]) => sum + (warningCounts[field] || 0) * weight,
-        0
-      );
-
-      const suspiciousScore = clamp(
-        round((weightedSuspicion / Math.max(30, total * 14 || 30)) * 100)
-      );
-      const integrityScore = clamp(round(100 - suspiciousScore));
       const intelligenceScore = clamp(round(academicAccuracy * 0.74 + integrityScore * 0.26));
-      const trustFactor = computeTrustFactor(suspiciousScore);
-
-      let user = { name: "Student", id: "" };
-
-      try {
-        const savedUser = localStorage.getItem("user");
-        if (savedUser) {
-          user = { ...user, ...JSON.parse(savedUser) };
-        }
-      } catch (err) {
-        console.error("Failed to parse user for result submission:", err);
-      }
 
       const resultData = {
         examId: selectedExam._id,
@@ -667,12 +903,15 @@ const Exam = () => {
         trustFactor,
         activityLog,
         evidenceShots,
+        responseMode,
+        submissionPrompt: selectedExam.submissionPrompt || selectedExam.instructions || "",
       };
 
       await API.post("/api/results/submit", resultData);
       localStorage.setItem("examResult", JSON.stringify(resultData));
       localStorage.removeItem(ACTIVE_SESSION_KEY);
       setSubmitted(true);
+      stopMediaSession();
 
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
@@ -691,22 +930,43 @@ const Exam = () => {
           total: questions.length,
           percentage: 0,
           warnings: warningCounts.total,
+          responseMode: selectedExam.responseMode || "mcq",
         })
       );
       window.location.href = "/results";
     } finally {
       setSubmitting(false);
     }
-  }, [activityLog, answers, evidenceShots, questions, selectedExam, submitted, submitting, warningCounts]);
+  }, [
+    activityLog,
+    answers,
+    evidenceShots,
+    questions,
+    selectedExam,
+    stopMediaSession,
+    submitted,
+    submitting,
+    warningCounts,
+    writtenAnswer,
+    writtenFile,
+  ]);
 
+  const responseMode = selectedExam?.responseMode || "mcq";
+  const isWrittenExam = responseMode === "written";
   const currentQuestion = questions[currentIdx];
-  const currentQuestionText =
-    currentQuestion?.questionText || currentQuestion?.question || "";
-  const currentOptions = Array.isArray(currentQuestion?.options)
-    ? currentQuestion.options
-    : [];
-  const answeredCount = Object.values(answers).filter(Boolean).length;
-  const remainingCount = Math.max(questions.length - answeredCount, 0);
+  const currentQuestionText = isWrittenExam
+    ? selectedExam?.submissionPrompt ||
+      selectedExam?.instructions ||
+      "Write your answer carefully and submit it for teacher review."
+    : currentQuestion?.questionText || currentQuestion?.question || "";
+  const currentOptions =
+    !isWrittenExam && Array.isArray(currentQuestion?.options) ? currentQuestion.options : [];
+  const answeredCount = isWrittenExam
+    ? writtenAnswer.trim() || writtenFile
+      ? 1
+      : 0
+    : Object.values(answers).filter(Boolean).length;
+  const remainingCount = isWrittenExam ? Number(answeredCount === 0) : Math.max(questions.length - answeredCount, 0);
 
   const suspiciousScorePreview = useMemo(() => {
     const weightedSuspicion = Object.entries(WARNING_WEIGHTS).reduce(
@@ -714,8 +974,10 @@ const Exam = () => {
       0
     );
 
-    return clamp(round((weightedSuspicion / Math.max(30, questions.length * 14 || 30)) * 100));
-  }, [questions.length, warningCounts]);
+    return clamp(
+      round((weightedSuspicion / Math.max(30, isWrittenExam ? 30 : questions.length * 14 || 30)) * 100)
+    );
+  }, [isWrittenExam, questions.length, warningCounts]);
   const desktopPanelHeight = isCompactLayout ? "auto" : "calc(100vh - 286px)";
   const faceReady =
     telemetry.cameraReady && telemetry.faceVisible && !telemetry.multipleFaces;
@@ -727,6 +989,17 @@ const Exam = () => {
     warningCounts.fullscreenWarnings;
   const quickDetections = activityLog.slice(0, 3);
   const evidencePreview = evidenceShots.slice(0, 4);
+  const permissionReady = Object.values(accessChecklist).every(Boolean);
+  const warningRoomItems = [
+    ["Copy", warningCounts.copyWarnings],
+    ["Paste", warningCounts.pasteWarnings],
+    ["Head", warningCounts.headWarnings],
+    ["Eyes", warningCounts.eyeWarnings],
+    ["Shot", warningCounts.screenshotWarnings],
+    ["Focus", focusEventCount],
+    ["Face", warningCounts.faceMissingWarnings],
+    ["Multi", warningCounts.multipleFaceWarnings],
+  ];
 
   if (!selectedExam) {
     return (
@@ -761,7 +1034,9 @@ const Exam = () => {
 
         {loadingExams && <div style={styles.loaderBox}>Loading exams...</div>}
 
-        {!loadingExams && errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
+        {!loadingExams && (errorMessage || permissionError) && (
+          <div style={styles.errorBox}>{permissionError || errorMessage}</div>
+        )}
 
         {!loadingExams && !errorMessage && exams.length === 0 && (
           <div style={styles.emptyBox}>No live or scheduled exams available right now.</div>
@@ -816,7 +1091,7 @@ const Exam = () => {
     return <div style={styles.loaderBox}>Loading questions...</div>;
   }
 
-  if (errorMessage && questions.length === 0) {
+  if (errorMessage && questions.length === 0 && !isWrittenExam) {
     return (
       <div style={styles.centeredState}>
         <div style={styles.stateCard}>
@@ -829,7 +1104,7 @@ const Exam = () => {
     );
   }
 
-  if (!loadingQuestions && questions.length === 0) {
+  if (!loadingQuestions && questions.length === 0 && !isWrittenExam) {
     return (
       <div style={styles.centeredState}>
         <div style={styles.stateCard}>
@@ -854,7 +1129,7 @@ const Exam = () => {
           ...styles.liveHeader,
           gridTemplateColumns: isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.5fr) minmax(320px, 0.9fr)",
+            : "minmax(0, 1.5fr) minmax(340px, 0.95fr)",
         }}
       >
         <div style={styles.liveHeaderLead}>
@@ -882,19 +1157,30 @@ const Exam = () => {
         </div>
       </div>
 
-      {!monitoringArmed ? (
-        <div style={styles.warmupStrip}>
-          AI monitoring is warming up. Camera permissions, fullscreen, and live movement checks
-          will arm automatically in a few seconds.
+      <div style={styles.monitorRoom}>
+        <div style={styles.monitorRoomHeader}>
+          <strong>Live exam control room</strong>
+          <span>
+            {isWrittenExam ? "Written review mode" : "MCQ secure mode"} |{" "}
+            {permissionReady ? "all permissions locked" : "checking permissions"}
+          </span>
         </div>
-      ) : null}
+        <div style={styles.monitorRoomGrid}>
+          {warningRoomItems.map(([label, value]) => (
+            <div key={label} style={styles.monitorRoomChip(Number(value) > 0)}>
+              <span>{label}</span>
+              <strong>{value}</strong>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div
         style={{
           ...styles.examWorkspace,
           gridTemplateColumns: isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.65fr) minmax(360px, 430px)",
+            : "minmax(0, 1.6fr) minmax(390px, 470px)",
           minHeight: desktopPanelHeight,
         }}
       >
@@ -946,8 +1232,8 @@ const Exam = () => {
                 />
                 <QuickStatusCard
                   label="Fullscreen"
-                  value={fullscreenActive ? "Locked" : "Required"}
-                  tone={fullscreenActive ? "good" : "warn"}
+                  value={accessChecklist.fullscreen ? "Locked" : "Required"}
+                  tone={accessChecklist.fullscreen ? "good" : "warn"}
                 />
                 <QuickStatusCard
                   label="Focus"
@@ -980,45 +1266,83 @@ const Exam = () => {
 
             <h3 style={styles.questionText}>{currentQuestionText}</h3>
 
-            <div
-              style={{
-                ...styles.optionGrid,
-                gridTemplateColumns: isPhone ? "1fr" : "repeat(2, minmax(0, 1fr))",
-              }}
-            >
-              {currentOptions.map((option, index) => {
-                const checked = answers[currentIdx] === option;
-                const optionLabel = String.fromCharCode(65 + index);
+            {isWrittenExam ? (
+              <div style={styles.writtenAnswerBox}>
+                <textarea
+                  value={writtenAnswer}
+                  onChange={(event) => setWrittenAnswer(event.target.value)}
+                  placeholder="Write your detailed answer here. Teacher will review this response manually."
+                  style={styles.writtenTextarea}
+                />
 
-                return (
-                  <label
-                    key={`${option}-${index}`}
-                    style={{
-                      ...styles.optionCard,
-                      borderColor: checked ? "#2563eb" : "rgba(148, 163, 184, 0.24)",
-                      background: checked
-                        ? "linear-gradient(135deg, rgba(37,99,235,0.08), rgba(6,182,212,0.08))"
-                        : "#fff",
-                    }}
-                  >
-                    <input
-                      type="radio"
-                      name={`question-${currentIdx}`}
-                      checked={checked}
-                      onChange={() =>
-                        setAnswers((prev) => ({
-                          ...prev,
-                          [currentIdx]: option,
-                        }))
-                      }
-                      style={{ width: "18px", height: "18px" }}
-                    />
-                    <span style={styles.optionLetter(checked)}>{optionLabel}</span>
-                    <span style={styles.optionText}>{option}</span>
-                  </label>
-                );
-              })}
-            </div>
+                <div style={styles.uploadPromptBox}>
+                  <div>
+                    <strong style={{ color: "#0f172a" }}>Optional answer sheet upload</strong>
+                    <div style={{ color: "#64748b", marginTop: "4px" }}>
+                      You can also upload a PDF, image, or document of handwritten work.
+                    </div>
+                  </div>
+                  <input
+                    type="file"
+                    onChange={(event) => setWrittenFile(event.target.files?.[0] || null)}
+                    style={styles.fileInput}
+                  />
+                  {writtenFile ? (
+                    <div style={styles.fileTag}>{writtenFile.name}</div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  ...styles.optionGrid,
+                  gridTemplateColumns: isPhone ? "1fr" : "repeat(2, minmax(0, 1fr))",
+                }}
+              >
+                {currentOptions.map((option, index) => {
+                  const checked = answers[currentIdx] === option;
+                  const optionLabel = String.fromCharCode(65 + index);
+
+                  return (
+                    <label
+                      key={`${option}-${index}`}
+                      style={{
+                        ...styles.optionCard,
+                        borderColor: checked ? "#2563eb" : "rgba(148, 163, 184, 0.24)",
+                        background: checked
+                          ? "linear-gradient(135deg, rgba(37,99,235,0.08), rgba(6,182,212,0.08))"
+                          : "#fff",
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name={`question-${currentIdx}`}
+                        checked={checked}
+                        onChange={() => {
+                          setAnswers((prev) => ({
+                            ...prev,
+                            [currentIdx]: option,
+                          }));
+
+                          if (autoAdvanceTimeoutRef.current) {
+                            window.clearTimeout(autoAdvanceTimeoutRef.current);
+                          }
+
+                          if (currentIdx < questions.length - 1) {
+                            autoAdvanceTimeoutRef.current = window.setTimeout(() => {
+                              setCurrentIdx((prev) => Math.min(prev + 1, questions.length - 1));
+                            }, 280);
+                          }
+                        }}
+                        style={{ width: "18px", height: "18px" }}
+                      />
+                      <span style={styles.optionLetter(checked)}>{optionLabel}</span>
+                      <span style={styles.optionText}>{option}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div
@@ -1036,11 +1360,12 @@ const Exam = () => {
                 opacity: currentIdx === 0 ? 0.45 : 1,
                 cursor: currentIdx === 0 ? "not-allowed" : "pointer",
               }}
+              hidden={isWrittenExam}
             >
               Back
             </button>
 
-            {currentIdx < questions.length - 1 ? (
+            {!isWrittenExam && currentIdx < questions.length - 1 ? (
               <button
                 onClick={() => setCurrentIdx((prev) => prev + 1)}
                 style={{ ...styles.primaryButton, width: isPhone ? "100%" : "auto" }}
@@ -1070,14 +1395,25 @@ const Exam = () => {
             <div style={styles.monitorHeader}>
               <div>
                 <div style={styles.monitorKicker}>AI monitoring console</div>
-                <h4 style={{ ...styles.sidebarTitle, marginBottom: "6px" }}>Camera + live alerts</h4>
-                <div style={styles.monitorCaption}>
-                  Camera stays pinned here. Face guide, alerts, and detection status all stay in one rail.
-                </div>
+                <h4 style={{ ...styles.sidebarTitle, marginBottom: 0 }}>Camera + detection</h4>
               </div>
 
               <div style={styles.voiceBadge}>{monitoringArmed ? "Monitoring on" : "Warming up"}</div>
             </div>
+
+            <Proctoring
+              addWarning={addWarning}
+              onTelemetryChange={(payload) =>
+                setTelemetry((prev) => ({
+                  ...prev,
+                  ...payload,
+                }))
+              }
+              onEvidenceCapture={handleEvidenceCapture}
+              videoStream={cameraStreamRef.current}
+              audioStream={audioStreamRef.current}
+              compact={isPhone}
+            />
 
             <div
               style={{
@@ -1103,18 +1439,6 @@ const Exam = () => {
                 tone={evidenceShots.length === 0 ? "neutral" : "warn"}
               />
             </div>
-
-            <Proctoring
-              addWarning={addWarning}
-              onTelemetryChange={(payload) =>
-                setTelemetry((prev) => ({
-                  ...prev,
-                  ...payload,
-                }))
-              }
-              onEvidenceCapture={handleEvidenceCapture}
-              compact={isPhone}
-            />
 
             <div style={styles.monitorSection}>
               <div style={styles.inlineSectionTitle}>Live alerts</div>
@@ -1180,6 +1504,12 @@ const Exam = () => {
                   label="Microphone"
                   value={telemetry.microphoneReady ? "Connected" : "Optional / blocked"}
                   good={telemetry.microphoneReady}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Screen Share"
+                  value={telemetry.screenReady ? "Shared" : "Required"}
+                  good={telemetry.screenReady}
                   compact={isPhone}
                 />
                 <SignalRow
@@ -1377,6 +1707,39 @@ const styles = {
     fontSize: "14px",
     lineHeight: 1.5,
   },
+  monitorRoom: {
+    display: "grid",
+    gap: "12px",
+    padding: "14px 18px",
+    borderRadius: "20px",
+    background: "rgba(255,255,255,0.94)",
+    border: "1px solid rgba(148,163,184,0.14)",
+    boxShadow: "0 16px 32px rgba(15, 23, 42, 0.06)",
+    marginBottom: "14px",
+  },
+  monitorRoomHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "center",
+    flexWrap: "wrap",
+    color: "#334155",
+    fontSize: "13px",
+  },
+  monitorRoomGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(96px, 1fr))",
+    gap: "10px",
+  },
+  monitorRoomChip: (active) => ({
+    display: "grid",
+    gap: "4px",
+    padding: "10px 12px",
+    borderRadius: "16px",
+    background: active ? "#fff7ed" : "#f8fbff",
+    border: `1px solid ${active ? "#fdba74" : "rgba(148,163,184,0.12)"}`,
+    color: active ? "#9a3412" : "#0f172a",
+  }),
   loaderBox: {
     minHeight: "420px",
     display: "grid",
@@ -1648,6 +2011,49 @@ const styles = {
     gap: "4px",
     color: "#334155",
     lineHeight: 1.45,
+  },
+  writtenAnswerBox: {
+    display: "grid",
+    gap: "14px",
+  },
+  writtenTextarea: {
+    width: "100%",
+    minHeight: "200px",
+    borderRadius: "18px",
+    border: "1px solid rgba(148,163,184,0.22)",
+    padding: "16px 18px",
+    fontSize: "16px",
+    lineHeight: 1.65,
+    resize: "vertical",
+    outline: "none",
+    background: "#fff",
+    color: "#0f172a",
+  },
+  uploadPromptBox: {
+    display: "grid",
+    gap: "10px",
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.14)",
+  },
+  fileInput: {
+    width: "100%",
+    borderRadius: "14px",
+    border: "1px solid rgba(148,163,184,0.22)",
+    padding: "10px 12px",
+    background: "#fff",
+  },
+  fileTag: {
+    display: "inline-flex",
+    alignItems: "center",
+    width: "fit-content",
+    padding: "8px 12px",
+    borderRadius: "999px",
+    background: "#ecfdf5",
+    color: "#15803d",
+    fontWeight: 700,
+    fontSize: "13px",
   },
   readinessBanner: (good) => ({
     padding: "14px 16px",

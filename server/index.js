@@ -849,8 +849,15 @@ app.post("/api/exams/add", verifyToken, verifyTeacher, async (req, res) => {
     const examKey = normalizeText(req.body.examKey);
     const assessmentType = normalizeText(req.body.assessmentType) || "exam";
     const instructions = normalizeText(req.body.instructions);
+    const responseMode = normalizeText(req.body.responseMode) || "mcq";
+    const submissionPrompt = normalizeText(req.body.submissionPrompt);
     const startTime = req.body.startTime || null;
     const endTime = req.body.endTime || null;
+    const requiresCamera = req.body.requiresCamera !== false && req.body.requiresCamera !== "false";
+    const requiresMicrophone =
+      req.body.requiresMicrophone !== false && req.body.requiresMicrophone !== "false";
+    const requiresScreenShare =
+      req.body.requiresScreenShare !== false && req.body.requiresScreenShare !== "false";
 
     if (!title || !course || !duration) {
       return res.status(400).json({ message: "Course, title, duration required" });
@@ -875,7 +882,12 @@ app.post("/api/exams/add", verifyToken, verifyTeacher, async (req, res) => {
       syllabus,
       duration,
       assessmentType,
+      responseMode,
       instructions,
+      submissionPrompt,
+      requiresCamera,
+      requiresMicrophone,
+      requiresScreenShare,
       examKey,
       startTime,
       endTime,
@@ -940,7 +952,20 @@ app.put("/api/exams/update/:id", verifyToken, verifyTeacher, async (req, res) =>
     exam.examKey = normalizeText(req.body.examKey || exam.examKey);
     exam.assessmentType =
       normalizeText(req.body.assessmentType || exam.assessmentType) || "exam";
+    exam.responseMode = normalizeText(req.body.responseMode || exam.responseMode) || "mcq";
     exam.instructions = normalizeText(req.body.instructions || exam.instructions);
+    exam.submissionPrompt = normalizeText(req.body.submissionPrompt || exam.submissionPrompt);
+    if (req.body.requiresCamera !== undefined) {
+      exam.requiresCamera = req.body.requiresCamera !== false && req.body.requiresCamera !== "false";
+    }
+    if (req.body.requiresMicrophone !== undefined) {
+      exam.requiresMicrophone =
+        req.body.requiresMicrophone !== false && req.body.requiresMicrophone !== "false";
+    }
+    if (req.body.requiresScreenShare !== undefined) {
+      exam.requiresScreenShare =
+        req.body.requiresScreenShare !== false && req.body.requiresScreenShare !== "false";
+    }
     exam.startTime = req.body.startTime || null;
     exam.endTime = req.body.endTime || null;
 
@@ -1029,6 +1054,12 @@ app.post("/api/questions/add", verifyToken, verifyTeacher, async (req, res) => {
       return res.status(404).json({ message: "Exam not found" });
     }
 
+    if ((exam.responseMode || "mcq") !== "mcq") {
+      return res.status(400).json({
+        message: "MCQs can only be added to exams that use MCQ response mode.",
+      });
+    }
+
     const newQuestion = new Question({
       examId,
       questionText,
@@ -1115,6 +1146,8 @@ app.post("/api/results/submit", verifyToken, verifyApprovedStudent, async (req, 
       studentName: normalizeText(req.body.studentName) || req.dbUser.name,
       testName: normalizeText(req.body.testName) || exam.title,
       assessmentType: normalizeText(req.body.assessmentType) || exam.assessmentType || "exam",
+      responseMode: normalizeText(req.body.responseMode) || exam.responseMode || "mcq",
+      submissionPrompt: normalizeText(req.body.submissionPrompt) || exam.submissionPrompt || "",
     });
 
     await result.save();
@@ -1124,6 +1157,64 @@ app.post("/api/results/submit", verifyToken, verifyApprovedStudent, async (req, 
     res.status(500).json({ message: "Failed to save result" });
   }
 });
+
+app.post(
+  "/api/results/submit-written",
+  verifyToken,
+  verifyApprovedStudent,
+  submissionUpload.single("file"),
+  async (req, res) => {
+    try {
+      const examId = normalizeText(req.body.examId);
+      const exam = await Exam.findById(examId);
+
+      if (!exam) {
+        return res.status(404).json({ message: "Exam not found." });
+      }
+
+      if (String(exam.classroomId || "") !== String(req.dbUser.classroomId || "")) {
+        return res.status(403).json({ message: "This result does not match your classroom." });
+      }
+
+      const responseMode = exam.responseMode || "written";
+      if (responseMode !== "written") {
+        return res.status(400).json({ message: "This exam does not accept written submissions." });
+      }
+
+      const writtenAnswer = String(req.body.writtenAnswer || "").trim();
+      const fileUrl = req.file ? toRelativeUploadPath(req.file.path) : "";
+
+      if (!writtenAnswer && !fileUrl) {
+        return res.status(400).json({
+          message: "Provide a typed answer or upload an answer sheet before submitting.",
+        });
+      }
+
+      const result = new Result({
+        ...safeJsonParse(req.body.payload, {}),
+        userId: req.dbUser._id,
+        teacherId: exam.teacherId || null,
+        classroomId: exam.classroomId || null,
+        classroomName: exam.classroomName || req.dbUser.classroomName || "",
+        studentName: normalizeText(req.body.studentName) || req.dbUser.name,
+        testName: normalizeText(req.body.testName) || exam.title,
+        assessmentType: normalizeText(req.body.assessmentType) || exam.assessmentType || "exam",
+        responseMode,
+        writtenAnswer,
+        writtenFileUrl: fileUrl,
+        submissionPrompt: exam.submissionPrompt || exam.instructions || "",
+        manualReviewRequired: true,
+        status: "UNDER_REVIEW",
+      });
+
+      await result.save();
+      res.json({ message: "Written exam saved", result });
+    } catch (err) {
+      console.log("WRITTEN RESULT SAVE ERROR:", err);
+      res.status(500).json({ message: "Failed to save written submission" });
+    }
+  }
+);
 
 app.get("/api/results/my", verifyToken, async (req, res) => {
   try {

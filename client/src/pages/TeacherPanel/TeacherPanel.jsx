@@ -55,7 +55,12 @@ const initialExamForm = {
   duration: "",
   examKey: "",
   assessmentType: "exam",
+  responseMode: "mcq",
   instructions: "",
+  submissionPrompt: "",
+  requiresCamera: true,
+  requiresMicrophone: true,
+  requiresScreenShare: true,
   startTime: "",
   endTime: "",
 };
@@ -142,6 +147,17 @@ function TeacherPanel() {
   const classOptions = useMemo(
     () => classrooms.map((classroom) => ({ value: classroom.id, label: classroom.label })),
     [classrooms]
+  );
+
+  const mcqExamOptions = useMemo(
+    () =>
+      exams
+        .filter((exam) => (exam.responseMode || "mcq") === "mcq")
+        .map((exam) => ({
+          value: exam._id,
+          label: `${exam.title} | ${exam.classroomName}`,
+        })),
+    [exams]
   );
 
   const questionsByExam = useMemo(
@@ -236,6 +252,16 @@ function TeacherPanel() {
 
     return cards.slice(0, 4);
   }, [approvalQueue.length, dashboardMetrics.flaggedResults, dashboardMetrics.submissionsToReview, exams]);
+
+  useEffect(() => {
+    setQuestionForm((prev) => ({
+      ...prev,
+      examId:
+        mcqExamOptions.find((option) => option.value === prev.examId)?.value ||
+        mcqExamOptions[0]?.value ||
+        "",
+    }));
+  }, [mcqExamOptions]);
 
   const loadWorkspace = useCallback(async (silent = false) => {
     if (!silent) {
@@ -456,7 +482,12 @@ function TeacherPanel() {
       duration: exam.duration || "",
       examKey: exam.examKey || "",
       assessmentType: exam.assessmentType || "exam",
+      responseMode: exam.responseMode || "mcq",
       instructions: exam.instructions || "",
+      submissionPrompt: exam.submissionPrompt || "",
+      requiresCamera: exam.requiresCamera !== false,
+      requiresMicrophone: exam.requiresMicrophone !== false,
+      requiresScreenShare: exam.requiresScreenShare !== false,
       startTime: toLocalInputValue(exam.startTime),
       endTime: toLocalInputValue(exam.endTime),
     });
@@ -1118,6 +1149,15 @@ function TeacherPanel() {
                     { value: "test", label: "Test" },
                   ]}
                 />
+                <SelectField
+                  label="Response Mode"
+                  value={examForm.responseMode}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, responseMode: value }))}
+                  options={[
+                    { value: "mcq", label: "MCQ Exam" },
+                    { value: "written", label: "Written / Upload Exam" },
+                  ]}
+                />
                 <Field
                   label="Course"
                   value={examForm.course}
@@ -1157,6 +1197,21 @@ function TeacherPanel() {
                   placeholder="Exam room rules or special guidance"
                   full
                 />
+                <TextAreaField
+                  label={
+                    examForm.responseMode === "written"
+                      ? "Written Prompt"
+                      : "Question Prompt / Opening Note"
+                  }
+                  value={examForm.submissionPrompt}
+                  onChange={(value) => setExamForm((prev) => ({ ...prev, submissionPrompt: value }))}
+                  placeholder={
+                    examForm.responseMode === "written"
+                      ? "Describe the written question, case study, or answer requirements"
+                      : "Optional opening note before the MCQs begin"
+                  }
+                  full
+                />
                 <Field
                   label="Start Time"
                   type="datetime-local"
@@ -1169,6 +1224,44 @@ function TeacherPanel() {
                   value={examForm.endTime}
                   onChange={(value) => setExamForm((prev) => ({ ...prev, endTime: value }))}
                 />
+                <div style={styles.toggleGroup}>
+                  <label style={styles.toggleField}>
+                    <input
+                      type="checkbox"
+                      checked={examForm.requiresCamera}
+                      onChange={(event) =>
+                        setExamForm((prev) => ({ ...prev, requiresCamera: event.target.checked }))
+                      }
+                    />
+                    Require camera access
+                  </label>
+                  <label style={styles.toggleField}>
+                    <input
+                      type="checkbox"
+                      checked={examForm.requiresMicrophone}
+                      onChange={(event) =>
+                        setExamForm((prev) => ({
+                          ...prev,
+                          requiresMicrophone: event.target.checked,
+                        }))
+                      }
+                    />
+                    Require microphone access
+                  </label>
+                  <label style={styles.toggleField}>
+                    <input
+                      type="checkbox"
+                      checked={examForm.requiresScreenShare}
+                      onChange={(event) =>
+                        setExamForm((prev) => ({
+                          ...prev,
+                          requiresScreenShare: event.target.checked,
+                        }))
+                      }
+                    />
+                    Require screen share
+                  </label>
+                </div>
               </div>
 
               <div style={styles.actionRow}>
@@ -1195,57 +1288,60 @@ function TeacherPanel() {
                 iconTone={["#ecfccb", "#3f6212"]}
               />
 
-              <div style={styles.formGrid}>
-                <SelectField
-                  label="Exam"
-                  value={questionForm.examId}
-                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, examId: value }))}
-                  options={exams.map((exam) => ({
-                    value: exam._id,
-                    label: `${exam.title} | ${exam.classroomName}`,
-                  }))}
-                  full
-                />
-                <TextAreaField
-                  label="Question"
-                  value={questionForm.questionText}
-                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, questionText: value }))}
-                  placeholder="Enter question statement"
-                  full
-                />
-                <Field
-                  label="Option A"
-                  value={questionForm.optionA}
-                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionA: value }))}
-                />
-                <Field
-                  label="Option B"
-                  value={questionForm.optionB}
-                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionB: value }))}
-                />
-                <Field
-                  label="Option C"
-                  value={questionForm.optionC}
-                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionC: value }))}
-                />
-                <Field
-                  label="Option D"
-                  value={questionForm.optionD}
-                  onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionD: value }))}
-                />
-                <Field
-                  label="Correct Answer"
-                  value={questionForm.correctAnswer}
-                  onChange={(value) =>
-                    setQuestionForm((prev) => ({ ...prev, correctAnswer: value }))
-                  }
-                  placeholder="Exact option text"
-                />
-              </div>
+              {mcqExamOptions.length === 0 ? (
+                <EmptyState text="Create an MCQ-mode exam first. Written exams use a prompt plus typed/uploaded answers instead of MCQ options." compact />
+              ) : (
+                <>
+                  <div style={styles.formGrid}>
+                    <SelectField
+                      label="Exam"
+                      value={questionForm.examId}
+                      onChange={(value) => setQuestionForm((prev) => ({ ...prev, examId: value }))}
+                      options={mcqExamOptions}
+                      full
+                    />
+                    <TextAreaField
+                      label="Question"
+                      value={questionForm.questionText}
+                      onChange={(value) => setQuestionForm((prev) => ({ ...prev, questionText: value }))}
+                      placeholder="Enter question statement"
+                      full
+                    />
+                    <Field
+                      label="Option A"
+                      value={questionForm.optionA}
+                      onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionA: value }))}
+                    />
+                    <Field
+                      label="Option B"
+                      value={questionForm.optionB}
+                      onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionB: value }))}
+                    />
+                    <Field
+                      label="Option C"
+                      value={questionForm.optionC}
+                      onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionC: value }))}
+                    />
+                    <Field
+                      label="Option D"
+                      value={questionForm.optionD}
+                      onChange={(value) => setQuestionForm((prev) => ({ ...prev, optionD: value }))}
+                    />
+                    <Field
+                      label="Correct Answer"
+                      value={questionForm.correctAnswer}
+                      onChange={(value) =>
+                        setQuestionForm((prev) => ({ ...prev, correctAnswer: value }))
+                      }
+                      placeholder="Exact option text"
+                    />
+                  </div>
 
-              <button type="submit" style={styles.primaryButton} disabled={busyKey === "add-question"}>
-                {busyKey === "add-question" ? "Saving..." : "Add MCQ"}
-              </button>
+                  <button type="submit" style={styles.primaryButton} disabled={busyKey === "add-question"}>
+                    {busyKey === "add-question" ? "Saving..." : "Add MCQ"}
+                  </button>
+                </>
+              )}
             </form>
           </section>
 
@@ -1279,13 +1375,23 @@ function TeacherPanel() {
                       <InfoPill label="End" value={formatDateTime(exam.endTime)} />
                       <InfoPill label="Access" value={exam.accessGranted ? "Enabled" : "Locked"} />
                       <InfoPill
-                        label="Questions"
-                        value={questionsByExam[String(exam._id)]?.length || 0}
+                        label="Mode"
+                        value={(exam.responseMode || "mcq") === "written" ? "Written" : "MCQ"}
+                      />
+                      <InfoPill
+                        label={(exam.responseMode || "mcq") === "written" ? "Prompt" : "Questions"}
+                        value={
+                          (exam.responseMode || "mcq") === "written"
+                            ? exam.submissionPrompt
+                              ? "Added"
+                              : "Pending"
+                            : questionsByExam[String(exam._id)]?.length || 0
+                        }
                       />
                     </div>
 
                     <div style={{ color: "#475569", lineHeight: 1.65, marginTop: "14px" }}>
-                      {exam.instructions || exam.syllabus || "No extra instructions added yet."}
+                      {exam.submissionPrompt || exam.instructions || exam.syllabus || "No extra instructions added yet."}
                     </div>
 
                     <div style={styles.actionRow}>
@@ -1783,6 +1889,26 @@ function TeacherPanel() {
                     {result.headWarnings || 0} | Screenshot {result.screenshotWarnings || 0}
                   </div>
 
+                  {(result.responseMode || "mcq") === "written" ? (
+                    <div style={styles.feedbackPanel}>
+                      <strong style={{ color: "#0f172a" }}>Written response</strong>
+                      <div style={{ color: "#475569", lineHeight: 1.65, marginTop: "6px" }}>
+                        {result.writtenAnswer || "No typed answer was submitted."}
+                      </div>
+                      {result.writtenFileUrl ? (
+                        <a
+                          href={buildUploadUrl(result.writtenFileUrl)}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={styles.fileLink}
+                        >
+                          <ExternalLink size={14} />
+                          View uploaded answer sheet
+                        </a>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   {Array.isArray(result.evidenceShots) && result.evidenceShots.length > 0 ? (
                     <div style={{ display: "grid", gap: "10px" }}>
                       <div style={styles.metricLabel}>Cheating Detection Evidence</div>
@@ -2153,6 +2279,22 @@ const styles = {
     gap: "14px",
     marginBottom: "18px",
   },
+  toggleGroup: {
+    display: "grid",
+    gap: "10px",
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.12)",
+    gridColumn: "1 / -1",
+  },
+  toggleField: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    color: "#334155",
+    fontWeight: 600,
+  },
   label: {
     display: "grid",
     gap: "8px",
@@ -2323,6 +2465,14 @@ const styles = {
     color: "#1d4ed8",
     fontWeight: 700,
     fontSize: "13px",
+  },
+  feedbackPanel: {
+    display: "grid",
+    gap: "6px",
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.12)",
   },
   rosterGroup: {
     padding: "18px",

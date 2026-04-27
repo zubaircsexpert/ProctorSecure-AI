@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import API from "../../services/api";
 
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
+const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
 const computeTrustFactor = (score) => {
   if (score >= 65) return "Critical";
@@ -146,6 +147,7 @@ const Results = () => {
     ["Focus / share overlays", (result.focusWarnings || 0) + (result.screenShareWarnings || 0)],
     ["Face missing / multi-face", (result.faceMissingWarnings || 0) + (result.multipleFaceWarnings || 0)],
   ];
+  const isManualReview = result.manualReviewRequired || result.status === "UNDER_REVIEW";
 
   return (
     <div style={styles.page}>
@@ -159,6 +161,11 @@ const Results = () => {
             Candidate <strong>{result.studentName || "Verified Student"}</strong> completed the exam
             with a professional AI-assisted evaluation of both academic performance and suspicious behavior.
           </p>
+          {isManualReview ? (
+            <p style={{ ...styles.heroText, marginTop: "10px" }}>
+              This written exam is waiting for teacher review. Academic score will be finalized after manual checking.
+            </p>
+          ) : null}
         </div>
 
         <div style={styles.heroStatusCard}>
@@ -213,6 +220,35 @@ const Results = () => {
           </div>
         </section>
       </div>
+
+      {isManualReview ? (
+        <section style={styles.panel}>
+          <div style={styles.panelHeader}>
+            <div>
+              <div style={styles.panelKicker}>Written submission</div>
+              <h3 style={styles.panelTitle}>Answer sent for teacher review</h3>
+            </div>
+            <div style={styles.panelBadgeNeutral}>Manual review</div>
+          </div>
+
+          {result.writtenAnswer ? (
+            <div style={styles.emptyAudit}>{result.writtenAnswer}</div>
+          ) : (
+            <div style={styles.emptyAudit}>Typed answer was not provided.</div>
+          )}
+
+          {result.writtenFileUrl ? (
+            <a
+              href={`${FILE_BASE_URL}/${String(result.writtenFileUrl).replace(/^\/+/, "")}`}
+              target="_blank"
+              rel="noreferrer"
+              style={styles.linkChip}
+            >
+              View Uploaded Answer Sheet
+            </a>
+          ) : null}
+        </section>
+      ) : null}
 
       <div style={styles.bottomGrid}>
         <section style={styles.panel}>
@@ -572,6 +608,19 @@ const styles = {
     borderRadius: "18px",
     background: "#f8fafc",
     color: "#64748b",
+  },
+  linkChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "fit-content",
+    marginTop: "14px",
+    padding: "10px 14px",
+    borderRadius: "999px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    fontWeight: 700,
+    textDecoration: "none",
   },
   auditRow: {
     display: "flex",
