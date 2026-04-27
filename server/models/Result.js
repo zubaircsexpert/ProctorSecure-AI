@@ -11,6 +11,19 @@ const activityLogSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const evidenceShotSchema = new mongoose.Schema(
+  {
+    type: { type: String, trim: true },
+    message: { type: String, trim: true },
+    severity: { type: String, default: "medium", trim: true },
+    occurredAt: { type: Date, default: Date.now },
+    trackingScore: { type: Number, default: 0 },
+    detectionMode: { type: String, default: "", trim: true },
+    imageData: { type: String, default: "" },
+  },
+  { _id: false }
+);
+
 const resultSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -72,6 +85,7 @@ const resultSchema = new mongoose.Schema({
   suspiciousScore: { type: Number, default: 0 },
   trustFactor: { type: String, default: "Reliable", trim: true },
   activityLog: { type: [activityLogSchema], default: [] },
+  evidenceShots: { type: [evidenceShotSchema], default: [] },
   createdAt: { type: Date, default: Date.now },
 });
 

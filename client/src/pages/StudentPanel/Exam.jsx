@@ -128,8 +128,12 @@ const Exam = () => {
   const [warningMessage, setWarningMessage] = useState("");
   const [warningSeverity, setWarningSeverity] = useState("medium");
   const [warningDisplayCount, setWarningDisplayCount] = useState(0);
+  const [evidenceShots, setEvidenceShots] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [fullscreenActive, setFullscreenActive] = useState(
+    () => typeof document !== "undefined" && Boolean(document.fullscreenElement)
+  );
   const [telemetry, setTelemetry] = useState({
     cameraReady: false,
     microphoneReady: false,
@@ -377,6 +381,14 @@ const Exam = () => {
     }, 4200);
   }, [monitoringArmed, submitted]);
 
+  const handleEvidenceCapture = useCallback((payload) => {
+    if (!payload?.imageData) {
+      return;
+    }
+
+    setEvidenceShots((prev) => [payload, ...prev].slice(0, 8));
+  }, []);
+
   useEffect(() => {
     if (!selectedExam || submitted) {
       return undefined;
@@ -410,6 +422,7 @@ const Exam = () => {
     };
 
     const handleFullscreen = () => {
+      setFullscreenActive(Boolean(document.fullscreenElement));
       if (shouldEnforceFullscreen && !document.fullscreenElement) {
         addWarning("fullscreen", "Fullscreen mode exited during the exam.");
       }
@@ -504,6 +517,8 @@ const Exam = () => {
     setWarningCounts(initialWarningCounts);
     setActivityLog([]);
     setMonitoringArmed(false);
+    setEvidenceShots([]);
+    setFullscreenActive(false);
     sessionIdRef.current = createSessionId();
     hasSubmitted.current = false;
     if (monitoringArmTimeoutRef.current) {
@@ -535,6 +550,7 @@ const Exam = () => {
       total: resumeNotice ? 1 : 0,
     });
     setMonitoringArmed(false);
+    setEvidenceShots([]);
     setActivityLog(
       resumeNotice
         ? [
@@ -554,6 +570,7 @@ const Exam = () => {
     if (shouldEnforceFullscreen && !document.fullscreenElement) {
       try {
         await document.documentElement.requestFullscreen();
+        setFullscreenActive(Boolean(document.fullscreenElement));
       } catch (err) {
         console.error("Fullscreen request failed:", err);
       }
@@ -649,6 +666,7 @@ const Exam = () => {
         suspiciousScore,
         trustFactor,
         activityLog,
+        evidenceShots,
       };
 
       await API.post("/api/results/submit", resultData);
@@ -679,7 +697,7 @@ const Exam = () => {
     } finally {
       setSubmitting(false);
     }
-  }, [activityLog, answers, questions, selectedExam, submitted, submitting, warningCounts]);
+  }, [activityLog, answers, evidenceShots, questions, selectedExam, submitted, submitting, warningCounts]);
 
   const currentQuestion = questions[currentIdx];
   const currentQuestionText =
@@ -698,6 +716,17 @@ const Exam = () => {
 
     return clamp(round((weightedSuspicion / Math.max(30, questions.length * 14 || 30)) * 100));
   }, [questions.length, warningCounts]);
+  const desktopPanelHeight = isCompactLayout ? "auto" : "calc(100vh - 286px)";
+  const faceReady =
+    telemetry.cameraReady && telemetry.faceVisible && !telemetry.multipleFaces;
+  const focusEventCount =
+    warningCounts.tabWarnings +
+    warningCounts.visibilityWarnings +
+    warningCounts.focusWarnings +
+    warningCounts.screenShareWarnings +
+    warningCounts.fullscreenWarnings;
+  const quickDetections = activityLog.slice(0, 3);
+  const evidencePreview = evidenceShots.slice(0, 4);
 
   if (!selectedExam) {
     return (
@@ -820,8 +849,15 @@ const Exam = () => {
 
   return (
     <div style={styles.page}>
-      <div style={styles.liveHeader}>
-        <div style={{ minWidth: 0 }}>
+      <div
+        style={{
+          ...styles.liveHeader,
+          gridTemplateColumns: isCompactLayout
+            ? "1fr"
+            : "minmax(0, 1.5fr) minmax(320px, 0.9fr)",
+        }}
+      >
+        <div style={styles.liveHeaderLead}>
           <div style={styles.heroKicker}>Live assessment mode</div>
           <h2 style={styles.liveTitle}>{selectedExam.title}</h2>
           <div style={styles.liveMetaRow}>
@@ -847,7 +883,7 @@ const Exam = () => {
       </div>
 
       {!monitoringArmed ? (
-        <div style={styles.resumeNotice}>
+        <div style={styles.warmupStrip}>
           AI monitoring is warming up. Camera permissions, fullscreen, and live movement checks
           will arm automatically in a few seconds.
         </div>
@@ -859,12 +895,14 @@ const Exam = () => {
           gridTemplateColumns: isCompactLayout
             ? "1fr"
             : "minmax(0, 1.65fr) minmax(360px, 430px)",
+          minHeight: desktopPanelHeight,
         }}
       >
         <div
           style={{
             ...styles.questionCard,
-            minHeight: isCompactLayout ? "auto" : "calc(100vh - 180px)",
+            minHeight: desktopPanelHeight,
+            height: desktopPanelHeight,
           }}
         >
           <div
@@ -874,16 +912,47 @@ const Exam = () => {
               alignItems: isPhone ? "stretch" : "center",
             }}
           >
-            <div style={{ minWidth: 0 }}>
-              <div style={styles.questionBadge}>
-                Question {currentIdx + 1} of {questions.length}
+            <div style={{ minWidth: 0, display: "grid", gap: "12px", flex: 1 }}>
+              <div>
+                <div style={styles.questionBadge}>
+                  Question {currentIdx + 1} of {questions.length}
+                </div>
+                <div style={styles.progressTrack}>
+                  <div
+                    style={{
+                      ...styles.progressBar,
+                      width: `${((currentIdx + 1) / questions.length) * 100}%`,
+                    }}
+                  />
+                </div>
               </div>
-              <div style={styles.progressTrack}>
-                <div
-                  style={{
-                    ...styles.progressBar,
-                    width: `${((currentIdx + 1) / questions.length) * 100}%`,
-                  }}
+
+              <div
+                style={{
+                  ...styles.questionStatusGrid,
+                  gridTemplateColumns: isPhone
+                    ? "1fr"
+                    : "repeat(3, minmax(0, 1fr))",
+                }}
+              >
+                <QuickStatusCard
+                  label="Face"
+                  value={
+                    faceReady
+                      ? "Centered"
+                      : telemetry.faceStatus || "Adjust face"
+                  }
+                  tone={faceReady ? "good" : "warn"}
+                />
+                <QuickStatusCard
+                  label="Fullscreen"
+                  value={fullscreenActive ? "Locked" : "Required"}
+                  tone={fullscreenActive ? "good" : "warn"}
+                />
+                <QuickStatusCard
+                  label="Focus"
+                  value={focusEventCount === 0 ? "Stable" : `${focusEventCount} alerts`}
+                  tone={focusEventCount === 0 ? "neutral" : "alert"}
                 />
               </div>
             </div>
@@ -896,26 +965,30 @@ const Exam = () => {
             >
               <span>Suspicious Activity</span>
               <strong>{suspiciousScorePreview}%</strong>
+              <small>{evidenceShots.length} evidence frames</small>
             </div>
           </div>
 
           <div style={styles.questionScrollArea}>
-            <div style={styles.readinessBanner(telemetry.faceVisible && telemetry.cameraReady)}>
-              <strong>
-                {telemetry.faceVisible
-                  ? "Face is inside the exam frame."
-                  : "Keep your face visible inside the camera guide."}
-              </strong>
+            <div style={styles.questionHint}>
+              <strong>{telemetry.faceStatus || "Face alignment"}</strong>
               <span>
-                {telemetry.framingStatus || "Stay centered, well-lit, and keep your eyes on the screen."}
+                {telemetry.framingStatus ||
+                  "Stay centered, well-lit, and keep your eyes on the screen."}
               </span>
             </div>
 
             <h3 style={styles.questionText}>{currentQuestionText}</h3>
 
-            <div style={styles.optionGrid}>
+            <div
+              style={{
+                ...styles.optionGrid,
+                gridTemplateColumns: isPhone ? "1fr" : "repeat(2, minmax(0, 1fr))",
+              }}
+            >
               {currentOptions.map((option, index) => {
                 const checked = answers[currentIdx] === option;
+                const optionLabel = String.fromCharCode(65 + index);
 
                 return (
                   <label
@@ -940,20 +1013,26 @@ const Exam = () => {
                       }
                       style={{ width: "18px", height: "18px" }}
                     />
-                    <span>{option}</span>
+                    <span style={styles.optionLetter(checked)}>{optionLabel}</span>
+                    <span style={styles.optionText}>{option}</span>
                   </label>
                 );
               })}
             </div>
           </div>
 
-          <div style={styles.navigationRow}>
+          <div
+            style={{
+              ...styles.navigationRow,
+              flexDirection: isPhone ? "column" : "row",
+            }}
+          >
             <button
               disabled={currentIdx === 0}
               onClick={() => setCurrentIdx((prev) => prev - 1)}
               style={{
                 ...styles.secondaryButton,
-                flex: isPhone ? "1 1 100%" : "0 0 auto",
+                width: isPhone ? "100%" : "auto",
                 opacity: currentIdx === 0 ? 0.45 : 1,
                 cursor: currentIdx === 0 ? "not-allowed" : "pointer",
               }}
@@ -964,14 +1043,14 @@ const Exam = () => {
             {currentIdx < questions.length - 1 ? (
               <button
                 onClick={() => setCurrentIdx((prev) => prev + 1)}
-                style={{ ...styles.primaryButton, flex: isPhone ? "1 1 100%" : "0 0 auto" }}
+                style={{ ...styles.primaryButton, width: isPhone ? "100%" : "auto" }}
               >
                 Save & Next
               </button>
             ) : (
               <button
                 onClick={handleSubmit}
-                style={{ ...styles.submitButton, flex: isPhone ? "1 1 100%" : "0 0 auto" }}
+                style={{ ...styles.submitButton, width: isPhone ? "100%" : "auto" }}
               >
                 {submitting ? "Submitting..." : "Final Submit"}
               </button>
@@ -985,7 +1064,7 @@ const Exam = () => {
               ...styles.monitorRail,
               position: isCompactLayout ? "relative" : "sticky",
               top: isCompactLayout ? "auto" : "106px",
-              maxHeight: isCompactLayout ? "none" : "calc(100vh - 132px)",
+              maxHeight: desktopPanelHeight,
             }}
           >
             <div style={styles.monitorHeader}>
@@ -1000,6 +1079,31 @@ const Exam = () => {
               <div style={styles.voiceBadge}>{monitoringArmed ? "Monitoring on" : "Warming up"}</div>
             </div>
 
+            <div
+              style={{
+                ...styles.monitorGrid,
+                gridTemplateColumns: isPhone
+                  ? "repeat(2, minmax(0, 1fr))"
+                  : "repeat(3, minmax(0, 1fr))",
+              }}
+            >
+              <QuickStatusCard
+                label="Alerts"
+                value={warningCounts.total}
+                tone={warningCounts.total === 0 ? "good" : "alert"}
+              />
+              <QuickStatusCard
+                label="Focus"
+                value={focusEventCount === 0 ? "Stable" : `${focusEventCount} hits`}
+                tone={focusEventCount === 0 ? "good" : "warn"}
+              />
+              <QuickStatusCard
+                label="Evidence"
+                value={evidenceShots.length === 0 ? "None" : `${evidenceShots.length} saved`}
+                tone={evidenceShots.length === 0 ? "neutral" : "warn"}
+              />
+            </div>
+
             <Proctoring
               addWarning={addWarning}
               onTelemetryChange={(payload) =>
@@ -1008,6 +1112,7 @@ const Exam = () => {
                   ...payload,
                 }))
               }
+              onEvidenceCapture={handleEvidenceCapture}
               compact={isPhone}
             />
 
@@ -1030,12 +1135,45 @@ const Exam = () => {
             </div>
 
             <div style={styles.monitorSection}>
+              <div style={styles.inlineSectionTitle}>Evidence captures</div>
+              {evidencePreview.length === 0 ? (
+                <div style={styles.alertPlaceholder}>
+                  When head, eye, or face movement crosses the warning threshold, a camera frame will be saved here for the teacher review log.
+                </div>
+              ) : (
+                <div style={styles.evidenceGrid}>
+                  {evidencePreview.map((shot, index) => (
+                    <div key={`${shot.occurredAt}-${index}`} style={styles.evidenceCard}>
+                      <img
+                        src={shot.imageData}
+                        alt={`${shot.type} evidence`}
+                        style={styles.evidenceImage}
+                      />
+                      <div style={styles.evidenceMeta}>
+                        <strong style={{ color: "#0f172a", textTransform: "capitalize" }}>
+                          {shot.type}
+                        </strong>
+                        <span>{new Date(shot.occurredAt).toLocaleTimeString()}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={styles.monitorSection}>
               <div style={styles.inlineSectionTitle}>Readiness signals</div>
               <div style={styles.monitorGrid}>
                 <SignalRow
                   label="Camera"
                   value={telemetry.cameraReady ? "Connected" : "Checking permissions"}
                   good={telemetry.cameraReady}
+                  compact={isPhone}
+                />
+                <SignalRow
+                  label="Fullscreen"
+                  value={fullscreenActive ? "Locked" : "Required"}
+                  good={fullscreenActive}
                   compact={isPhone}
                 />
                 <SignalRow
@@ -1112,12 +1250,12 @@ const Exam = () => {
             <div style={styles.monitorSection}>
               <div style={styles.inlineSectionTitle}>Recent detections</div>
               <div style={{ display: "grid", gap: "10px" }}>
-                {activityLog.length === 0 ? (
+                {quickDetections.length === 0 ? (
                   <div style={{ color: "#64748b", fontSize: "14px" }}>
                     No suspicious action recorded yet.
                   </div>
                 ) : (
-                  activityLog.slice(0, 5).map((event, index) => (
+                  quickDetections.map((event, index) => (
                     <div key={`${event.type}-${index}`} style={styles.eventCard}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
                         <strong style={{ textTransform: "capitalize", color: "#0f172a" }}>{event.type}</strong>
@@ -1160,6 +1298,13 @@ const SignalRow = ({ label, value, good, compact = false }) => (
     >
       {value}
     </strong>
+  </div>
+);
+
+const QuickStatusCard = ({ label, value, tone = "neutral" }) => (
+  <div style={styles.quickStatusCard(tone)}>
+    <span style={styles.quickStatusLabel}>{label}</span>
+    <strong style={styles.quickStatusValue}>{value}</strong>
   </div>
 );
 
@@ -1221,6 +1366,16 @@ const styles = {
     border: "1px solid #fdba74",
     color: "#9a3412",
     marginBottom: "22px",
+  },
+  warmupStrip: {
+    padding: "12px 16px",
+    borderRadius: "16px",
+    background: "#fff7ed",
+    border: "1px solid #fdba74",
+    color: "#9a3412",
+    marginBottom: "18px",
+    fontSize: "14px",
+    lineHeight: 1.5,
   },
   loaderBox: {
     minHeight: "420px",
@@ -1361,18 +1516,23 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
     gap: "16px",
-    padding: "20px 24px",
-    borderRadius: "28px",
+    padding: "18px 22px",
+    borderRadius: "24px",
     background: "rgba(255,255,255,0.94)",
     boxShadow: "0 18px 40px rgba(15, 23, 42, 0.08)",
-    marginBottom: "18px",
-    alignItems: "start",
+    marginBottom: "14px",
+    alignItems: "center",
+  },
+  liveHeaderLead: {
+    minWidth: 0,
+    display: "grid",
+    gap: "10px",
   },
   liveTitle: {
-    margin: "6px 0 10px 0",
-    fontSize: "clamp(26px, 4vw, 40px)",
+    margin: 0,
+    fontSize: "clamp(22px, 3vw, 34px)",
     color: "#0f172a",
-    lineHeight: 1.06,
+    lineHeight: 1.08,
   },
   liveMetaRow: {
     display: "flex",
@@ -1395,20 +1555,20 @@ const styles = {
     alignItems: "stretch",
   },
   liveMetricCard: {
-    padding: "16px 18px",
-    borderRadius: "20px",
+    padding: "14px 16px",
+    borderRadius: "18px",
     background: "#f8fbff",
     border: "1px solid rgba(148,163,184,0.14)",
     display: "grid",
-    gap: "8px",
+    gap: "6px",
     color: "#0f172a",
   },
   timerDock: {
-    padding: "16px 18px",
-    borderRadius: "22px",
+    padding: "14px 16px",
+    borderRadius: "18px",
     background: "#f8fbff",
     border: "1px solid rgba(148,163,184,0.14)",
-    minWidth: "220px",
+    minWidth: "210px",
   },
   headerCard: {
     display: "grid",
@@ -1442,17 +1602,17 @@ const styles = {
   },
   examWorkspace: {
     display: "grid",
-    gap: "22px",
+    gap: "18px",
     alignItems: "start",
   },
   questionCard: {
-    padding: "28px",
-    borderRadius: "30px",
+    padding: "24px",
+    borderRadius: "26px",
     background: "rgba(255,255,255,0.96)",
     boxShadow: "0 24px 46px rgba(15, 23, 42, 0.08)",
     display: "grid",
     gridTemplateRows: "auto minmax(0, 1fr) auto",
-    gap: "20px",
+    gap: "18px",
     border: "1px solid rgba(148,163,184,0.12)",
   },
   questionTopBar: {
@@ -1471,9 +1631,23 @@ const styles = {
   questionScrollArea: {
     display: "grid",
     alignContent: "start",
-    gap: "18px",
+    gap: "16px",
     overflowY: "auto",
     paddingRight: "4px",
+  },
+  questionStatusGrid: {
+    display: "grid",
+    gap: "10px",
+  },
+  questionHint: {
+    padding: "12px 14px",
+    borderRadius: "16px",
+    background: "#f8fbff",
+    border: "1px solid rgba(37, 99, 235, 0.12)",
+    display: "grid",
+    gap: "4px",
+    color: "#334155",
+    lineHeight: 1.45,
   },
   readinessBanner: (good) => ({
     padding: "14px 16px",
@@ -1508,16 +1682,16 @@ const styles = {
   },
   integrityMini: {
     minWidth: "160px",
-    padding: "16px",
-    borderRadius: "22px",
+    padding: "14px 16px",
+    borderRadius: "18px",
     background: "#fff7ed",
     color: "#9a3412",
     textAlign: "center",
     display: "grid",
-    gap: "6px",
+    gap: "4px",
   },
   questionText: {
-    margin: "0 0 22px 0",
+    margin: "0 0 8px 0",
     fontSize: "clamp(24px, 3vw, 34px)",
     color: "#0f172a",
     lineHeight: 1.2,
@@ -1529,17 +1703,34 @@ const styles = {
   optionCard: {
     display: "flex",
     alignItems: "center",
-    gap: "14px",
-    padding: "18px 20px",
+    gap: "12px",
+    padding: "18px 18px",
     borderRadius: "20px",
     border: "1px solid rgba(148,163,184,0.2)",
     transition: "all 0.2s ease",
+    minHeight: "92px",
+  },
+  optionLetter: (checked) => ({
+    width: "34px",
+    height: "34px",
+    borderRadius: "12px",
+    display: "grid",
+    placeItems: "center",
+    background: checked ? "#2563eb" : "#eff6ff",
+    color: checked ? "#fff" : "#1d4ed8",
+    fontWeight: 800,
+    flexShrink: 0,
+  }),
+  optionText: {
+    fontSize: "18px",
+    lineHeight: 1.45,
+    color: "#0f172a",
   },
   navigationRow: {
     display: "flex",
     justifyContent: "space-between",
     gap: "14px",
-    marginTop: "28px",
+    marginTop: "4px",
     flexWrap: "wrap",
   },
   sidebar: {
@@ -1548,7 +1739,7 @@ const styles = {
   },
   monitorRail: {
     padding: "20px",
-    borderRadius: "28px",
+    borderRadius: "26px",
     background: "rgba(255,255,255,0.96)",
     border: "1px solid rgba(148,163,184,0.14)",
     boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
@@ -1629,12 +1820,73 @@ const styles = {
     gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
     gap: "10px",
   },
+  quickStatusCard: (tone) => ({
+    display: "grid",
+    gap: "4px",
+    padding: "12px 13px",
+    borderRadius: "16px",
+    background:
+      tone === "good"
+        ? "#ecfdf5"
+        : tone === "warn"
+        ? "#fff7ed"
+        : tone === "alert"
+        ? "#fef2f2"
+        : "#f8fbff",
+    border:
+      tone === "good"
+        ? "1px solid #bbf7d0"
+        : tone === "warn"
+        ? "1px solid #fdba74"
+        : tone === "alert"
+        ? "1px solid #fecaca"
+        : "1px solid rgba(148,163,184,0.12)",
+  }),
+  quickStatusLabel: {
+    fontSize: "11px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+    color: "#64748b",
+  },
+  quickStatusValue: {
+    fontSize: "15px",
+    color: "#0f172a",
+    lineHeight: 1.3,
+  },
   signalRow: {
     display: "grid",
     padding: "14px 15px",
     borderRadius: "18px",
     background: "#f8fbff",
     border: "1px solid rgba(148,163,184,0.12)",
+  },
+  evidenceGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+    gap: "10px",
+  },
+  evidenceCard: {
+    borderRadius: "18px",
+    overflow: "hidden",
+    border: "1px solid rgba(148,163,184,0.14)",
+    background: "#fff",
+    display: "grid",
+  },
+  evidenceImage: {
+    width: "100%",
+    aspectRatio: "4 / 3",
+    objectFit: "cover",
+    display: "block",
+    background: "#0f172a",
+  },
+  evidenceMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "8px",
+    alignItems: "center",
+    padding: "10px 12px",
+    fontSize: "12px",
+    color: "#64748b",
   },
   eventCard: {
     padding: "14px",

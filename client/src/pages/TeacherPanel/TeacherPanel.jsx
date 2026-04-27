@@ -1783,6 +1783,33 @@ function TeacherPanel() {
                     {result.headWarnings || 0} | Screenshot {result.screenshotWarnings || 0}
                   </div>
 
+                  {Array.isArray(result.evidenceShots) && result.evidenceShots.length > 0 ? (
+                    <div style={{ display: "grid", gap: "10px" }}>
+                      <div style={styles.metricLabel}>Cheating Detection Evidence</div>
+                      <div style={styles.resultEvidenceGrid}>
+                        {result.evidenceShots.slice(0, 4).map((shot, index) => (
+                          <div key={`${result._id}-shot-${index}`} style={styles.resultEvidenceCard}>
+                            <img
+                              src={shot.imageData}
+                              alt={`${shot.type || "movement"} evidence`}
+                              style={styles.resultEvidenceImage}
+                            />
+                            <div style={styles.resultEvidenceMeta}>
+                              <strong style={{ textTransform: "capitalize", color: "#0f172a" }}>
+                                {shot.type || "movement"}
+                              </strong>
+                              <span>
+                                {shot.occurredAt
+                                  ? new Date(shot.occurredAt).toLocaleTimeString()
+                                  : "Captured"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div style={styles.actionRow}>
                     <button
                       type="button"
@@ -2431,6 +2458,34 @@ const styles = {
     boxShadow: "0 18px 36px rgba(15, 23, 42, 0.06)",
     display: "grid",
     gap: "14px",
+  },
+  resultEvidenceGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gap: "10px",
+  },
+  resultEvidenceCard: {
+    borderRadius: "18px",
+    overflow: "hidden",
+    border: "1px solid rgba(148,163,184,0.14)",
+    background: "#f8fbff",
+    display: "grid",
+  },
+  resultEvidenceImage: {
+    width: "100%",
+    aspectRatio: "4 / 3",
+    objectFit: "cover",
+    display: "block",
+    background: "#0f172a",
+  },
+  resultEvidenceMeta: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "8px",
+    alignItems: "center",
+    padding: "10px 12px",
+    fontSize: "12px",
+    color: "#64748b",
   },
   emptyState: {
     padding: "20px",
