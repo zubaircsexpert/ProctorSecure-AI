@@ -151,28 +151,23 @@ function Register() {
           </div>
 
           <div style={styles.copyBlock}>
-            <div style={styles.kicker}>Professional setup</div>
-            <h1 style={styles.title}>
-              Register teachers with protected access and students with classroom approval
-            </h1>
-            <p style={styles.text}>
-              Teachers create classrooms first. Students then select the right class, upload an ID
-              card, and wait for teacher approval before they can enter the exam system.
-            </p>
+            <div style={styles.kicker}>Create Account</div>
+            <h1 style={styles.title}>Join the Proctor-AI portal</h1>
+            <p style={styles.text}>Register as Student or Teacher to continue.</p>
           </div>
 
           <div style={styles.highlightGrid}>
             <div style={styles.highlightCard}>
               <strong>Teacher path</strong>
-              <span>Access key, class creation, invite-ready structure</span>
+              <span>Access key and class setup</span>
             </div>
             <div style={styles.highlightCard}>
               <strong>Student path</strong>
-              <span>Class selection, roll number, and ID verification</span>
+              <span>Class selection and ID verification</span>
             </div>
             <div style={styles.highlightCard}>
-              <strong>Multi-class ready</strong>
-              <span>Supports many teachers and many separate class groups</span>
+              <strong>Approvals</strong>
+              <span>Secure role-based access</span>
             </div>
           </div>
 
@@ -185,7 +180,7 @@ function Register() {
         <section style={styles.formPanel}>
           <div style={styles.formHeader}>
             <div style={styles.formKicker}>Create account</div>
-            <h2 style={styles.formTitle}>Choose your role and complete onboarding</h2>
+            <h2 style={styles.formTitle}>Sign up</h2>
           </div>
 
           <div style={styles.roleRow}>
@@ -415,7 +410,7 @@ function Register() {
           <div style={styles.footerRow}>
             <span style={{ color: "#64748b" }}>Already have an account?</span>
             <Link to="/" style={styles.loginLink}>
-              Back to login
+              Login
             </Link>
           </div>
         </section>
@@ -489,14 +484,14 @@ const styles = {
   },
   title: {
     margin: 0,
-    fontSize: "clamp(34px, 5vw, 58px)",
-    lineHeight: 1.04,
+    fontSize: "clamp(34px, 5vw, 52px)",
+    lineHeight: 1.06,
   },
   text: {
     margin: 0,
-    maxWidth: "760px",
+    maxWidth: "420px",
     color: "rgba(255,255,255,0.84)",
-    lineHeight: 1.8,
+    lineHeight: 1.6,
     fontSize: "15px",
   },
   highlightGrid: {

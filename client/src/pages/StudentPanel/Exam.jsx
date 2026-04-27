@@ -205,89 +205,6 @@ const Exam = () => {
     }));
   }, []);
 
-  const requestExamAccess = useCallback(
-    async (exam) => {
-      stopMediaSession();
-      setPermissionError("");
-
-      const nextAccess = { ...initialAccessChecklist };
-      const requireCamera = exam?.requiresCamera !== false;
-      const requireMicrophone = exam?.requiresMicrophone !== false;
-      const requireScreenShare = exam?.requiresScreenShare !== false;
-
-      try {
-        if ((requireCamera || requireMicrophone) && navigator.mediaDevices?.getUserMedia) {
-          const combinedStream = await navigator.mediaDevices.getUserMedia({
-            video: requireCamera,
-            audio: requireMicrophone,
-          });
-          cameraStreamRef.current = requireCamera ? combinedStream : null;
-          audioStreamRef.current = requireMicrophone ? combinedStream : null;
-          nextAccess.camera = requireCamera ? combinedStream.getVideoTracks().length > 0 : true;
-          nextAccess.microphone = requireMicrophone ? combinedStream.getAudioTracks().length > 0 : true;
-        } else {
-          nextAccess.camera = !requireCamera;
-          nextAccess.microphone = !requireMicrophone;
-        }
-
-        if (requireScreenShare) {
-          if (!navigator.mediaDevices?.getDisplayMedia) {
-            throw new Error("Screen sharing is not supported in this browser.");
-          }
-
-          const displayStream = await navigator.mediaDevices.getDisplayMedia({
-            video: { frameRate: { ideal: 10, max: 15 } },
-            audio: false,
-          });
-          screenStreamRef.current = displayStream;
-          nextAccess.screen = displayStream.getVideoTracks().length > 0;
-
-          const screenTrack = displayStream.getVideoTracks()[0];
-          if (screenTrack) {
-            screenTrack.onended = () => {
-              setAccessChecklist((prev) => ({ ...prev, screen: false }));
-              setTelemetry((prev) => ({ ...prev, screenReady: false }));
-              addWarning("screenShare", "Screen sharing stopped during the exam.");
-            };
-          }
-        } else {
-          nextAccess.screen = true;
-        }
-
-        if (shouldEnforceFullscreen) {
-          const entered = document.fullscreenElement
-            ? true
-            : await document.documentElement.requestFullscreen().catch(() => null);
-          const isFullscreen = Boolean(document.fullscreenElement || entered);
-          if (!isFullscreen) {
-            throw new Error("Fullscreen permission is required before the exam can begin.");
-          }
-          nextAccess.fullscreen = true;
-        } else {
-          nextAccess.fullscreen = true;
-        }
-
-        setAccessChecklist(nextAccess);
-        setFullscreenActive(nextAccess.fullscreen);
-        setTelemetry((prev) => ({
-          ...prev,
-          cameraReady: nextAccess.camera,
-          microphoneReady: nextAccess.microphone,
-          screenReady: nextAccess.screen,
-          cameraState: nextAccess.camera ? "Camera live" : prev.cameraState,
-        }));
-      } catch (error) {
-        stopMediaSession();
-        setPermissionError(
-          error?.message ||
-            "Camera, microphone, screen sharing, and fullscreen access are required to start this exam."
-        );
-        throw error;
-      }
-    },
-    [addWarning, shouldEnforceFullscreen, stopMediaSession]
-  );
-
   const fetchExams = useCallback(async () => {
     try {
       setLoadingExams(true);
@@ -508,6 +425,89 @@ const Exam = () => {
       setShowWarning(false);
     }, 4200);
   }, [monitoringArmed, submitted]);
+
+  const requestExamAccess = useCallback(
+    async (exam) => {
+      stopMediaSession();
+      setPermissionError("");
+
+      const nextAccess = { ...initialAccessChecklist };
+      const requireCamera = exam?.requiresCamera !== false;
+      const requireMicrophone = exam?.requiresMicrophone !== false;
+      const requireScreenShare = exam?.requiresScreenShare !== false;
+
+      try {
+        if ((requireCamera || requireMicrophone) && navigator.mediaDevices?.getUserMedia) {
+          const combinedStream = await navigator.mediaDevices.getUserMedia({
+            video: requireCamera,
+            audio: requireMicrophone,
+          });
+          cameraStreamRef.current = requireCamera ? combinedStream : null;
+          audioStreamRef.current = requireMicrophone ? combinedStream : null;
+          nextAccess.camera = requireCamera ? combinedStream.getVideoTracks().length > 0 : true;
+          nextAccess.microphone = requireMicrophone ? combinedStream.getAudioTracks().length > 0 : true;
+        } else {
+          nextAccess.camera = !requireCamera;
+          nextAccess.microphone = !requireMicrophone;
+        }
+
+        if (requireScreenShare) {
+          if (!navigator.mediaDevices?.getDisplayMedia) {
+            throw new Error("Screen sharing is not supported in this browser.");
+          }
+
+          const displayStream = await navigator.mediaDevices.getDisplayMedia({
+            video: { frameRate: { ideal: 10, max: 15 } },
+            audio: false,
+          });
+          screenStreamRef.current = displayStream;
+          nextAccess.screen = displayStream.getVideoTracks().length > 0;
+
+          const screenTrack = displayStream.getVideoTracks()[0];
+          if (screenTrack) {
+            screenTrack.onended = () => {
+              setAccessChecklist((prev) => ({ ...prev, screen: false }));
+              setTelemetry((prev) => ({ ...prev, screenReady: false }));
+              addWarning("screenShare", "Screen sharing stopped during the exam.");
+            };
+          }
+        } else {
+          nextAccess.screen = true;
+        }
+
+        if (shouldEnforceFullscreen) {
+          const entered = document.fullscreenElement
+            ? true
+            : await document.documentElement.requestFullscreen().catch(() => null);
+          const isFullscreen = Boolean(document.fullscreenElement || entered);
+          if (!isFullscreen) {
+            throw new Error("Fullscreen permission is required before the exam can begin.");
+          }
+          nextAccess.fullscreen = true;
+        } else {
+          nextAccess.fullscreen = true;
+        }
+
+        setAccessChecklist(nextAccess);
+        setFullscreenActive(nextAccess.fullscreen);
+        setTelemetry((prev) => ({
+          ...prev,
+          cameraReady: nextAccess.camera,
+          microphoneReady: nextAccess.microphone,
+          screenReady: nextAccess.screen,
+          cameraState: nextAccess.camera ? "Camera live" : prev.cameraState,
+        }));
+      } catch (error) {
+        stopMediaSession();
+        setPermissionError(
+          error?.message ||
+            "Camera, microphone, screen sharing, and fullscreen access are required to start this exam."
+        );
+        throw error;
+      }
+    },
+    [addWarning, shouldEnforceFullscreen, stopMediaSession]
+  );
 
   const handleEvidenceCapture = useCallback((payload) => {
     if (!payload?.imageData) {

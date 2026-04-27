@@ -1,22 +1,23 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowRight, GraduationCap, LockKeyhole, ShieldCheck } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import API from "../services/api";
 
 const portalCards = [
   {
     id: "student",
     title: "Student Portal",
-    description: "Join your classroom, attempt exams, submit work, and track integrity reports.",
+    description: "Dashboard, exams, assignments",
   },
   {
     id: "teacher",
     title: "Teacher Portal",
-    description: "Approve students, manage classrooms, publish assessments, and review AI analytics.",
+    description: "Classes, approvals, analytics",
   },
 ];
 
 function Login() {
+  const navigate = useNavigate();
   const [portalRole, setPortalRole] = useState("student");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -49,8 +50,10 @@ function Login() {
       localStorage.setItem("token", response.data.token);
       localStorage.setItem("user", JSON.stringify(response.data.user));
 
-      window.location.href =
-        response.data.user.role === "teacher" ? "/teacher-panel" : "/dashboard";
+      navigate(
+        response.data.user.role === "teacher" ? "/teacher-panel" : "/dashboard",
+        { replace: true }
+      );
     } catch (error) {
       console.error("Login Error:", error);
       setErrorMessage(
@@ -71,33 +74,28 @@ function Login() {
             </div>
             <div>
               <div style={styles.brandTitle}>PROCTOR-AI</div>
-              <div style={styles.brandSubTitle}>Secure exam intelligence suite</div>
+              <div style={styles.brandSubTitle}>Exam Management Portal</div>
             </div>
           </div>
 
           <div style={styles.heroCopy}>
-            <div style={styles.heroBadge}>Trusted classroom operations</div>
-            <h1 style={styles.heroTitle}>
-              One secure portal for proctored exams, classroom approvals, and academic analytics
-            </h1>
-            <p style={styles.heroText}>
-              Teachers get protected onboarding plus classroom-level control. Students join the
-              right class, wait for approval, and access only their own learning workspace.
-            </p>
+            <div style={styles.heroBadge}>Secure Access</div>
+            <h1 style={styles.heroTitle}>Sign in to your exam workspace</h1>
+            <p style={styles.heroText}>Choose the correct portal and continue.</p>
           </div>
 
           <div style={styles.insightGrid}>
             <div style={styles.insightCard}>
-              <span style={styles.insightLabel}>Teacher Access</span>
-              <strong style={styles.insightValue}>Protected key + classroom ownership</strong>
+              <span style={styles.insightLabel}>Teacher</span>
+              <strong style={styles.insightValue}>Manage classes and exams</strong>
             </div>
             <div style={styles.insightCard}>
-              <span style={styles.insightLabel}>Student Entry</span>
-              <strong style={styles.insightValue}>ID card + roll number approval flow</strong>
+              <span style={styles.insightLabel}>Student</span>
+              <strong style={styles.insightValue}>Attempt exams and track results</strong>
             </div>
             <div style={styles.insightCard}>
-              <span style={styles.insightLabel}>Exam Security</span>
-              <strong style={styles.insightValue}>AI proctoring + suspicious activity logs</strong>
+              <span style={styles.insightLabel}>Security</span>
+              <strong style={styles.insightValue}>Protected login and proctoring</strong>
             </div>
           </div>
         </section>
@@ -105,11 +103,8 @@ function Login() {
         <section style={styles.formPanel}>
           <div style={styles.formHeader}>
             <div style={styles.formKicker}>Sign in</div>
-            <h2 style={styles.formTitle}>Continue to your protected workspace</h2>
-            <p style={styles.formText}>
-              Choose the correct portal first so a student cannot enter the teacher dashboard by
-              mistake.
-            </p>
+            <h2 style={styles.formTitle}>Login</h2>
+            <p style={styles.formText}>Student and Teacher access</p>
           </div>
 
           <div style={styles.portalGrid}>
@@ -163,13 +158,8 @@ function Login() {
           <div style={styles.footerRow}>
             <span style={{ color: "#64748b" }}>New to the system?</span>
             <Link to="/register" style={styles.registerLink}>
-              Create account
+              Sign up
             </Link>
-          </div>
-
-          <div style={styles.helperStrip}>
-            <GraduationCap size={18} />
-            Student approvals and teacher keys are enforced on the backend as well.
           </div>
         </section>
       </div>
@@ -243,15 +233,15 @@ const styles = {
   },
   heroTitle: {
     margin: 0,
-    fontSize: "clamp(36px, 5vw, 62px)",
-    lineHeight: 1.02,
+    fontSize: "clamp(34px, 5vw, 54px)",
+    lineHeight: 1.05,
   },
   heroText: {
     margin: 0,
     fontSize: "15px",
     color: "rgba(255,255,255,0.84)",
-    lineHeight: 1.8,
-    maxWidth: "760px",
+    lineHeight: 1.6,
+    maxWidth: "420px",
   },
   insightGrid: {
     display: "grid",
@@ -306,7 +296,7 @@ const styles = {
   formText: {
     margin: 0,
     color: "#64748b",
-    lineHeight: 1.7,
+    lineHeight: 1.5,
     fontSize: "14px",
   },
   portalGrid: {
@@ -390,17 +380,6 @@ const styles = {
     color: "#1d4ed8",
     fontWeight: 800,
     textDecoration: "none",
-  },
-  helperStrip: {
-    display: "flex",
-    alignItems: "center",
-    gap: "10px",
-    padding: "14px 16px",
-    borderRadius: "18px",
-    background: "#eff6ff",
-    color: "#1e40af",
-    lineHeight: 1.5,
-    fontSize: "14px",
   },
 };
 
