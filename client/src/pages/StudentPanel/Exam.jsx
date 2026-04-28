@@ -107,6 +107,28 @@ const extractList = (payload, keys = []) => {
   return [];
 };
 
+const extractQuestionText = (question) =>
+  question?.questionText ||
+  question?.question ||
+  question?.text ||
+  question?.prompt ||
+  question?.title ||
+  "";
+
+const extractQuestionOptions = (question) => {
+  if (Array.isArray(question?.options) && question.options.length) {
+    return question.options.filter(Boolean);
+  }
+
+  return [
+    question?.optionA,
+    question?.optionB,
+    question?.optionC,
+    question?.optionD,
+    question?.optionE,
+  ].filter(Boolean);
+};
+
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 const round = (value) => Number(value.toFixed(2));
 
@@ -958,9 +980,8 @@ const Exam = () => {
     ? selectedExam?.submissionPrompt ||
       selectedExam?.instructions ||
       "Write your answer carefully and submit it for teacher review."
-    : currentQuestion?.questionText || currentQuestion?.question || "";
-  const currentOptions =
-    !isWrittenExam && Array.isArray(currentQuestion?.options) ? currentQuestion.options : [];
+    : extractQuestionText(currentQuestion);
+  const currentOptions = !isWrittenExam ? extractQuestionOptions(currentQuestion) : [];
   const answeredCount = isWrittenExam
     ? writtenAnswer.trim() || writtenFile
       ? 1
@@ -990,6 +1011,7 @@ const Exam = () => {
   const quickDetections = activityLog.slice(0, 3);
   const evidencePreview = evidenceShots.slice(0, 4);
   const permissionReady = Object.values(accessChecklist).every(Boolean);
+  const trustPreview = computeTrustFactor(suspiciousScorePreview);
   const warningRoomItems = [
     ["Copy", warningCounts.copyWarnings],
     ["Paste", warningCounts.pasteWarnings],
@@ -999,6 +1021,7 @@ const Exam = () => {
     ["Focus", focusEventCount],
     ["Face", warningCounts.faceMissingWarnings],
     ["Multi", warningCounts.multipleFaceWarnings],
+    ["Share", warningCounts.screenShareWarnings],
   ];
 
   if (!selectedExam) {
@@ -1180,15 +1203,14 @@ const Exam = () => {
           ...styles.examWorkspace,
           gridTemplateColumns: isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.6fr) minmax(390px, 470px)",
-          minHeight: desktopPanelHeight,
+            : "minmax(0, 1.75fr) minmax(360px, 0.95fr)",
+          alignItems: "start",
         }}
       >
         <div
           style={{
             ...styles.questionCard,
-            minHeight: desktopPanelHeight,
-            height: desktopPanelHeight,
+            minHeight: isCompactLayout ? "auto" : desktopPanelHeight,
           }}
         >
           <div
@@ -1265,6 +1287,12 @@ const Exam = () => {
             </div>
 
             <h3 style={styles.questionText}>{currentQuestionText}</h3>
+
+            {!isWrittenExam && currentOptions.length === 0 ? (
+              <div style={styles.emptyQuestionState}>
+                Question loaded, but no options were found yet for this MCQ.
+              </div>
+            ) : null}
 
             {isWrittenExam ? (
               <div style={styles.writtenAnswerBox}>
@@ -1412,7 +1440,7 @@ const Exam = () => {
               onEvidenceCapture={handleEvidenceCapture}
               videoStream={cameraStreamRef.current}
               audioStream={audioStreamRef.current}
-              compact={isPhone}
+              compact={isCompactLayout}
             />
 
             <div
@@ -1437,6 +1465,11 @@ const Exam = () => {
                 label="Evidence"
                 value={evidenceShots.length === 0 ? "None" : `${evidenceShots.length} saved`}
                 tone={evidenceShots.length === 0 ? "neutral" : "warn"}
+              />
+              <QuickStatusCard
+                label="Reliability"
+                value={trustPreview}
+                tone={trustPreview === "Reliable" ? "good" : trustPreview === "Monitor" ? "warn" : "alert"}
               />
             </div>
 
@@ -1974,7 +2007,7 @@ const styles = {
     background: "rgba(255,255,255,0.96)",
     boxShadow: "0 24px 46px rgba(15, 23, 42, 0.08)",
     display: "grid",
-    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    gridTemplateRows: "auto auto auto",
     gap: "18px",
     border: "1px solid rgba(148,163,184,0.12)",
   },
@@ -1995,7 +2028,7 @@ const styles = {
     display: "grid",
     alignContent: "start",
     gap: "16px",
-    overflowY: "auto",
+    minHeight: 0,
     paddingRight: "4px",
   },
   questionStatusGrid: {
@@ -2098,9 +2131,9 @@ const styles = {
   },
   questionText: {
     margin: "0 0 8px 0",
-    fontSize: "clamp(24px, 3vw, 34px)",
+    fontSize: "clamp(22px, 2.4vw, 30px)",
     color: "#0f172a",
-    lineHeight: 1.2,
+    lineHeight: 1.28,
   },
   optionGrid: {
     display: "grid",
@@ -2108,13 +2141,13 @@ const styles = {
   },
   optionCard: {
     display: "flex",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: "12px",
     padding: "18px 18px",
     borderRadius: "20px",
     border: "1px solid rgba(148,163,184,0.2)",
     transition: "all 0.2s ease",
-    minHeight: "92px",
+    minHeight: "84px",
   },
   optionLetter: (checked) => ({
     width: "34px",
@@ -2128,9 +2161,18 @@ const styles = {
     flexShrink: 0,
   }),
   optionText: {
-    fontSize: "18px",
+    fontSize: "16px",
     lineHeight: 1.45,
     color: "#0f172a",
+  },
+  emptyQuestionState: {
+    padding: "16px 18px",
+    borderRadius: "18px",
+    background: "#fff7ed",
+    border: "1px solid #fdba74",
+    color: "#9a3412",
+    lineHeight: 1.5,
+    fontSize: "14px",
   },
   navigationRow: {
     display: "flex",
@@ -2223,7 +2265,7 @@ const styles = {
   },
   monitorGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
     gap: "10px",
   },
   quickStatusCard: (tone) => ({
