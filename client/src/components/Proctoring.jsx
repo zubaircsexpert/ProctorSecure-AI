@@ -555,24 +555,24 @@ const Proctoring = ({
         box.y + box.height <= FACE_GUIDE.top + FACE_GUIDE.height + guidePadding;
 
       const rawHeadTurned =
-        shiftX > (compact ? 0.34 : 0.3) ||
-        shiftY > (compact ? 0.28 : 0.24) ||
-        yawRatio < 0.6 ||
-        yawRatio > 1.75 ||
-        pitchRatio < 0.7 ||
-        pitchRatio > 1.52;
+        shiftX > (compact ? 0.4 : 0.34) ||
+        shiftY > (compact ? 0.31 : 0.27) ||
+        yawRatio < 0.5 ||
+        yawRatio > 1.95 ||
+        pitchRatio < 0.62 ||
+        pitchRatio > 1.64;
 
       const rawEyesShifted =
-        Math.abs(gazeLeft - 0.5) > 0.18 ||
-        Math.abs(gazeRight - 0.5) > 0.18 ||
-        Math.abs(gazeLeft - baseline.gazeLeft) > 0.22 ||
-        Math.abs(gazeRight - baseline.gazeRight) > 0.22;
+        Math.abs(gazeLeft - 0.5) > 0.24 ||
+        Math.abs(gazeRight - 0.5) > 0.24 ||
+        Math.abs(gazeLeft - baseline.gazeLeft) > 0.3 ||
+        Math.abs(gazeRight - baseline.gazeRight) > 0.3;
 
       headDriftFramesRef.current = rawHeadTurned ? headDriftFramesRef.current + 1 : 0;
       eyeDriftFramesRef.current = rawEyesShifted ? eyeDriftFramesRef.current + 1 : 0;
 
-      const headTurned = headDriftFramesRef.current >= 2;
-      const eyesShifted = eyeDriftFramesRef.current >= 3;
+      const headTurned = headDriftFramesRef.current >= 3;
+      const eyesShifted = eyeDriftFramesRef.current >= 4;
 
       const hasMultipleFaces = landmarksArray.length > 1;
       let nextPresence = "Face locked";
@@ -1007,7 +1007,7 @@ const Proctoring = ({
             playsInline
             style={{
               width: "100%",
-              aspectRatio: compact ? "3 / 4" : "16 / 10",
+              aspectRatio: compact ? "3 / 4" : "4 / 3",
               objectFit: "cover",
               display: "block",
               background:
