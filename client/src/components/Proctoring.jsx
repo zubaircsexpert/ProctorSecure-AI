@@ -10,13 +10,11 @@ const SPOKEN_ALERTS = {
 };
 
 const FACE_GUIDE = {
-  left: 0.12,
-  top: 0.07,
-  width: 0.76,
-  height: 0.84,
+  left: 0.16,
+  top: 0.1,
+  width: 0.68,
+  height: 0.78,
 };
-
-const EVIDENCE_TYPES = new Set(["eye", "head", "faceMissing", "multipleFace"]);
 
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 
@@ -68,18 +66,10 @@ const drawRoundedRect = (ctx, x, y, width, height, radius) => {
   ctx.closePath();
 };
 
-const Proctoring = ({
-  addWarning,
-  onTelemetryChange,
-  onEvidenceCapture,
-  videoStream = null,
-  audioStream = null,
-  compact = false,
-}) => {
+const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
-  const audioStreamRef = useRef(null);
   const faceMeshRef = useRef(null);
   const animationFrameRef = useRef(null);
   const processingRef = useRef(false);
@@ -101,9 +91,6 @@ const Proctoring = ({
   const fallbackBusyRef = useRef(false);
   const fallbackLastRunRef = useRef(0);
   const lastRenderBoxRef = useRef(null);
-  const headDriftFramesRef = useRef(0);
-  const eyeDriftFramesRef = useRef(0);
-  const evidenceCooldownRef = useRef({});
 
   const [cameraState, setCameraState] = useState("Preparing camera");
   const [presenceLabel, setPresenceLabel] = useState("Aligning face");
@@ -118,13 +105,10 @@ const Proctoring = ({
   const emitTelemetry = useCallback(
     (payload) => {
       if (typeof onTelemetryChange === "function") {
-        onTelemetryChange({
-          cameraState,
-          ...payload,
-        });
+        onTelemetryChange(payload);
       }
     },
-    [cameraState, onTelemetryChange]
+    [onTelemetryChange]
   );
 
   const updateTrackingScore = useCallback((value) => {
@@ -133,68 +117,6 @@ const Proctoring = ({
     setTrackingScore(nextValue);
     return nextValue;
   }, []);
-
-  const captureEvidence = useCallback(
-    (type, message) => {
-      if (!EVIDENCE_TYPES.has(type) || typeof onEvidenceCapture !== "function") {
-        return;
-      }
-
-      const videoElement = videoRef.current;
-      if (!videoElement || videoElement.readyState < 2) {
-        return;
-      }
-
-      const now = Date.now();
-      const lastCapturedAt = evidenceCooldownRef.current[type] || 0;
-      if (now - lastCapturedAt < 9000) {
-        return;
-      }
-
-      evidenceCooldownRef.current[type] = now;
-
-      try {
-        const sourceWidth = videoElement.videoWidth || 0;
-        const sourceHeight = videoElement.videoHeight || 0;
-
-        if (!sourceWidth || !sourceHeight) {
-          return;
-        }
-
-        const captureCanvas = document.createElement("canvas");
-        const captureWidth = compact ? 320 : 420;
-        const captureHeight = Math.round((captureWidth / sourceWidth) * sourceHeight);
-        captureCanvas.width = captureWidth;
-        captureCanvas.height = captureHeight;
-
-        const ctx = captureCanvas.getContext("2d");
-        if (!ctx) {
-          return;
-        }
-
-        ctx.drawImage(videoElement, 0, 0, captureWidth, captureHeight);
-        ctx.fillStyle = "rgba(15, 23, 42, 0.72)";
-        ctx.fillRect(0, captureHeight - 42, captureWidth, 42);
-        ctx.fillStyle = "#f8fafc";
-        ctx.font = "600 13px Segoe UI";
-        ctx.fillText(`${type.toUpperCase()} | ${new Date(now).toLocaleTimeString()}`, 12, captureHeight - 16);
-
-        onEvidenceCapture({
-          type,
-          message,
-          occurredAt: new Date(now).toISOString(),
-          severity:
-            type === "multipleFace" || type === "faceMissing" ? "high" : "medium",
-          trackingScore: trackingScoreRef.current,
-          detectionMode: trackingMode,
-          imageData: captureCanvas.toDataURL("image/jpeg", compact ? 0.56 : 0.6),
-        });
-      } catch (error) {
-        console.error("Evidence capture error:", error);
-      }
-    },
-    [compact, onEvidenceCapture, trackingMode]
-  );
 
   const speakAlert = useCallback((type, fallbackMessage) => {
     if (typeof window === "undefined" || !window.speechSynthesis) {
@@ -236,13 +158,12 @@ const Proctoring = ({
 
       addWarning(type, message);
       lastWarningRef.current[type] = now;
-      captureEvidence(type, message);
 
       if (announce) {
         speakAlert(type, message);
       }
     },
-    [addWarning, captureEvidence, speakAlert]
+    [addWarning, speakAlert]
   );
 
   const renderGuide = useCallback((box, label) => {
@@ -329,7 +250,7 @@ const Proctoring = ({
         videoElement,
         new faceapi.TinyFaceDetectorOptions({
           inputSize: compact ? 256 : 320,
-          scoreThreshold: compact ? 0.16 : 0.2,
+          scoreThreshold: compact ? 0.22 : 0.28,
         })
       );
 
@@ -433,18 +354,16 @@ const Proctoring = ({
 
       if (!landmarksArray.length) {
         missingFramesRef.current += 1;
-        headDriftFramesRef.current = 0;
-        eyeDriftFramesRef.current = 0;
         const msSinceFaceSeen = Date.now() - lastFaceSeenAtRef.current;
 
-        if (missingFramesRef.current <= (compact ? 8 : 6) || msSinceFaceSeen < 2800) {
+        if (missingFramesRef.current <= (compact ? 5 : 4) || msSinceFaceSeen < 1800) {
           const nextScore = updateTrackingScore(
             trackingScoreRef.current ? trackingScoreRef.current - 6 : 60
           );
           setPresenceLabel("Re-aligning");
           setFramingLabel("Hold steady while the system refreshes your face landmarks.");
           emitTelemetry({
-            faceVisible: msSinceFaceSeen < 2600,
+            faceVisible: msSinceFaceSeen < 1800,
             multipleFaces: false,
             faceStatus: "Re-aligning",
             framingStatus: "Hold steady while the system refreshes your face landmarks.",
@@ -554,25 +473,19 @@ const Proctoring = ({
         box.x + box.width <= FACE_GUIDE.left + FACE_GUIDE.width + guidePadding &&
         box.y + box.height <= FACE_GUIDE.top + FACE_GUIDE.height + guidePadding;
 
-      const rawHeadTurned =
+      const headTurned =
         shiftX > (compact ? 0.4 : 0.34) ||
         shiftY > (compact ? 0.31 : 0.27) ||
-        yawRatio < 0.5 ||
-        yawRatio > 1.95 ||
-        pitchRatio < 0.62 ||
-        pitchRatio > 1.64;
+        yawRatio < 0.55 ||
+        yawRatio > 1.85 ||
+        pitchRatio < 0.66 ||
+        pitchRatio > 1.55;
 
-      const rawEyesShifted =
+      const eyesShifted =
         Math.abs(gazeLeft - 0.5) > 0.24 ||
         Math.abs(gazeRight - 0.5) > 0.24 ||
-        Math.abs(gazeLeft - baseline.gazeLeft) > 0.3 ||
-        Math.abs(gazeRight - baseline.gazeRight) > 0.3;
-
-      headDriftFramesRef.current = rawHeadTurned ? headDriftFramesRef.current + 1 : 0;
-      eyeDriftFramesRef.current = rawEyesShifted ? eyeDriftFramesRef.current + 1 : 0;
-
-      const headTurned = headDriftFramesRef.current >= 3;
-      const eyesShifted = eyeDriftFramesRef.current >= 4;
+        Math.abs(gazeLeft - baseline.gazeLeft) > 0.26 ||
+        Math.abs(gazeRight - baseline.gazeRight) > 0.26;
 
       const hasMultipleFaces = landmarksArray.length > 1;
       let nextPresence = "Face locked";
@@ -606,10 +519,6 @@ const Proctoring = ({
         nextFraming = "Please keep your eyes focused on the exam area.";
         nextScore = 52;
         triggerWarning("eye", "Eyes moved away from the screen focus area.");
-      } else if (rawHeadTurned || rawEyesShifted) {
-        nextPresence = "Hold steady";
-        nextFraming = "Small movement noticed. Keep your face and eyes centered.";
-        nextScore = 78;
       }
 
       baselineRef.current = {
@@ -701,11 +610,8 @@ const Proctoring = ({
     animationFrameRef.current = window.requestAnimationFrame(processFrame);
   }, [applyFallbackDetection, compact, handleTrackingResults]);
 
-  const startAudioDetection = useCallback(async (inputStream) => {
-    const stream = inputStream || audioStreamRef.current || streamRef.current;
-
-    if (!stream) {
-      emitTelemetry({ microphoneReady: false, audioStatus: "Microphone unavailable" });
+  const startAudioDetection = useCallback(async () => {
+    if (!streamRef.current) {
       return;
     }
 
@@ -727,7 +633,7 @@ const Proctoring = ({
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.86;
 
-      const source = audioContext.createMediaStreamSource(stream);
+      const source = audioContext.createMediaStreamSource(streamRef.current);
       source.connect(analyser);
 
       const dataArray = new Uint8Array(analyser.fftSize);
@@ -808,83 +714,43 @@ const Proctoring = ({
     const boot = async () => {
       try {
         setCameraState("Requesting camera");
-        emitTelemetry({ cameraReady: false, cameraState: "Requesting camera" });
 
-        const videoConstraints = {
-          facingMode: "user",
-          width: { ideal: compact ? 960 : 1280 },
-          height: { ideal: compact ? 720 : 960 },
-          frameRate: { ideal: compact ? 24 : 30 },
-        };
-
-        let nextVideoStream = videoStream || null;
-        let nextAudioStream = audioStream || null;
-
-        if (!nextVideoStream) {
-          try {
-            const combinedStream = await navigator.mediaDevices.getUserMedia({
-              video: videoConstraints,
-              audio: true,
-            });
-            nextVideoStream = combinedStream;
-            nextAudioStream = nextAudioStream || combinedStream;
-          } catch (combinedError) {
-            console.error("Combined media request fallback:", combinedError);
-            nextVideoStream = await navigator.mediaDevices.getUserMedia({
-              video: videoConstraints,
-              audio: false,
-            });
-
-            if (!nextAudioStream) {
-              try {
-                nextAudioStream = await navigator.mediaDevices.getUserMedia({
-                  video: false,
-                  audio: true,
-                });
-              } catch (audioError) {
-                console.error("Audio-only request failed:", audioError);
-              }
-            }
-          }
-        }
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: "user",
+            width: { ideal: compact ? 960 : 1280 },
+            height: { ideal: compact ? 720 : 960 },
+            frameRate: { ideal: compact ? 24 : 30 },
+          },
+          audio: true,
+        });
 
         if (!active) {
-          nextVideoStream?.getTracks().forEach((track) => track.stop());
-          if (nextAudioStream && nextAudioStream !== nextVideoStream) {
-            nextAudioStream.getTracks().forEach((track) => track.stop());
-          }
+          stream.getTracks().forEach((track) => track.stop());
           return;
         }
 
-        streamRef.current = nextVideoStream;
-        audioStreamRef.current = nextAudioStream;
+        streamRef.current = stream;
 
         if (videoRef.current) {
-          videoRef.current.srcObject = nextVideoStream;
+          videoRef.current.srcObject = stream;
           await videoRef.current.play();
         }
 
         baselineRef.current = null;
         missingFramesRef.current = 0;
         lastFaceSeenAtRef.current = 0;
-        headDriftFramesRef.current = 0;
-        eyeDriftFramesRef.current = 0;
-        evidenceCooldownRef.current = {};
         updateTrackingScore(0);
         setCameraState("Camera live");
-        emitTelemetry({ cameraReady: true, cameraState: "Camera live" });
+        emitTelemetry({ cameraReady: true });
 
         await loadFallbackModels();
         await startFaceTracking();
-        await startAudioDetection(nextAudioStream);
+        await startAudioDetection();
       } catch (error) {
         console.error("Camera error:", error);
         setCameraState("Camera blocked");
-        emitTelemetry({
-          cameraReady: false,
-          microphoneReady: false,
-          cameraState: "Camera blocked",
-        });
+        emitTelemetry({ cameraReady: false, microphoneReady: false });
         addWarning("focus", "Camera or microphone access is blocked.");
       }
     };
@@ -916,15 +782,7 @@ const Proctoring = ({
       }
 
       if (streamRef.current) {
-        if (!videoStream) {
-          streamRef.current.getTracks().forEach((track) => track.stop());
-        }
-      }
-
-      if (audioStreamRef.current && audioStreamRef.current !== streamRef.current) {
-        if (!audioStream) {
-          audioStreamRef.current.getTracks().forEach((track) => track.stop());
-        }
+        streamRef.current.getTracks().forEach((track) => track.stop());
       }
 
       if (canvas) {
@@ -940,8 +798,6 @@ const Proctoring = ({
     startAudioDetection,
     startFaceTracking,
     updateTrackingScore,
-    videoStream,
-    audioStream,
   ]);
 
   const tone = getPresenceTone(presenceLabel);
