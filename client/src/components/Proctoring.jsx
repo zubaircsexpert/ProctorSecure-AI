@@ -70,6 +70,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
+  const audioStreamRef = useRef(null);
   const faceMeshRef = useRef(null);
   const animationFrameRef = useRef(null);
   const processingRef = useRef(false);
@@ -610,8 +611,11 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
     animationFrameRef.current = window.requestAnimationFrame(processFrame);
   }, [applyFallbackDetection, compact, handleTrackingResults]);
 
-  const startAudioDetection = useCallback(async () => {
-    if (!streamRef.current) {
+  const startAudioDetection = useCallback(async (inputStream) => {
+    const stream = inputStream || audioStreamRef.current || streamRef.current;
+
+    if (!stream) {
+      emitTelemetry({ microphoneReady: false, audioStatus: "Microphone unavailable" });
       return;
     }
 
@@ -633,7 +637,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
       analyser.fftSize = 512;
       analyser.smoothingTimeConstant = 0.86;
 
-      const source = audioContext.createMediaStreamSource(streamRef.current);
+      const source = audioContext.createMediaStreamSource(stream);
       source.connect(analyser);
 
       const dataArray = new Uint8Array(analyser.fftSize);
@@ -714,27 +718,73 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
     const boot = async () => {
       try {
         setCameraState("Requesting camera");
+        emitTelemetry({ cameraReady: false, cameraState: "Requesting camera" });
 
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-            width: { ideal: compact ? 960 : 1280 },
-            height: { ideal: compact ? 720 : 960 },
-            frameRate: { ideal: compact ? 24 : 30 },
-          },
-          audio: true,
-        });
+        const videoConstraints = {
+          facingMode: "user",
+          width: { ideal: compact ? 960 : 1280 },
+          height: { ideal: compact ? 720 : 960 },
+          frameRate: { ideal: compact ? 24 : 30 },
+        };
+
+        let nextVideoStream = null;
+        let nextAudioStream = null;
+
+        try {
+          const combinedStream = await navigator.mediaDevices.getUserMedia({
+            video: videoConstraints,
+            audio: true,
+          });
+          nextVideoStream = combinedStream;
+          nextAudioStream = combinedStream;
+        } catch (combinedError) {
+          console.error("Combined media request fallback:", combinedError);
+          nextVideoStream = await navigator.mediaDevices.getUserMedia({
+            video: videoConstraints,
+            audio: false,
+          });
+
+          try {
+            nextAudioStream = await navigator.mediaDevices.getUserMedia({
+              video: false,
+              audio: true,
+            });
+          } catch (audioError) {
+            console.error("Audio-only request failed:", audioError);
+          }
+        }
 
         if (!active) {
-          stream.getTracks().forEach((track) => track.stop());
+          nextVideoStream?.getTracks().forEach((track) => track.stop());
+          if (nextAudioStream && nextAudioStream !== nextVideoStream) {
+            nextAudioStream.getTracks().forEach((track) => track.stop());
+          }
           return;
         }
 
-        streamRef.current = stream;
+        streamRef.current = nextVideoStream;
+        audioStreamRef.current = nextAudioStream;
 
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await videoRef.current.play();
+          videoRef.current.srcObject = nextVideoStream;
+
+          await new Promise((resolve) => {
+            if (videoRef.current.readyState >= 1) {
+              resolve();
+              return;
+            }
+
+            const handleReady = () => {
+              videoRef.current?.removeEventListener("loadedmetadata", handleReady);
+              resolve();
+            };
+
+            videoRef.current.addEventListener("loadedmetadata", handleReady, { once: true });
+          });
+
+          await videoRef.current.play().catch((playError) => {
+            console.error("Video autoplay error:", playError);
+          });
         }
 
         baselineRef.current = null;
@@ -742,15 +792,23 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
         lastFaceSeenAtRef.current = 0;
         updateTrackingScore(0);
         setCameraState("Camera live");
-        emitTelemetry({ cameraReady: true });
+        emitTelemetry({
+          cameraReady: true,
+          microphoneReady: Boolean(nextAudioStream),
+          cameraState: "Camera live",
+        });
 
         await loadFallbackModels();
         await startFaceTracking();
-        await startAudioDetection();
+        await startAudioDetection(nextAudioStream);
       } catch (error) {
         console.error("Camera error:", error);
         setCameraState("Camera blocked");
-        emitTelemetry({ cameraReady: false, microphoneReady: false });
+        emitTelemetry({
+          cameraReady: false,
+          microphoneReady: false,
+          cameraState: "Camera blocked",
+        });
         addWarning("focus", "Camera or microphone access is blocked.");
       }
     };
@@ -783,6 +841,10 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
 
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      if (audioStreamRef.current && audioStreamRef.current !== streamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
       }
 
       if (canvas) {
