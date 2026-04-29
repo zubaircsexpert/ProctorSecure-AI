@@ -768,16 +768,16 @@ const Exam = () => {
       <div
         style={{
           ...styles.headerCard,
-          padding: isPhone ? "20px" : "28px",
-          gap: isPhone ? "14px" : "18px",
+          padding: isPhone ? "16px" : "20px 22px",
+          gap: isPhone ? "12px" : "14px",
         }}
       >
         <div>
           <div style={styles.heroKicker}>Live assessment mode</div>
-          <h2 style={{ margin: "6px 0 8px 0", fontSize: "clamp(28px, 4vw, 42px)" }}>
+          <h2 style={{ margin: "4px 0 6px 0", fontSize: "clamp(22px, 3vw, 32px)" }}>
             {selectedExam.title}
           </h2>
-          <div style={{ color: "#64748b" }}>
+          <div style={{ color: "#64748b", fontSize: "14px" }}>
             Session ID <strong>{sessionIdRef.current}</strong> | Exam Key{" "}
             <strong>{selectedExam.examKey || "Open"}</strong>
           </div>
@@ -812,10 +812,10 @@ const Exam = () => {
           ...styles.examLayout,
           gridTemplateColumns: isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.5fr) minmax(360px, 420px)",
+            : "minmax(0, 1.65fr) minmax(340px, 390px)",
         }}
       >
-        <div style={{ ...styles.questionCard, padding: isPhone ? "18px" : "28px" }}>
+        <div style={{ ...styles.questionCard, padding: isPhone ? "16px" : "22px" }}>
           <div
             style={{
               ...styles.questionHeader,
@@ -919,6 +919,9 @@ const Exam = () => {
           style={{
             ...styles.sidebar,
             order: isPhone ? -1 : 0,
+            maxHeight: isCompactLayout ? "none" : "calc(100vh - 138px)",
+            overflowY: isCompactLayout ? "visible" : "auto",
+            paddingRight: isCompactLayout ? 0 : "4px",
           }}
         >
           <div
@@ -1096,7 +1099,7 @@ const SignalRow = ({ label, value, good, compact = false }) => (
 const styles = {
   page: {
     minHeight: "calc(100vh - 104px)",
-    padding: "26px clamp(16px, 3vw, 34px) 40px",
+    padding: "18px clamp(14px, 2.4vw, 28px) 28px",
     background:
       "radial-gradient(circle at top right, rgba(37,99,235,0.10), transparent 28%), linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)",
   },
@@ -1290,12 +1293,12 @@ const styles = {
   headerCard: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: "18px",
-    padding: "28px",
-    borderRadius: "30px",
+    gap: "14px",
+    padding: "20px 22px",
+    borderRadius: "24px",
     background: "rgba(255,255,255,0.92)",
     boxShadow: "0 22px 48px rgba(15, 23, 42, 0.08)",
-    marginBottom: "22px",
+    marginBottom: "16px",
   },
   headerMetrics: {
     display: "grid",
@@ -1304,8 +1307,8 @@ const styles = {
     alignItems: "stretch",
   },
   metricCard: {
-    padding: "18px",
-    borderRadius: "22px",
+    padding: "14px 16px",
+    borderRadius: "18px",
     background: "#f8fbff",
     border: "1px solid rgba(148,163,184,0.16)",
     display: "grid",
@@ -1314,12 +1317,12 @@ const styles = {
   examLayout: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "24px",
+    gap: "16px",
     alignItems: "start",
   },
   questionCard: {
-    padding: "28px",
-    borderRadius: "30px",
+    padding: "22px",
+    borderRadius: "24px",
     background: "rgba(255,255,255,0.96)",
     boxShadow: "0 24px 46px rgba(15, 23, 42, 0.08)",
   },
@@ -1328,7 +1331,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "space-between",
     gap: "16px",
-    marginBottom: "26px",
+    marginBottom: "18px",
   },
   questionBadge: {
     display: "inline-block",
@@ -1363,21 +1366,21 @@ const styles = {
     gap: "6px",
   },
   questionText: {
-    margin: "0 0 22px 0",
-    fontSize: "clamp(24px, 3vw, 34px)",
+    margin: "0 0 18px 0",
+    fontSize: "clamp(22px, 2.6vw, 32px)",
     color: "#0f172a",
     lineHeight: 1.2,
   },
   optionGrid: {
     display: "grid",
-    gap: "14px",
+    gap: "10px",
   },
   optionCard: {
     display: "flex",
     alignItems: "center",
     gap: "14px",
-    padding: "18px 20px",
-    borderRadius: "20px",
+    padding: "14px 16px",
+    borderRadius: "16px",
     border: "1px solid rgba(148,163,184,0.2)",
     transition: "all 0.2s ease",
   },
@@ -1385,16 +1388,16 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
     gap: "14px",
-    marginTop: "28px",
+    marginTop: "18px",
     flexWrap: "wrap",
   },
   sidebar: {
     display: "grid",
-    gap: "18px",
+    gap: "12px",
   },
   sidebarCard: {
     padding: "22px",
-    borderRadius: "26px",
+    borderRadius: "22px",
     background: "rgba(255,255,255,0.96)",
     border: "1px solid rgba(148,163,184,0.14)",
     boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",

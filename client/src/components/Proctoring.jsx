@@ -715,6 +715,32 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   useEffect(() => {
     let active = true;
 
+    const attachVideoStream = async (stream) => {
+      if (!videoRef.current || !stream) {
+        return;
+      }
+
+      videoRef.current.srcObject = stream;
+
+      await new Promise((resolve) => {
+        if (!videoRef.current || videoRef.current.readyState >= 1) {
+          resolve();
+          return;
+        }
+
+        const handleReady = () => {
+          videoRef.current?.removeEventListener("loadedmetadata", handleReady);
+          resolve();
+        };
+
+        videoRef.current.addEventListener("loadedmetadata", handleReady, { once: true });
+      });
+
+      await videoRef.current.play().catch((playError) => {
+        console.error("Video autoplay error:", playError);
+      });
+    };
+
     const boot = async () => {
       try {
         setCameraState("Requesting camera");
@@ -765,27 +791,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
         streamRef.current = nextVideoStream;
         audioStreamRef.current = nextAudioStream;
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = nextVideoStream;
-
-          await new Promise((resolve) => {
-            if (videoRef.current.readyState >= 1) {
-              resolve();
-              return;
-            }
-
-            const handleReady = () => {
-              videoRef.current?.removeEventListener("loadedmetadata", handleReady);
-              resolve();
-            };
-
-            videoRef.current.addEventListener("loadedmetadata", handleReady, { once: true });
-          });
-
-          await videoRef.current.play().catch((playError) => {
-            console.error("Video autoplay error:", playError);
-          });
-        }
+        await attachVideoStream(nextVideoStream);
 
         baselineRef.current = null;
         missingFramesRef.current = 0;
@@ -800,7 +806,42 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
 
         await loadFallbackModels();
         await startFaceTracking();
-        await startAudioDetection(nextAudioStream);
+
+        if (nextAudioStream) {
+          await startAudioDetection(nextAudioStream);
+        } else {
+          emitTelemetry({
+            microphoneReady: false,
+            audioStatus: "Microphone blocked",
+          });
+
+          void (async () => {
+            try {
+              const fallbackAudioStream = await navigator.mediaDevices.getUserMedia({
+                video: false,
+                audio: true,
+              });
+
+              if (!active) {
+                fallbackAudioStream.getTracks().forEach((track) => track.stop());
+                return;
+              }
+
+              audioStreamRef.current = fallbackAudioStream;
+              emitTelemetry({
+                microphoneReady: true,
+                audioStatus: "Calibrating room",
+              });
+              await startAudioDetection(fallbackAudioStream);
+            } catch (audioError) {
+              console.error("Deferred audio-only request failed:", audioError);
+              emitTelemetry({
+                microphoneReady: false,
+                audioStatus: "Microphone blocked",
+              });
+            }
+          })();
+        }
       } catch (error) {
         console.error("Camera error:", error);
         setCameraState("Camera blocked");
