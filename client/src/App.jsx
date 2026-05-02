@@ -131,6 +131,17 @@ function App() {
         />
 
         <Route
+          path="/quiz"
+          element={
+            <ProtectedRoute allowedRole="student">
+              <PageShell>
+                <Exam assessmentFilter="quiz" />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/results"
           element={
             <ProtectedRoute allowedRole="student">

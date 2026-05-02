@@ -68,6 +68,7 @@ function Dashboard() {
     () =>
       [...exams]
         .filter((exam) => exam.status !== "closed")
+        .filter((exam) => (exam.assessmentType || "exam") !== "quiz")
         .sort((left, right) => {
           const leftTime = left.startTime ? new Date(left.startTime).getTime() : Infinity;
           const rightTime = right.startTime ? new Date(right.startTime).getTime() : Infinity;
@@ -134,6 +135,12 @@ function Dashboard() {
       icon: Shield,
       title: "Secure Exams",
       text: "Open live exams, readiness checks, and AI proctoring workspace.",
+    },
+    {
+      to: "/quiz",
+      icon: BrainCircuit,
+      title: "Quizzes",
+      text: "Attempt timed MCQ quizzes and review your submitted quiz results.",
     },
     {
       to: "/results",

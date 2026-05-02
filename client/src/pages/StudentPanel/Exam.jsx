@@ -109,12 +109,13 @@ const computeTrustFactor = (score) => {
   return "Reliable";
 };
 
-const Exam = () => {
+const Exam = ({ assessmentFilter = "exam" }) => {
   const [viewportWidth, setViewportWidth] = useState(() => window.innerWidth);
   const [questions, setQuestions] = useState([]);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState({});
   const [exams, setExams] = useState([]);
+  const [studentResults, setStudentResults] = useState([]);
   const [selectedExam, setSelectedExam] = useState(null);
 
   const [loadingExams, setLoadingExams] = useState(true);
@@ -148,8 +149,14 @@ const Exam = () => {
 
   const isPhone = viewportWidth < 768;
   const isCompactLayout = viewportWidth < 1120;
+  const isQuizMode = assessmentFilter === "quiz";
+  const assessmentLabel = isQuizMode ? "Quiz" : "Exam";
+  const assessmentLabelLower = isQuizMode ? "quiz" : "exam";
   const shouldEnforceFullscreen =
-    viewportWidth >= 1024 && typeof document !== "undefined" && document.fullscreenEnabled;
+    !isQuizMode &&
+    viewportWidth >= 1024 &&
+    typeof document !== "undefined" &&
+    document.fullscreenEnabled;
 
   useEffect(() => {
     const handleResize = () => setViewportWidth(window.innerWidth);
@@ -167,9 +174,10 @@ const Exam = () => {
       setErrorMessage("");
 
       const res = await API.get("/api/exams/all");
-      const examList = extractList(res.data, ["exams", "data"]).filter(
-        (exam) => exam.status !== "closed"
-      );
+      const examList = extractList(res.data, ["exams", "data"]).filter((exam) => {
+        const type = exam.assessmentType || "exam";
+        return exam.status !== "closed" && (isQuizMode ? type === "quiz" : type !== "quiz");
+      });
 
       setExams(examList);
 
@@ -187,7 +195,21 @@ const Exam = () => {
     } finally {
       setLoadingExams(false);
     }
-  }, [selectedExam]);
+  }, [isQuizMode, selectedExam]);
+
+  const fetchStudentResults = useCallback(async () => {
+    if (!isQuizMode) return;
+
+    try {
+      const response = await API.get("/api/results/my");
+      const resultList = extractList(response.data, ["results", "data"]).filter(
+        (result) => (result.assessmentType || "exam") === "quiz"
+      );
+      setStudentResults(resultList);
+    } catch (err) {
+      console.error("Quiz result fetch failed:", err);
+    }
+  }, [isQuizMode]);
 
   const loadQuestions = useCallback(async (examId, initialLoad = false) => {
     try {
@@ -218,19 +240,22 @@ const Exam = () => {
 
   useEffect(() => {
     fetchExams();
+    fetchStudentResults();
     const examInterval = window.setInterval(fetchExams, 10000);
 
-    try {
-      const savedSession = localStorage.getItem(ACTIVE_SESSION_KEY);
-      if (savedSession) {
-        const parsedSession = JSON.parse(savedSession);
-        setResumeNotice(
-          `Previous exam session ${parsedSession.sessionId || ""} closed unexpectedly. This will be flagged in the next attempt.`
-        );
-        localStorage.removeItem(ACTIVE_SESSION_KEY);
+    if (!isQuizMode) {
+      try {
+        const savedSession = localStorage.getItem(ACTIVE_SESSION_KEY);
+        if (savedSession) {
+          const parsedSession = JSON.parse(savedSession);
+          setResumeNotice(
+            `Previous exam session ${parsedSession.sessionId || ""} closed unexpectedly. This will be flagged in the next attempt.`
+          );
+          localStorage.removeItem(ACTIVE_SESSION_KEY);
+        }
+      } catch (err) {
+        console.error("Failed to read active exam session:", err);
       }
-    } catch (err) {
-      console.error("Failed to read active exam session:", err);
     }
 
     return () => {
@@ -239,10 +264,10 @@ const Exam = () => {
         window.clearTimeout(warningTimeoutRef.current);
       }
     };
-  }, [fetchExams]);
+  }, [fetchExams, fetchStudentResults, isQuizMode]);
 
   useEffect(() => {
-    if (!selectedExam || submitted) {
+    if (isQuizMode || !selectedExam || submitted) {
       return undefined;
     }
 
@@ -282,7 +307,7 @@ const Exam = () => {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
     };
-  }, [selectedExam, submitted]);
+  }, [isQuizMode, selectedExam, submitted]);
 
   const addWarning = useCallback((type, message) => {
     if (submitted || hasSubmitted.current) return;
@@ -351,7 +376,7 @@ const Exam = () => {
   }, [submitted]);
 
   useEffect(() => {
-    if (!selectedExam || submitted) {
+    if (isQuizMode || !selectedExam || submitted) {
       return undefined;
     }
 
@@ -441,7 +466,7 @@ const Exam = () => {
         document.removeEventListener("fullscreenchange", handleFullscreen);
       }
     };
-  }, [addWarning, selectedExam, shouldEnforceFullscreen, submitted]);
+  }, [addWarning, isQuizMode, selectedExam, shouldEnforceFullscreen, submitted]);
 
   const resetExamState = () => {
     setSelectedExam(null);
@@ -465,7 +490,7 @@ const Exam = () => {
     }
 
     if (!exam.canStart) {
-      setErrorMessage("Exam abhi teacher ne start/access enable nahi kiya.");
+      setErrorMessage(`${assessmentLabel} abhi teacher ne start/access enable nahi kiya.`);
       return;
     }
 
@@ -477,11 +502,11 @@ const Exam = () => {
     setAnswers({});
     setWarningCounts({
       ...initialWarningCounts,
-      exitWarnings: resumeNotice ? 1 : 0,
-      total: resumeNotice ? 1 : 0,
+      exitWarnings: !isQuizMode && resumeNotice ? 1 : 0,
+      total: !isQuizMode && resumeNotice ? 1 : 0,
     });
     setActivityLog(
-      resumeNotice
+      !isQuizMode && resumeNotice
         ? [
             {
               type: "exit",
@@ -561,7 +586,9 @@ const Exam = () => {
       const resultData = {
         examId: selectedExam._id,
         studentName: user.name || "Student",
-        testName: selectedExam.title || "Exam",
+        testName: selectedExam.title || assessmentLabel,
+        assessmentType: selectedExam.assessmentType || assessmentFilter,
+        responseMode: selectedExam.responseMode || "mcq",
         score: scoreCount,
         total,
         answeredCount,
@@ -597,7 +624,7 @@ const Exam = () => {
       };
 
       await API.post("/api/results/submit", resultData);
-      localStorage.setItem("examResult", JSON.stringify(resultData));
+      localStorage.setItem(isQuizMode ? "quizResult" : "examResult", JSON.stringify(resultData));
       localStorage.removeItem(ACTIVE_SESSION_KEY);
       setSubmitted(true);
 
@@ -605,26 +632,28 @@ const Exam = () => {
         document.exitFullscreen().catch(() => {});
       }
 
-      window.location.href = "/results";
+      window.location.href = isQuizMode ? "/quiz" : "/results";
     } catch (err) {
       console.error("Submission error:", err);
       localStorage.setItem(
-        "examResult",
+        isQuizMode ? "quizResult" : "examResult",
         JSON.stringify({
           examId: selectedExam._id,
           studentName: "Student",
-          testName: selectedExam.title || "Exam",
+          testName: selectedExam.title || assessmentLabel,
+          assessmentType: selectedExam.assessmentType || assessmentFilter,
+          responseMode: selectedExam.responseMode || "mcq",
           score: 0,
           total: questions.length,
           percentage: 0,
           warnings: warningCounts.total,
         })
       );
-      window.location.href = "/results";
+      window.location.href = isQuizMode ? "/quiz" : "/results";
     } finally {
       setSubmitting(false);
     }
-  }, [activityLog, answers, questions, selectedExam, submitted, submitting, warningCounts]);
+  }, [activityLog, answers, assessmentFilter, assessmentLabel, isQuizMode, questions, selectedExam, submitted, submitting, warningCounts]);
 
   const currentQuestion = questions[currentIdx];
   const currentQuestionText =
@@ -634,6 +663,8 @@ const Exam = () => {
     : [];
   const answeredCount = Object.values(answers).filter(Boolean).length;
   const remainingCount = Math.max(questions.length - answeredCount, 0);
+  const currentAnswered = Boolean(answers[currentIdx]);
+  const quizCanSubmit = !isQuizMode || answeredCount === questions.length;
 
   const suspiciousScorePreview = useMemo(() => {
     const weightedSuspicion = Object.entries(WARNING_WEIGHTS).reduce(
@@ -649,38 +680,43 @@ const Exam = () => {
       <div style={styles.page}>
         <div style={styles.hero}>
           <div>
-            <div style={styles.heroKicker}>Student Exam Center</div>
-            <h1 style={styles.heroTitle}>Start exams with live AI proctoring and clear readiness checks</h1>
+            <div style={styles.heroKicker}>Student {assessmentLabel} Center</div>
+            <h1 style={styles.heroTitle}>
+              {isQuizMode
+                ? "Attempt simple timed quizzes with four-option MCQs"
+                : "Start exams with live AI proctoring and clear readiness checks"}
+            </h1>
             <p style={styles.heroText}>
-              Your camera, microphone, focus state, suspicious shortcuts, and movement signals
-              are all tracked during the exam and summarized professionally in the final report.
+              {isQuizMode
+                ? "Choose an available quiz, answer each MCQ, move with Next, and submit once at the end. Your result is saved for both you and your teacher."
+                : "Your camera, microphone, focus state, suspicious shortcuts, and movement signals are all tracked during the exam and summarized professionally in the final report."}
             </p>
           </div>
 
           <div style={styles.heroPanel}>
             <div style={styles.heroMetric}>
-              <span>Camera</span>
-              <strong>{telemetry.cameraReady ? "Ready" : "Standby"}</strong>
+              <span>{isQuizMode ? "Available Quizzes" : "Camera"}</span>
+              <strong>{isQuizMode ? exams.length : telemetry.cameraReady ? "Ready" : "Standby"}</strong>
             </div>
             <div style={styles.heroMetric}>
-              <span>Mic</span>
-              <strong>{telemetry.microphoneReady ? "Ready" : "Standby"}</strong>
+              <span>{isQuizMode ? "My Results" : "Mic"}</span>
+              <strong>{isQuizMode ? studentResults.length : telemetry.microphoneReady ? "Ready" : "Standby"}</strong>
             </div>
             <div style={styles.heroMetric}>
-              <span>Alerts tracked</span>
-              <strong>17 signals</strong>
+              <span>{isQuizMode ? "Format" : "Alerts tracked"}</span>
+              <strong>{isQuizMode ? "4 Options" : "17 signals"}</strong>
             </div>
           </div>
         </div>
 
-        {resumeNotice && <div style={styles.resumeNotice}>{resumeNotice}</div>}
+        {!isQuizMode && resumeNotice && <div style={styles.resumeNotice}>{resumeNotice}</div>}
 
-        {loadingExams && <div style={styles.loaderBox}>Loading exams...</div>}
+        {loadingExams && <div style={styles.loaderBox}>Loading {assessmentLabelLower}s...</div>}
 
         {!loadingExams && errorMessage && <div style={styles.errorBox}>{errorMessage}</div>}
 
         {!loadingExams && !errorMessage && exams.length === 0 && (
-          <div style={styles.emptyBox}>No live or scheduled exams available right now.</div>
+          <div style={styles.emptyBox}>No live or scheduled {assessmentLabelLower}s available right now.</div>
         )}
 
         <div style={styles.examGrid}>
@@ -705,8 +741,12 @@ const Exam = () => {
                   <strong>{exam.examKey || "Not required"}</strong>
                 </div>
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <span style={styles.metaLabel}>Syllabus</span>
-                  <strong>{exam.syllabus || "Teacher will update the outline soon."}</strong>
+                  <span style={styles.metaLabel}>{isQuizMode ? "Note" : "Syllabus"}</span>
+                  <strong>
+                    {exam.submissionPrompt ||
+                      exam.syllabus ||
+                      `Teacher will update the ${assessmentLabelLower} outline soon.`}
+                  </strong>
                 </div>
               </div>
 
@@ -719,11 +759,39 @@ const Exam = () => {
                 }}
                 disabled={!exam.canStart}
               >
-                {exam.canStart ? "Start Secure Exam" : "Waiting For Teacher"}
+                {exam.canStart ? `Start ${assessmentLabel}` : "Waiting For Teacher"}
               </button>
             </div>
           ))}
         </div>
+
+        {isQuizMode ? (
+          <section style={{ ...styles.questionCard, marginTop: "22px" }}>
+            <div style={styles.questionHeader}>
+              <div>
+                <div style={styles.heroKicker}>Quiz Results</div>
+                <h2 style={{ margin: "6px 0 0", color: "#0f172a" }}>My quiz attempts</h2>
+              </div>
+            </div>
+            {studentResults.length === 0 ? (
+              <div style={styles.emptyBox}>No quiz result submitted yet.</div>
+            ) : (
+              <div style={styles.examGrid}>
+                {studentResults.map((result) => (
+                  <div key={result._id || `${result.examId}-${result.createdAt}`} style={styles.metricCard}>
+                    <span>{result.testName || "Quiz"}</span>
+                    <strong>
+                      {result.score || 0}/{result.total || 0}
+                    </strong>
+                    <div style={{ color: "#64748b" }}>
+                      {result.percentage || 0}% | {result.status || "Submitted"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
       </div>
     );
   }
@@ -738,7 +806,7 @@ const Exam = () => {
         <div style={styles.stateCard}>
           <div style={styles.errorBox}>{errorMessage}</div>
           <button onClick={resetExamState} style={styles.secondaryButton}>
-            Back To Exams
+            Back To {assessmentLabel}s
           </button>
         </div>
       </div>
@@ -756,7 +824,7 @@ const Exam = () => {
             Refresh Now
           </button>
           <button onClick={resetExamState} style={{ ...styles.secondaryButton, marginTop: "12px" }}>
-            Back To Exams
+            Back To {assessmentLabel}s
           </button>
         </div>
       </div>
@@ -773,12 +841,12 @@ const Exam = () => {
         }}
       >
         <div>
-          <div style={styles.heroKicker}>Live assessment mode</div>
+          <div style={styles.heroKicker}>{isQuizMode ? "Simple quiz mode" : "Live assessment mode"}</div>
           <h2 style={{ margin: "4px 0 6px 0", fontSize: "clamp(22px, 3vw, 32px)" }}>
             {selectedExam.title}
           </h2>
           <div style={{ color: "#64748b", fontSize: "14px" }}>
-            Session ID <strong>{sessionIdRef.current}</strong> | Exam Key{" "}
+            Session ID <strong>{sessionIdRef.current}</strong> | {assessmentLabel} Key{" "}
             <strong>{selectedExam.examKey || "Open"}</strong>
           </div>
         </div>
@@ -810,7 +878,9 @@ const Exam = () => {
       <div
         style={{
           ...styles.examLayout,
-          gridTemplateColumns: isCompactLayout
+          gridTemplateColumns: isQuizMode
+            ? "1fr"
+            : isCompactLayout
             ? "1fr"
             : "minmax(0, 1.65fr) minmax(340px, 390px)",
         }}
@@ -837,15 +907,17 @@ const Exam = () => {
               </div>
             </div>
 
-            <div
-              style={{
-                ...styles.integrityMini,
-                minWidth: isPhone ? "100%" : "160px",
-              }}
-            >
-              <span>Suspicious Activity</span>
-              <strong>{suspiciousScorePreview}%</strong>
-            </div>
+            {!isQuizMode ? (
+              <div
+                style={{
+                  ...styles.integrityMini,
+                  minWidth: isPhone ? "100%" : "160px",
+                }}
+              >
+                <span>Suspicious Activity</span>
+                <strong>{suspiciousScorePreview}%</strong>
+              </div>
+            ) : null}
           </div>
 
           <h3 style={styles.questionText}>{currentQuestionText}</h3>
@@ -900,21 +972,38 @@ const Exam = () => {
             {currentIdx < questions.length - 1 ? (
               <button
                 onClick={() => setCurrentIdx((prev) => prev + 1)}
-                style={{ ...styles.primaryButton, flex: isPhone ? "1 1 100%" : "0 0 auto" }}
+                disabled={isQuizMode && !currentAnswered}
+                style={{
+                  ...styles.primaryButton,
+                  flex: isPhone ? "1 1 100%" : "0 0 auto",
+                  opacity: isQuizMode && !currentAnswered ? 0.55 : 1,
+                  cursor: isQuizMode && !currentAnswered ? "not-allowed" : "pointer",
+                }}
               >
                 Save & Next
               </button>
             ) : (
               <button
                 onClick={handleSubmit}
-                style={{ ...styles.submitButton, flex: isPhone ? "1 1 100%" : "0 0 auto" }}
+                disabled={!quizCanSubmit || submitting}
+                style={{
+                  ...styles.submitButton,
+                  flex: isPhone ? "1 1 100%" : "0 0 auto",
+                  opacity: !quizCanSubmit || submitting ? 0.6 : 1,
+                  cursor: !quizCanSubmit || submitting ? "not-allowed" : "pointer",
+                }}
               >
-                {submitting ? "Submitting..." : "Final Submit"}
+                {submitting
+                  ? "Submitting..."
+                  : !quizCanSubmit
+                  ? "Answer All Questions"
+                  : "Final Submit"}
               </button>
             )}
           </div>
         </div>
 
+        {!isQuizMode ? (
         <aside
           style={{
             ...styles.sidebar,
@@ -1069,6 +1158,7 @@ const Exam = () => {
             </div>
           </div>
         </aside>
+        ) : null}
       </div>
     </div>
   );

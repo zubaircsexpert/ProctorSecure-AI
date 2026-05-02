@@ -67,6 +67,7 @@ function Navbar() {
       : [
           { label: "Dashboard", to: "/dashboard" },
           { label: "Exam", to: "/exam" },
+          { label: "Quiz", to: "/quiz" },
           { label: "Results", to: "/results" },
           { label: "Assignments", to: "/assignment-list" },
           { label: "Schedule", to: "/schedule" },

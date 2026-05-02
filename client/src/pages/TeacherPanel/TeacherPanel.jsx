@@ -30,6 +30,7 @@ const tabs = [
   { id: "classrooms", label: "Classrooms", icon: GraduationCap },
   { id: "approvals", label: "Approvals", icon: UserCheck },
   { id: "exams", label: "Exams", icon: CalendarClock },
+  { id: "quizzes", label: "Quizzes", icon: BrainCircuit },
   { id: "assignments", label: "Assignments", icon: FileStack },
   { id: "announcements", label: "Announcements", icon: BellRing },
   { id: "results", label: "Results", icon: ClipboardCheck },
@@ -73,6 +74,18 @@ const initialQuestionForm = {
   optionC: "",
   optionD: "",
   correctAnswer: "",
+};
+
+const initialQuizForm = {
+  classroomId: "",
+  course: "",
+  title: "",
+  duration: "10",
+  examKey: "",
+  instructions: "",
+  submissionPrompt: "",
+  startTime: "",
+  endTime: "",
 };
 
 const initialAssignmentForm = {
@@ -137,6 +150,8 @@ function TeacherPanel() {
   const [classroomForm, setClassroomForm] = useState(initialClassroomForm);
   const [examForm, setExamForm] = useState(initialExamForm);
   const [questionForm, setQuestionForm] = useState(initialQuestionForm);
+  const [quizForm, setQuizForm] = useState(initialQuizForm);
+  const [quizQuestionForm, setQuizQuestionForm] = useState(initialQuestionForm);
   const [assignmentForm, setAssignmentForm] = useState(initialAssignmentForm);
   const [assignmentFile, setAssignmentFile] = useState(null);
   const [notificationForm, setNotificationForm] = useState(initialNotificationForm);
@@ -158,6 +173,22 @@ function TeacherPanel() {
           label: `${exam.title} | ${exam.classroomName}`,
         })),
     [exams]
+  );
+
+  const quizOptions = useMemo(
+    () =>
+      exams
+        .filter((exam) => (exam.assessmentType || "exam") === "quiz")
+        .map((quiz) => ({
+          value: quiz._id,
+          label: `${quiz.title} | ${quiz.classroomName}`,
+        })),
+    [exams]
+  );
+
+  const quizResults = useMemo(
+    () => results.filter((result) => (result.assessmentType || "exam") === "quiz"),
+    [results]
   );
 
   const questionsByExam = useMemo(
@@ -263,6 +294,16 @@ function TeacherPanel() {
     }));
   }, [mcqExamOptions]);
 
+  useEffect(() => {
+    setQuizQuestionForm((prev) => ({
+      ...prev,
+      examId:
+        quizOptions.find((option) => option.value === prev.examId)?.value ||
+        quizOptions[0]?.value ||
+        "",
+    }));
+  }, [quizOptions]);
+
   const loadWorkspace = useCallback(async (silent = false) => {
     if (!silent) {
       setLoading(true);
@@ -304,6 +345,10 @@ function TeacherPanel() {
         department: prev.department || profileRes.value?.data?.user?.department || "",
       }));
       setExamForm((prev) => ({
+        ...prev,
+        classroomId: prev.classroomId || nextClassrooms[0]?.id || "",
+      }));
+      setQuizForm((prev) => ({
         ...prev,
         classroomId: prev.classroomId || nextClassrooms[0]?.id || "",
       }));
@@ -566,6 +611,76 @@ function TeacherPanel() {
       setNotice({
         type: "error",
         text: error.response?.data?.message || "Failed to add question.",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const handleQuizSubmit = async (event) => {
+    event.preventDefault();
+    setBusyKey("save-quiz");
+    setNotice(emptyNotice);
+
+    const payload = {
+      ...quizForm,
+      duration: Number(quizForm.duration),
+      assessmentType: "quiz",
+      responseMode: "mcq",
+      requiresCamera: false,
+      requiresMicrophone: false,
+      requiresScreenShare: false,
+      syllabus: quizForm.instructions,
+      startTime: quizForm.startTime ? new Date(quizForm.startTime).toISOString() : null,
+      endTime: quizForm.endTime ? new Date(quizForm.endTime).toISOString() : null,
+    };
+
+    try {
+      await API.post("/api/exams/add", payload);
+      setQuizForm((prev) => ({
+        ...initialQuizForm,
+        classroomId: prev.classroomId || classrooms[0]?.id || "",
+      }));
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Quiz created successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to create quiz.",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const handleQuizQuestionSubmit = async (event) => {
+    event.preventDefault();
+    setBusyKey("add-quiz-question");
+    setNotice(emptyNotice);
+
+    try {
+      await API.post("/api/questions/add", {
+        examId: quizQuestionForm.examId,
+        questionText: quizQuestionForm.questionText,
+        options: [
+          quizQuestionForm.optionA,
+          quizQuestionForm.optionB,
+          quizQuestionForm.optionC,
+          quizQuestionForm.optionD,
+        ],
+        correctAnswer: quizQuestionForm.correctAnswer,
+      });
+
+      setQuizQuestionForm((prev) => ({
+        ...initialQuestionForm,
+        examId: prev.examId,
+      }));
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "Quiz MCQ added successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to add quiz MCQ.",
       });
     } finally {
       setBusyKey("");
@@ -1454,6 +1569,270 @@ function TeacherPanel() {
                 ))}
               </div>
             )}
+          </section>
+        </div>
+      )}
+
+      {activeTab === "quizzes" && (
+        <div style={styles.sectionStack}>
+          <section style={styles.gridTwo}>
+            <form onSubmit={handleQuizSubmit} style={styles.card}>
+              <SectionHeader
+                kicker="Quiz Add"
+                title="Create simple MCQ quiz"
+                icon={<BrainCircuit size={18} />}
+                iconTone={["#e0f2fe", "#0369a1"]}
+              />
+
+              <div style={styles.formGrid}>
+                <SelectField
+                  label="Classroom"
+                  value={quizForm.classroomId}
+                  onChange={(value) => setQuizForm((prev) => ({ ...prev, classroomId: value }))}
+                  options={classOptions}
+                />
+                <Field
+                  label="Course"
+                  value={quizForm.course}
+                  onChange={(value) => setQuizForm((prev) => ({ ...prev, course: value }))}
+                  placeholder="Computer Science"
+                />
+                <Field
+                  label="Quiz Title"
+                  value={quizForm.title}
+                  onChange={(value) => setQuizForm((prev) => ({ ...prev, title: value }))}
+                  placeholder="Quiz 1"
+                />
+                <Field
+                  label="Time (minutes)"
+                  type="number"
+                  value={quizForm.duration}
+                  onChange={(value) => setQuizForm((prev) => ({ ...prev, duration: value }))}
+                  placeholder="10"
+                />
+                <Field
+                  label="Quiz Key"
+                  value={quizForm.examKey}
+                  onChange={(value) => setQuizForm((prev) => ({ ...prev, examKey: value }))}
+                  placeholder="Optional"
+                />
+                <Field
+                  label="Start Time"
+                  type="datetime-local"
+                  value={quizForm.startTime}
+                  onChange={(value) => setQuizForm((prev) => ({ ...prev, startTime: value }))}
+                />
+                <Field
+                  label="End Time"
+                  type="datetime-local"
+                  value={quizForm.endTime}
+                  onChange={(value) => setQuizForm((prev) => ({ ...prev, endTime: value }))}
+                />
+                <TextAreaField
+                  label="Quiz Note"
+                  value={quizForm.submissionPrompt}
+                  onChange={(value) =>
+                    setQuizForm((prev) => ({ ...prev, submissionPrompt: value }))
+                  }
+                  placeholder="Short note shown to students"
+                  full
+                />
+              </div>
+
+              <button type="submit" style={styles.primaryButton} disabled={busyKey === "save-quiz"}>
+                <Play size={16} />
+                {busyKey === "save-quiz" ? "Saving..." : "Create Quiz"}
+              </button>
+            </form>
+
+            <form onSubmit={handleQuizQuestionSubmit} style={styles.card}>
+              <SectionHeader
+                kicker="Quiz MCQs"
+                title="Add four-option questions"
+                icon={<ClipboardCheck size={18} />}
+                iconTone={["#ecfccb", "#3f6212"]}
+              />
+
+              {quizOptions.length === 0 ? (
+                <EmptyState text="Create a quiz first, then add MCQs here." compact />
+              ) : (
+                <>
+                  <div style={styles.formGrid}>
+                    <SelectField
+                      label="Quiz"
+                      value={quizQuestionForm.examId}
+                      onChange={(value) =>
+                        setQuizQuestionForm((prev) => ({ ...prev, examId: value }))
+                      }
+                      options={quizOptions}
+                      full
+                    />
+                    <TextAreaField
+                      label="Question"
+                      value={quizQuestionForm.questionText}
+                      onChange={(value) =>
+                        setQuizQuestionForm((prev) => ({ ...prev, questionText: value }))
+                      }
+                      placeholder="Write quiz question"
+                      full
+                    />
+                    {["A", "B", "C", "D"].map((label) => (
+                      <Field
+                        key={label}
+                        label={`Option ${label}`}
+                        value={quizQuestionForm[`option${label}`]}
+                        onChange={(value) =>
+                          setQuizQuestionForm((prev) => ({ ...prev, [`option${label}`]: value }))
+                        }
+                        placeholder={`Option ${label}`}
+                      />
+                    ))}
+                    <Field
+                      label="Correct Answer"
+                      value={quizQuestionForm.correctAnswer}
+                      onChange={(value) =>
+                        setQuizQuestionForm((prev) => ({ ...prev, correctAnswer: value }))
+                      }
+                      placeholder="Exact option text"
+                      full
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    style={styles.successButton}
+                    disabled={busyKey === "add-quiz-question"}
+                  >
+                    <Check size={16} />
+                    {busyKey === "add-quiz-question" ? "Adding..." : "Add Quiz MCQ"}
+                  </button>
+                </>
+              )}
+            </form>
+          </section>
+
+          <section style={styles.gridTwo}>
+            <div style={styles.card}>
+              <SectionHeader
+                kicker="Quiz Access"
+                title="Start, stop, and review quizzes"
+                icon={<Play size={18} />}
+                iconTone={["#dbeafe", "#1d4ed8"]}
+              />
+
+              {quizOptions.length === 0 ? (
+                <EmptyState text="No quiz has been created yet." />
+              ) : (
+                <div style={styles.cardGrid}>
+                  {exams
+                    .filter((exam) => (exam.assessmentType || "exam") === "quiz")
+                    .map((quiz) => (
+                      <div key={quiz._id} style={styles.examCard}>
+                        <div style={styles.examTop}>
+                          <div>
+                            <span style={styles.statusBadge(quiz.status)}>{quiz.status}</span>
+                            <div style={styles.timelineTitle}>{quiz.title}</div>
+                            <div style={styles.timelineText}>
+                              {quiz.course} | {quiz.classroomName}
+                            </div>
+                          </div>
+                          <div style={styles.countBadge}>
+                            {questionsByExam[String(quiz._id)]?.length || 0} MCQs
+                          </div>
+                        </div>
+                        <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
+                          <InfoPill label="Time" value={`${quiz.duration} min`} />
+                          <InfoPill
+                            label="Result Count"
+                            value={
+                              quizResults.filter((result) => String(result.examId) === String(quiz._id))
+                                .length
+                            }
+                          />
+                        </div>
+                        <div style={styles.actionRow}>
+                          <button
+                            type="button"
+                            style={styles.successButton}
+                            onClick={() =>
+                              updateExamState(
+                                quiz._id,
+                                { status: "live", accessGranted: true },
+                                "Quiz access started."
+                              )
+                            }
+                          >
+                            <Play size={16} />
+                            Start Access
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.warningButton}
+                            onClick={() =>
+                              updateExamState(
+                                quiz._id,
+                                { status: "scheduled", accessGranted: false },
+                                "Quiz access paused."
+                              )
+                            }
+                          >
+                            <Square size={16} />
+                            Pause
+                          </button>
+                          <button
+                            type="button"
+                            style={styles.dangerButton}
+                            onClick={() =>
+                              updateExamState(
+                                quiz._id,
+                                { status: "closed", accessGranted: false },
+                                "Quiz closed."
+                              )
+                            }
+                          >
+                            <XCircle size={16} />
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+
+            <div style={styles.card}>
+              <SectionHeader
+                kicker="Quiz Results"
+                title="Student quiz outcomes"
+                icon={<ClipboardCheck size={18} />}
+                iconTone={["#fef3c7", "#b45309"]}
+              />
+
+              {quizResults.length === 0 ? (
+                <EmptyState text="No student quiz result exists yet." />
+              ) : (
+                <div style={styles.cardGrid}>
+                  {quizResults.map((result) => (
+                    <div key={result._id} style={styles.resultCard}>
+                      <div style={styles.examTop}>
+                        <div>
+                          <div style={styles.timelineTitle}>{result.studentName || "Student"}</div>
+                          <div style={styles.timelineText}>
+                            {result.testName || "Quiz"} | {result.classroomName || "Classroom"}
+                          </div>
+                        </div>
+                        <span style={styles.statusBadge(result.status || "PASSED")}>
+                          {result.status || "Submitted"}
+                        </span>
+                      </div>
+                      <div style={styles.metricGrid}>
+                        <InfoPill label="Score" value={`${result.score || 0}/${result.total || 0}`} />
+                        <InfoPill label="Percentage" value={`${result.percentage || 0}%`} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </section>
         </div>
       )}
