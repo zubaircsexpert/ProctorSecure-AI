@@ -24,6 +24,16 @@ const evidenceShotSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const answerSheetSchema = new mongoose.Schema(
+  {
+    questionText: { type: String, default: "", trim: true },
+    selectedAnswer: { type: String, default: "", trim: true },
+    correctAnswer: { type: String, default: "", trim: true },
+    isCorrect: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
 const resultSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
@@ -93,6 +103,7 @@ const resultSchema = new mongoose.Schema({
   intelligenceScore: { type: Number, default: 0 },
   suspiciousScore: { type: Number, default: 0 },
   trustFactor: { type: String, default: "Reliable", trim: true },
+  answerSheet: { type: [answerSheetSchema], default: [] },
   activityLog: { type: [activityLogSchema], default: [] },
   evidenceShots: { type: [evidenceShotSchema], default: [] },
   createdAt: { type: Date, default: Date.now },

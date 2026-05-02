@@ -191,6 +191,11 @@ function TeacherPanel() {
     [results]
   );
 
+  const examResults = useMemo(
+    () => results.filter((result) => (result.assessmentType || "exam") !== "quiz"),
+    [results]
+  );
+
   const questionsByExam = useMemo(
     () =>
       questions.reduce((accumulator, question) => {
@@ -214,15 +219,16 @@ function TeacherPanel() {
   );
 
   const dashboardMetrics = useMemo(() => {
-    const liveExams = exams.filter((exam) => exam.status === "live").length;
-    const scheduledExams = exams.filter((exam) => exam.status === "scheduled").length;
+    const aiExams = exams.filter((exam) => (exam.assessmentType || "exam") !== "quiz");
+    const liveExams = aiExams.filter((exam) => exam.status === "live").length;
+    const scheduledExams = aiExams.filter((exam) => exam.status === "scheduled").length;
     const submissionsToReview = assignments.reduce(
       (sum, assignment) =>
         sum +
         (assignment.submissions || []).filter((submission) => submission.status !== "Checked").length,
       0
     );
-    const flaggedResults = results.filter(
+    const flaggedResults = examResults.filter(
       (result) => Number(result.suspiciousScore || result.cheatingPercent || 0) >= 35
     ).length;
 
@@ -236,7 +242,7 @@ function TeacherPanel() {
       flaggedResults,
       notifications: notifications.length,
     };
-  }, [approvalQueue.length, assignments, classrooms.length, exams, notifications.length, results, roster.length]);
+  }, [approvalQueue.length, assignments, classrooms.length, examResults, exams, notifications.length, roster.length]);
 
   const aiCoach = useMemo(() => {
     const nextExam = [...exams]
@@ -1819,6 +1825,9 @@ function TeacherPanel() {
                           <div style={styles.timelineText}>
                             {result.testName || "Quiz"} | {result.classroomName || "Classroom"}
                           </div>
+                          <div style={styles.timelineText}>
+                            Attempted {formatDateTime(result.createdAt, "Recently")}
+                          </div>
                         </div>
                         <span style={styles.statusBadge(result.status || "PASSED")}>
                           {result.status || "Submitted"}
@@ -1828,6 +1837,29 @@ function TeacherPanel() {
                         <InfoPill label="Score" value={`${result.score || 0}/${result.total || 0}`} />
                         <InfoPill label="Percentage" value={`${result.percentage || 0}%`} />
                       </div>
+                      {Array.isArray(result.answerSheet) && result.answerSheet.length > 0 ? (
+                        <div style={styles.feedbackPanel}>
+                          <strong style={{ color: "#0f172a" }}>Answer review</strong>
+                          <div style={{ display: "grid", gap: "10px", marginTop: "8px" }}>
+                            {result.answerSheet.slice(0, 6).map((answer, index) => (
+                              <div key={`${result._id}-answer-${index}`} style={styles.answerReviewRow(answer.isCorrect)}>
+                                <div>
+                                  <div style={{ color: "#0f172a", fontWeight: 800 }}>
+                                    Q{index + 1}. {answer.questionText || "Question"}
+                                  </div>
+                                  <div style={{ color: "#475569", marginTop: "4px" }}>
+                                    Selected: {answer.selectedAnswer || "Not answered"} | Correct:{" "}
+                                    {answer.correctAnswer || "N/A"}
+                                  </div>
+                                </div>
+                                <span style={styles.statusBadge(answer.isCorrect ? "PASSED" : "FAILED")}>
+                                  {answer.isCorrect ? "Correct" : "Wrong"}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -2232,17 +2264,20 @@ function TeacherPanel() {
             iconTone={["#dbeafe", "#1d4ed8"]}
           />
 
-          {results.length === 0 ? (
-            <EmptyState text="No exam result exists yet." />
+          {examResults.length === 0 ? (
+            <EmptyState text="No AI exam result exists yet." />
           ) : (
             <div style={styles.cardGrid}>
-              {results.map((result) => (
+              {examResults.map((result) => (
                 <div key={result._id} style={styles.resultCard}>
                   <div style={styles.examTop}>
                     <div>
                       <div style={styles.timelineTitle}>{result.studentName || "Student"}</div>
                       <div style={styles.timelineText}>
                         {result.testName || "Exam"} | {result.classroomName || "Classroom"}
+                      </div>
+                      <div style={styles.timelineText}>
+                        Attempted {formatDateTime(result.createdAt, "Recently")}
                       </div>
                     </div>
                     <div style={styles.statusBadge(result.status || "saved")}>
@@ -3016,6 +3051,16 @@ const styles = {
     fontSize: "12px",
     color: "#64748b",
   },
+  answerReviewRow: (correct) => ({
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "flex-start",
+    padding: "12px 14px",
+    borderRadius: "16px",
+    background: correct ? "#f0fdf4" : "#fff7ed",
+    border: correct ? "1px solid #bbf7d0" : "1px solid #fed7aa",
+  }),
   emptyState: {
     padding: "20px",
     borderRadius: "18px",

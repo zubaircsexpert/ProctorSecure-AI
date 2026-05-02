@@ -150,7 +150,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
   const isPhone = viewportWidth < 768;
   const isCompactLayout = viewportWidth < 1120;
   const isQuizMode = assessmentFilter === "quiz";
-  const assessmentLabel = isQuizMode ? "Quiz" : "Exam";
+  const assessmentLabel = isQuizMode ? "Quiz" : "AI Exam";
   const assessmentLabelLower = isQuizMode ? "quiz" : "exam";
   const shouldEnforceFullscreen =
     !isQuizMode &&
@@ -280,7 +280,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
   }, [loadQuestions, selectedExam, submitted]);
 
   useEffect(() => {
-    if (!selectedExam || submitted) {
+    if (isQuizMode || !selectedExam || submitted) {
       return undefined;
     }
 
@@ -620,6 +620,19 @@ const Exam = ({ assessmentFilter = "exam" }) => {
         intelligenceScore,
         suspiciousScore,
         trustFactor,
+        answerSheet: questions.map((question, index) => {
+          const correct = question.correctAnswer || question.answer || "";
+          const selectedAnswer = answers[index] || "";
+          return {
+            questionText: question.questionText || question.question || `Question ${index + 1}`,
+            selectedAnswer,
+            correctAnswer: correct,
+            isCorrect:
+              Boolean(selectedAnswer) &&
+              String(selectedAnswer).toLowerCase().trim() ===
+                String(correct).toLowerCase().trim(),
+          };
+        }),
         activityLog,
       };
 
@@ -684,7 +697,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             <h1 style={styles.heroTitle}>
               {isQuizMode
                 ? "Attempt simple timed quizzes with four-option MCQs"
-                : "Start exams with live AI proctoring and clear readiness checks"}
+                : "Start AI exams with live proctoring and clear readiness checks"}
             </h1>
             <p style={styles.heroText}>
               {isQuizMode
@@ -841,7 +854,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
         }}
       >
         <div>
-          <div style={styles.heroKicker}>{isQuizMode ? "Simple quiz mode" : "Live assessment mode"}</div>
+            <div style={styles.heroKicker}>{isQuizMode ? "Simple quiz mode" : "AI exam control room"}</div>
           <h2 style={{ margin: "4px 0 6px 0", fontSize: "clamp(22px, 3vw, 32px)" }}>
             {selectedExam.title}
           </h2>
@@ -857,8 +870,8 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             gridTemplateColumns: isPhone
               ? "1fr"
               : viewportWidth < 920
-              ? "repeat(2, minmax(140px, 1fr))"
-              : "repeat(3, minmax(140px, 1fr))",
+              ? "repeat(2, minmax(0, 1fr))"
+              : "repeat(3, minmax(0, 1fr))",
           }}
         >
           <div style={styles.metricCard}>
@@ -869,7 +882,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             <span>Remaining</span>
             <strong>{remainingCount}</strong>
           </div>
-          <div style={{ ...styles.metricCard, minWidth: isPhone ? "auto" : "270px" }}>
+          <div style={styles.timerCard}>
             <Timer duration={(selectedExam?.duration || 5) * 60} onTimeUp={handleSubmit} />
           </div>
         </div>
@@ -882,7 +895,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             ? "1fr"
             : isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.65fr) minmax(340px, 390px)",
+            : "minmax(0, 1.55fr) minmax(360px, 420px)",
         }}
       >
         <div style={{ ...styles.questionCard, padding: isPhone ? "16px" : "22px" }}>
@@ -1041,7 +1054,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
                   ...payload,
                 }))
               }
-              compact={isPhone}
+              compact={isCompactLayout}
             />
 
             <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
@@ -1403,6 +1416,16 @@ const styles = {
     border: "1px solid rgba(148,163,184,0.16)",
     display: "grid",
     gap: "10px",
+    minWidth: 0,
+  },
+  timerCard: {
+    padding: "14px 16px",
+    borderRadius: "18px",
+    background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+    border: "1px solid rgba(37,99,235,0.18)",
+    display: "grid",
+    gap: "10px",
+    minWidth: 0,
   },
   examLayout: {
     display: "grid",
@@ -1415,6 +1438,7 @@ const styles = {
     borderRadius: "24px",
     background: "rgba(255,255,255,0.96)",
     boxShadow: "0 24px 46px rgba(15, 23, 42, 0.08)",
+    minWidth: 0,
   },
   questionHeader: {
     display: "flex",
@@ -1484,6 +1508,7 @@ const styles = {
   sidebar: {
     display: "grid",
     gap: "12px",
+    minWidth: 0,
   },
   sidebarCard: {
     padding: "22px",
