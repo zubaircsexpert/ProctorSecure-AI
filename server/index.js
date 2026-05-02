@@ -27,7 +27,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 const TEACHER_ACCESS_KEY =
-  process.env.TEACHER_ACCESS_KEY || "PROCTOR-TEACHER-2026";
+  process.env.TEACHER_ACCESS_KEY || "Teacher-@9080#$@";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
