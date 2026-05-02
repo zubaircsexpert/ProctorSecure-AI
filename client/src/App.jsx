@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import {
   BrowserRouter as Router,
   Navigate,
@@ -10,13 +11,15 @@ import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
-import Schedule from "./pages/Schedule";
-import AssignmentList from "./pages/StudentPanel/AssignmentList";
-import Dashboard from "./pages/StudentPanel/Dashboard";
-import Exam from "./pages/StudentPanel/Exam";
-import Notifications from "./pages/StudentPanel/Notifications";
-import Results from "./pages/StudentPanel/Results";
-import TeacherPanel from "./pages/TeacherPanel/TeacherPanel";
+
+const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+const Schedule = lazy(() => import("./pages/Schedule"));
+const AssignmentList = lazy(() => import("./pages/StudentPanel/AssignmentList"));
+const Dashboard = lazy(() => import("./pages/StudentPanel/Dashboard"));
+const Exam = lazy(() => import("./pages/StudentPanel/Exam"));
+const Notifications = lazy(() => import("./pages/StudentPanel/Notifications"));
+const Results = lazy(() => import("./pages/StudentPanel/Results"));
+const TeacherPanel = lazy(() => import("./pages/TeacherPanel/TeacherPanel"));
 
 const NAVBAR_OFFSET = 104;
 
@@ -53,6 +56,21 @@ const PageShell = ({ children, top = NAVBAR_OFFSET, style = {} }) => (
   </div>
 );
 
+const PageLoader = () => (
+  <div
+    style={{
+      minHeight: "calc(100vh - 104px)",
+      display: "grid",
+      placeItems: "center",
+      color: "#334155",
+      fontWeight: 800,
+      background: "linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)",
+    }}
+  >
+    Loading workspace...
+  </div>
+);
+
 function App() {
   const user = getStoredUser();
 
@@ -60,9 +78,10 @@ function App() {
     <Router>
       <NavbarWrapper />
 
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/register" element={<Register />} />
+      <Suspense fallback={<PageShell><PageLoader /></PageShell>}>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route path="/register" element={<Register />} />
 
         <Route
           path="/dashboard"
@@ -81,6 +100,17 @@ function App() {
             <ProtectedRoute allowedRole="teacher">
               <PageShell>
                 <TeacherPanel />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin-panel"
+          element={
+            <ProtectedRoute allowedRole="admin">
+              <PageShell>
+                <AdminPanel />
               </PageShell>
             </ProtectedRoute>
           }
@@ -156,12 +186,21 @@ function App() {
           path="*"
           element={
             <Navigate
-              to={user?.role === "teacher" ? "/teacher-panel" : user?.role === "student" ? "/dashboard" : "/"}
+              to={
+                user?.role === "admin"
+                  ? "/admin-panel"
+                  : user?.role === "teacher"
+                  ? "/teacher-panel"
+                  : user?.role === "student"
+                  ? "/dashboard"
+                  : "/"
+              }
               replace
             />
           }
         />
-      </Routes>
+        </Routes>
+      </Suspense>
     </Router>
   );
 }

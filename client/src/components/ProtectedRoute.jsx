@@ -23,7 +23,16 @@ function ProtectedRoute({ children, allowedRole }) {
 
   if (allowedRole && user.role !== allowedRole) {
     return (
-      <Navigate to={user.role === "teacher" ? "/teacher-panel" : "/dashboard"} replace />
+      <Navigate
+        to={
+          user.role === "admin"
+            ? "/admin-panel"
+            : user.role === "teacher"
+            ? "/teacher-panel"
+            : "/dashboard"
+        }
+        replace
+      />
     );
   }
 

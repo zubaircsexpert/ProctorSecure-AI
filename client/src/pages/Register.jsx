@@ -35,9 +35,20 @@ function Register() {
     const loadBootstrap = async () => {
       try {
         setLoadingBootstrap(true);
+        const cached = sessionStorage.getItem("authBootstrapClassrooms");
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            setClassrooms(parsed);
+            setLoadingBootstrap(false);
+          }
+        }
+
         const response = await API.get("/api/auth/bootstrap");
         if (!active) return;
-        setClassrooms(Array.isArray(response.data?.classrooms) ? response.data.classrooms : []);
+        const nextClassrooms = Array.isArray(response.data?.classrooms) ? response.data.classrooms : [];
+        setClassrooms(nextClassrooms);
+        sessionStorage.setItem("authBootstrapClassrooms", JSON.stringify(nextClassrooms));
       } catch (error) {
         console.error("Registration bootstrap error:", error);
         if (active) {

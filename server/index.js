@@ -28,6 +28,8 @@ const port = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 const TEACHER_ACCESS_KEY =
   process.env.TEACHER_ACCESS_KEY || "Teacher-@9080#$@";
+const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "admin@proctor.ai").trim().toLowerCase();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "ADMIN-PROCTOR-2026";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -253,6 +255,22 @@ const verifyTeacher = async (req, res, next) => {
   }
 };
 
+const verifyAdmin = async (req, res, next) => {
+  try {
+    const user = await getDbUser(req.user?.userId);
+
+    if (!user || user.role !== "admin") {
+      return res.status(403).json({ message: "Only admin can do this action." });
+    }
+
+    req.dbUser = user;
+    next();
+  } catch (err) {
+    console.log("VERIFY ADMIN ERROR:", err);
+    res.status(500).json({ message: "Admin verification failed." });
+  }
+};
+
 const verifyApprovedStudent = async (req, res, next) => {
   try {
     const user = await getDbUser(req.user?.userId);
@@ -299,7 +317,7 @@ app.get("/api/auth/bootstrap", async (req, res) => {
       program: 1,
       section: 1,
       createdAt: 1,
-    });
+    }).lean();
 
     res.json({
       teacherPortalKeyRequired: true,
@@ -318,7 +336,7 @@ app.get("/api/classrooms/public", async (req, res) => {
       program: 1,
       section: 1,
       createdAt: 1,
-    });
+    }).lean();
     res.json(classrooms.map(buildClassroomPayload));
   } catch (err) {
     console.log("PUBLIC CLASSROOMS ERROR:", err);
@@ -481,7 +499,17 @@ app.post("/api/auth/login", async (req, res) => {
     const password = String(req.body.password || "");
     const portalRole = normalizeText(req.body.portalRole).toLowerCase();
 
-    const user = await User.findOne({ email });
+    let user = await User.findOne({ email });
+    if (!user && portalRole === "admin" && email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+      user = await User.create({
+        name: "System Admin",
+        email: ADMIN_EMAIL,
+        password: await bcrypt.hash(ADMIN_PASSWORD, 10),
+        role: "admin",
+        approvalStatus: "approved",
+      });
+    }
+
     if (!user) {
       return res.status(400).json({ message: "User not found" });
     }
@@ -491,6 +519,8 @@ app.post("/api/auth/login", async (req, res) => {
         message:
           user.role === "teacher"
             ? "This account belongs to the teacher portal."
+            : user.role === "admin"
+            ? "This account belongs to the admin portal."
             : "This account belongs to the student portal.",
       });
     }
@@ -1598,6 +1628,119 @@ app.delete("/api/paper-checks/:id", verifyToken, verifyTeacher, async (req, res)
   } catch (err) {
     console.log("DELETE PAPER CHECK ERROR:", err);
     res.status(500).json({ message: "Failed to delete paper check." });
+  }
+});
+
+app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const [
+      users,
+      classrooms,
+      exams,
+      questions,
+      results,
+      assignments,
+      submissions,
+      notifications,
+    ] = await Promise.all([
+      User.find()
+        .select("-password")
+        .sort({ createdAt: -1 })
+        .lean(),
+      Classroom.find().sort({ createdAt: -1 }).lean(),
+      Exam.find().sort({ createdAt: -1 }).lean(),
+      Question.find().sort({ createdAt: -1 }).lean(),
+      Result.find().sort({ createdAt: -1 }).lean(),
+      Assignment.find().sort({ createdAt: -1 }).lean(),
+      Submission.find().sort({ submittedAt: -1 }).lean(),
+      Notification.find().sort({ createdAt: -1 }).lean(),
+    ]);
+
+    const teachers = users.filter((user) => user.role === "teacher");
+    const students = users.filter((user) => user.role === "student");
+    const aiExams = exams.filter((exam) => (exam.assessmentType || "exam") !== "quiz");
+    const quizzes = exams.filter((exam) => (exam.assessmentType || "exam") === "quiz");
+    const aiExamResults = results.filter((result) => (result.assessmentType || "exam") !== "quiz");
+    const quizResults = results.filter((result) => (result.assessmentType || "exam") === "quiz");
+
+    res.json({
+      metrics: {
+        users: users.length,
+        teachers: teachers.length,
+        students: students.length,
+        pendingStudents: students.filter((student) => student.approvalStatus === "pending").length,
+        classrooms: classrooms.length,
+        aiExams: aiExams.length,
+        quizzes: quizzes.length,
+        aiExamResults: aiExamResults.length,
+        quizResults: quizResults.length,
+        assignments: assignments.length,
+        submissions: submissions.length,
+        notifications: notifications.length,
+      },
+      users,
+      teachers,
+      students,
+      classrooms,
+      exams,
+      aiExams,
+      quizzes,
+      questions,
+      results,
+      aiExamResults,
+      quizResults,
+      assignments,
+      submissions,
+      notifications,
+    });
+  } catch (err) {
+    console.log("ADMIN OVERVIEW ERROR:", err);
+    res.status(500).json({ message: "Failed to load admin overview." });
+  }
+});
+
+app.put("/api/admin/users/:id/status", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const approvalStatus = normalizeText(req.body.approvalStatus).toLowerCase();
+    if (!["pending", "approved", "rejected"].includes(approvalStatus)) {
+      return res.status(400).json({ message: "Invalid approval status." });
+    }
+
+    const user = await User.findById(req.params.id);
+    if (!user || user.role !== "student") {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    user.approvalStatus = approvalStatus;
+    await user.save();
+
+    res.json({ message: "Student status updated.", user: buildUserPayload(user) });
+  } catch (err) {
+    console.log("ADMIN USER STATUS ERROR:", err);
+    res.status(500).json({ message: "Failed to update student status." });
+  }
+});
+
+app.put("/api/admin/exams/:id/status", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const exam = await Exam.findById(req.params.id);
+    if (!exam) {
+      return res.status(404).json({ message: "Assessment not found." });
+    }
+
+    if (req.body.status !== undefined) {
+      exam.status = req.body.status;
+    }
+
+    if (typeof req.body.accessGranted === "boolean") {
+      exam.accessGranted = req.body.accessGranted;
+    }
+
+    await exam.save();
+    res.json({ message: "Assessment status updated.", exam: buildExamPayload(exam) });
+  } catch (err) {
+    console.log("ADMIN EXAM STATUS ERROR:", err);
+    res.status(500).json({ message: "Failed to update assessment status." });
   }
 });
 

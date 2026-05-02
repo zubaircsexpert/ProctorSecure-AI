@@ -56,10 +56,14 @@ function Navbar() {
   }
 
   const role = user.role;
-  const notificationTarget = role === "teacher" ? "/teacher-panel" : "/notifications";
-  const dashboardTarget = role === "teacher" ? "/teacher-panel" : "/dashboard";
+  const notificationTarget =
+    role === "admin" ? "/admin-panel" : role === "teacher" ? "/teacher-panel" : "/notifications";
+  const dashboardTarget =
+    role === "admin" ? "/admin-panel" : role === "teacher" ? "/teacher-panel" : "/dashboard";
   const navLinks =
-    role === "teacher"
+    role === "admin"
+      ? [{ label: "Admin Panel", to: "/admin-panel" }]
+      : role === "teacher"
       ? [
           { label: "Teacher Panel", to: "/teacher-panel" },
           { label: "Schedule", to: "/schedule" },
@@ -190,7 +194,7 @@ function Navbar() {
               fontWeight: 700,
             }}
           >
-            {role === "teacher" ? "Teacher" : "Student"} | {user.name}
+              {role === "admin" ? "Admin" : role === "teacher" ? "Teacher" : "Student"} | {user.name}
           </div>
 
           <button

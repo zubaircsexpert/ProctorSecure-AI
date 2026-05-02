@@ -14,6 +14,11 @@ const portalCards = [
     title: "Teacher Portal",
     description: "Classes, approvals, analytics",
   },
+  {
+    id: "admin",
+    title: "Admin Portal",
+    description: "Full system access and controls",
+  },
 ];
 
 function Login() {
@@ -51,7 +56,11 @@ function Login() {
       localStorage.setItem("user", JSON.stringify(response.data.user));
 
       navigate(
-        response.data.user.role === "teacher" ? "/teacher-panel" : "/dashboard",
+        response.data.user.role === "admin"
+          ? "/admin-panel"
+          : response.data.user.role === "teacher"
+          ? "/teacher-panel"
+          : "/dashboard",
         { replace: true }
       );
     } catch (error) {
@@ -94,6 +103,10 @@ function Login() {
               <strong style={styles.insightValue}>Attempt exams and track results</strong>
             </div>
             <div style={styles.insightCard}>
+              <span style={styles.insightLabel}>Admin</span>
+              <strong style={styles.insightValue}>Control users and reports</strong>
+            </div>
+            <div style={styles.insightCard}>
               <span style={styles.insightLabel}>Security</span>
               <strong style={styles.insightValue}>Protected login and proctoring</strong>
             </div>
@@ -104,7 +117,7 @@ function Login() {
           <div style={styles.formHeader}>
             <div style={styles.formKicker}>Sign in</div>
             <h2 style={styles.formTitle}>Login</h2>
-            <p style={styles.formText}>Student and Teacher access</p>
+            <p style={styles.formText}>Student, Teacher, and Admin access</p>
           </div>
 
           <div style={styles.portalGrid}>
