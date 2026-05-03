@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Camera, Gauge, Mic, Wifi } from "lucide-react";
+import { BatteryCharging, Camera, Gauge, Laptop, Mic, Monitor, Wifi } from "lucide-react";
 import API from "../../services/api";
 
 const getStatus = (ok, warning = false) => (ok ? "pass" : warning ? "warning" : "fail");
@@ -32,6 +32,12 @@ function SystemChecks() {
       const latencyMs = Math.round(performance.now() - started);
       const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
       const speedMbps = Number(connection?.downlink || (latencyMs < 200 ? 8 : latencyMs < 450 ? 3 : 1));
+      const battery = navigator.getBattery ? await navigator.getBattery().catch(() => null) : null;
+      const batteryPercent = battery ? Math.round(battery.level * 100) : 0;
+      const screenWidth = window.screen?.width || window.innerWidth || 0;
+      const screenHeight = window.screen?.height || window.innerHeight || 0;
+      const browserPass = Boolean(navigator.mediaDevices?.getUserMedia);
+      const devicePass = screenWidth >= 1024 && screenHeight >= 650;
 
       let camera = "warning";
       let microphone = "warning";
@@ -48,9 +54,23 @@ function SystemChecks() {
         camera,
         microphone,
         internet: getStatus(speedMbps >= 2 && latencyMs < 700, speedMbps >= 1),
+        browser: getStatus(browserPass),
+        device: getStatus(devicePass, screenWidth >= 800),
         speedMbps,
         latencyMs,
-        notes: "Browser readiness check before AI exam.",
+        batteryPercent,
+        screenWidth,
+        screenHeight,
+        userAgent: navigator.userAgent,
+        diagnostics: {
+          effectiveType: connection?.effectiveType || "unknown",
+          deviceMemory: navigator.deviceMemory || 0,
+          hardwareConcurrency: navigator.hardwareConcurrency || 0,
+          permissions: {
+            mediaDevices: Boolean(navigator.mediaDevices?.getUserMedia),
+          },
+        },
+        notes: "Advanced browser readiness check before AI exam.",
       };
 
       const response = await API.post("/api/system-checks", payload);
@@ -67,7 +87,7 @@ function SystemChecks() {
   const latest = current || checks[0] || null;
   const summary = useMemo(() => {
     if (!latest) return "Run a check before starting your AI exam.";
-    const statuses = [latest.camera, latest.microphone, latest.internet];
+    const statuses = [latest.camera, latest.microphone, latest.internet, latest.browser, latest.device];
     if (statuses.every((status) => status === "pass")) return "Ready for AI exam";
     if (statuses.includes("fail")) return "Fix required before exam";
     return "Usable, but improve setup";
@@ -91,6 +111,9 @@ function SystemChecks() {
         <StatusCard icon={<Mic />} label="Microphone" status={latest?.microphone || "warning"} />
         <StatusCard icon={<Wifi />} label="Internet" status={latest?.internet || "warning"} />
         <StatusCard icon={<Gauge />} label="Speed" status={latest?.internet || "warning"} value={latest ? `${latest.speedMbps || 0} Mbps | ${latest.latencyMs || 0} ms` : "Not tested"} />
+        <StatusCard icon={<Laptop />} label="Browser" status={latest?.browser || "warning"} />
+        <StatusCard icon={<Monitor />} label="Screen" status={latest?.device || "warning"} value={latest ? `${latest.screenWidth || 0} x ${latest.screenHeight || 0}` : "Not tested"} />
+        <StatusCard icon={<BatteryCharging />} label="Battery" status={(latest?.batteryPercent || 100) >= 25 ? "pass" : "warning"} value={latest?.batteryPercent ? `${latest.batteryPercent}%` : "Unknown"} />
       </section>
 
       <section style={styles.card}>
@@ -105,7 +128,9 @@ function SystemChecks() {
         {checks.map((check) => (
           <div key={check._id} style={styles.historyRow}>
             <strong>{new Date(check.createdAt).toLocaleString()}</strong>
-            <span>Camera {check.camera} | Mic {check.microphone} | Internet {check.internet} | {check.speedMbps || 0} Mbps</span>
+          <span>
+            Camera {check.camera} | Mic {check.microphone} | Internet {check.internet} | Browser {check.browser || "warning"} | Screen {check.screenWidth || 0}x{check.screenHeight || 0}
+          </span>
           </div>
         ))}
       </section>

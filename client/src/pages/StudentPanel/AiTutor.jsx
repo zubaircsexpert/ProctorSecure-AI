@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { BrainCircuit, Send, Sparkles } from "lucide-react";
+import { BrainCircuit, ImagePlus, Send, Sparkles, X } from "lucide-react";
 import API from "../../services/api";
 
 const quickPrompts = [
@@ -18,22 +18,43 @@ function AiTutor() {
     },
   ]);
   const [loading, setLoading] = useState(false);
+  const [file, setFile] = useState(null);
 
-  const canSend = useMemo(() => question.trim().length > 2 && !loading, [loading, question]);
+  const canSend = useMemo(
+    () => (question.trim().length > 2 || file) && !loading,
+    [file, loading, question]
+  );
 
   const askTutor = async (text = question) => {
-    const cleanText = text.trim();
-    if (!cleanText) return;
+    const cleanText = text.trim() || (file ? "Please analyze this uploaded file/image." : "");
+    if (!cleanText && !file) return;
 
     setQuestion("");
     setLoading(true);
-    setMessages((prev) => [...prev, { role: "user", text: cleanText }]);
+    const selectedFile = file;
+    setFile(null);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "user",
+        text: selectedFile ? `${cleanText}\n\nAttached: ${selectedFile.name}` : cleanText,
+      },
+    ]);
 
     try {
-      const response = await API.post("/api/ai-tutor/ask", { question: cleanText });
+      const payload = new FormData();
+      payload.append("question", cleanText);
+      if (selectedFile) payload.append("file", selectedFile);
+      const response = await API.post("/api/ai-tutor/ask", payload, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", text: response.data?.answer || "I prepared a study plan for you." },
+        {
+          role: "assistant",
+          text: response.data?.answer || "I prepared a study plan for you.",
+          mode: response.data?.mode,
+        },
       ]);
     } catch (error) {
       setMessages((prev) => [
@@ -78,6 +99,7 @@ function AiTutor() {
                 key={`${message.role}-${index}`}
                 style={message.role === "user" ? styles.userBubble : styles.assistantBubble}
               >
+                {message.mode ? <span style={styles.modeBadge(message.mode)}>{message.mode === "ai" ? "Live AI" : "Context AI"}</span> : null}
                 {message.text.split("\n").map((line) => (
                   <p key={line} style={{ margin: "0 0 8px" }}>{line}</p>
                 ))}
@@ -93,12 +115,32 @@ function AiTutor() {
               askTutor();
             }}
           >
-            <input
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="Type your study question..."
-              style={styles.input}
-            />
+            <div style={styles.composer}>
+              <input
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="Ask anything, or upload an assignment image..."
+                style={styles.input}
+              />
+              {file ? (
+                <div style={styles.fileChip}>
+                  <ImagePlus size={15} />
+                  {file.name}
+                  <button type="button" onClick={() => setFile(null)} style={styles.clearFileButton}>
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            <label style={styles.attachButton}>
+              <ImagePlus size={18} />
+              <input
+                type="file"
+                accept="image/*,.pdf,.doc,.docx"
+                onChange={(event) => setFile(event.target.files?.[0] || null)}
+                style={{ display: "none" }}
+              />
+            </label>
             <button type="submit" style={styles.sendButton} disabled={!canSend}>
               <Send size={18} />
               Ask
@@ -206,9 +248,13 @@ const styles = {
   },
   inputRow: {
     display: "grid",
-    gridTemplateColumns: "1fr auto",
+    gridTemplateColumns: "1fr auto auto",
     gap: "10px",
     marginTop: "14px",
+  },
+  composer: {
+    display: "grid",
+    gap: "8px",
   },
   input: {
     border: "1px solid rgba(148,163,184,0.22)",
@@ -216,6 +262,38 @@ const styles = {
     padding: "14px 16px",
     fontSize: "15px",
     fontFamily: "inherit",
+  },
+  fileChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "fit-content",
+    borderRadius: "999px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    padding: "8px 10px",
+    fontWeight: 800,
+    fontSize: "12px",
+  },
+  clearFileButton: {
+    border: "none",
+    background: "transparent",
+    color: "#1d4ed8",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    padding: 0,
+  },
+  attachButton: {
+    width: "48px",
+    height: "48px",
+    borderRadius: "16px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.22)",
+    color: "#1d4ed8",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
   },
   sendButton: {
     border: "none",
@@ -229,6 +307,19 @@ const styles = {
     gap: "8px",
     cursor: "pointer",
   },
+  modeBadge: (mode) => ({
+    display: "inline-flex",
+    width: "fit-content",
+    marginBottom: "8px",
+    borderRadius: "999px",
+    padding: "5px 8px",
+    background: mode === "ai" ? "#dcfce7" : "#fef3c7",
+    color: mode === "ai" ? "#166534" : "#92400e",
+    fontWeight: 900,
+    fontSize: "11px",
+    textTransform: "uppercase",
+    letterSpacing: "0.08em",
+  }),
 };
 
 export default AiTutor;

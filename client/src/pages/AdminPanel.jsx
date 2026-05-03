@@ -52,6 +52,23 @@ const initialStudyResourceForm = {
   externalUrl: "",
 };
 
+const initialTeacherForm = {
+  name: "",
+  email: "",
+  password: "Teacher-12345",
+  department: "",
+};
+
+const initialClassroomForm = {
+  teacherId: "",
+  name: "",
+  department: "",
+  program: "",
+  section: "A",
+  semester: "",
+  description: "",
+};
+
 const formatDateTime = (value) => {
   if (!value) return "Not recorded";
   const date = new Date(value);
@@ -67,6 +84,8 @@ const AdminPanel = () => {
   const [announcementForm, setAnnouncementForm] = useState(initialAnnouncementForm);
   const [studyResourceForm, setStudyResourceForm] = useState(initialStudyResourceForm);
   const [studyResourceFile, setStudyResourceFile] = useState(null);
+  const [teacherForm, setTeacherForm] = useState(initialTeacherForm);
+  const [classroomForm, setClassroomForm] = useState(initialClassroomForm);
 
   const loadAdminData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -167,6 +186,34 @@ const AdminPanel = () => {
       await loadAdminData(true);
     } catch (error) {
       setNotice(error.response?.data?.message || "Study resource publish failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const createTeacher = async (event) => {
+    event.preventDefault();
+    setBusyKey("admin-create-teacher");
+    try {
+      await API.post("/api/admin/teachers", teacherForm);
+      setTeacherForm(initialTeacherForm);
+      await loadAdminData(true);
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Teacher creation failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const createClassroom = async (event) => {
+    event.preventDefault();
+    setBusyKey("admin-create-classroom");
+    try {
+      await API.post("/api/admin/classrooms", classroomForm);
+      setClassroomForm(initialClassroomForm);
+      await loadAdminData(true);
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Classroom creation failed.");
     } finally {
       setBusyKey("");
     }
@@ -276,6 +323,16 @@ const AdminPanel = () => {
       {activeTab === "users" ? (
         <section style={styles.gridTwo}>
           <Panel title="Teachers" kicker="Faculty accounts" icon={<ShieldCheck size={18} />}>
+            <form onSubmit={createTeacher} style={styles.inlineForm}>
+              <input value={teacherForm.name} onChange={(event) => setTeacherForm({ ...teacherForm, name: event.target.value })} placeholder="Teacher name" style={styles.input} />
+              <input value={teacherForm.email} onChange={(event) => setTeacherForm({ ...teacherForm, email: event.target.value })} placeholder="Teacher email" style={styles.input} />
+              <input value={teacherForm.password} onChange={(event) => setTeacherForm({ ...teacherForm, password: event.target.value })} placeholder="Temporary password" style={styles.input} />
+              <input value={teacherForm.department} onChange={(event) => setTeacherForm({ ...teacherForm, department: event.target.value })} placeholder="Department" style={styles.input} />
+              <button type="submit" style={styles.primaryButton} disabled={busyKey === "admin-create-teacher"}>
+                <CheckCircle2 size={15} />
+                Create Teacher
+              </button>
+            </form>
             {data.teachers.length === 0 ? <EmptyState text="No teacher accounts yet." /> : null}
             {data.teachers.map((teacher) => (
               <div key={teacher._id} style={styles.adminRow}>
@@ -304,6 +361,23 @@ const AdminPanel = () => {
           </Panel>
 
           <Panel title="Students" kicker="Approval control" icon={<Users size={18} />}>
+            <form onSubmit={createClassroom} style={styles.inlineForm}>
+              <select value={classroomForm.teacherId} onChange={(event) => setClassroomForm({ ...classroomForm, teacherId: event.target.value })} style={styles.input}>
+                <option value="">Assign teacher</option>
+                {data.teachers.map((teacher) => (
+                  <option key={teacher._id} value={teacher._id}>{teacher.name}</option>
+                ))}
+              </select>
+              <input value={classroomForm.name} onChange={(event) => setClassroomForm({ ...classroomForm, name: event.target.value })} placeholder="Classroom name" style={styles.input} />
+              <input value={classroomForm.department} onChange={(event) => setClassroomForm({ ...classroomForm, department: event.target.value })} placeholder="Department" style={styles.input} />
+              <input value={classroomForm.program} onChange={(event) => setClassroomForm({ ...classroomForm, program: event.target.value })} placeholder="Program" style={styles.input} />
+              <input value={classroomForm.section} onChange={(event) => setClassroomForm({ ...classroomForm, section: event.target.value })} placeholder="Section" style={styles.input} />
+              <input value={classroomForm.semester} onChange={(event) => setClassroomForm({ ...classroomForm, semester: event.target.value })} placeholder="Semester" style={styles.input} />
+              <button type="submit" style={styles.primaryButton} disabled={busyKey === "admin-create-classroom"}>
+                <CheckCircle2 size={15} />
+                Create Classroom
+              </button>
+            </form>
             {data.students.length === 0 ? <EmptyState text="No student accounts yet." /> : null}
             {data.students.map((student) => (
               <div key={student._id} style={styles.adminRow}>
@@ -358,12 +432,14 @@ const AdminPanel = () => {
             items={data.aiExams}
             busyKey={busyKey}
             onUpdate={updateAssessment}
+            onDelete={(id) => deleteAdminItem("exams", id)}
           />
           <AssessmentPanel
             title="Quizzes"
             items={data.quizzes}
             busyKey={busyKey}
             onUpdate={updateAssessment}
+            onDelete={(id) => deleteAdminItem("exams", id)}
           />
         </section>
       ) : null}
@@ -548,7 +624,7 @@ const AdminPanel = () => {
   );
 };
 
-const AssessmentPanel = ({ title, items, busyKey, onUpdate }) => (
+const AssessmentPanel = ({ title, items, busyKey, onUpdate, onDelete }) => (
   <Panel title={title} kicker="Access control" icon={<BookOpenCheck size={18} />}>
     {items.length === 0 ? <EmptyState text={`No ${title.toLowerCase()} created yet.`} /> : null}
     {items.map((item) => (
@@ -584,6 +660,15 @@ const AssessmentPanel = ({ title, items, busyKey, onUpdate }) => (
             onClick={() => onUpdate(item._id, { status: "closed", accessGranted: false })}
           >
             Close
+          </button>
+          <button
+            type="button"
+            style={styles.dangerButton}
+            disabled={busyKey === `exams-${item._id}`}
+            onClick={() => onDelete(item._id)}
+          >
+            <Trash2 size={15} />
+            Delete
           </button>
         </div>
       </div>

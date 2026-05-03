@@ -41,8 +41,9 @@ const studentCardsDir = path.join(uploadsDir, "student-cards");
 const teacherFilesDir = path.join(uploadsDir, "assignment-files");
 const studentSubmissionsDir = path.join(uploadsDir, "assignment-submissions");
 const studyVaultDir = path.join(uploadsDir, "study-vault");
+const tutorUploadsDir = path.join(uploadsDir, "ai-tutor");
 
-[uploadsDir, paperChecksDir, studentCardsDir, teacherFilesDir, studentSubmissionsDir, studyVaultDir].forEach(
+[uploadsDir, paperChecksDir, studentCardsDir, teacherFilesDir, studentSubmissionsDir, studyVaultDir, tutorUploadsDir].forEach(
   (directory) => fs.mkdirSync(directory, { recursive: true })
 );
 
@@ -79,6 +80,7 @@ const paperCheckUpload = multer({
   storage: createDiskStorage(paperChecksDir),
 });
 const studyVaultUpload = multer({ storage: createDiskStorage(studyVaultDir) });
+const tutorUpload = multer({ storage: createDiskStorage(tutorUploadsDir) });
 
 const safeJsonParse = (value, fallback) => {
   if (!value) return fallback;
@@ -157,6 +159,148 @@ const buildExamPayload = (exam) => ({
   ...exam.toObject(),
   canStart: exam.status === "live" && exam.accessGranted === true,
 });
+
+const formatTutorContext = ({ user, assignments, results, resources }) => {
+  const assignmentSummary = assignments
+    .slice(0, 5)
+    .map((assignment) => {
+      const submission = assignment.mySubmission || null;
+      return `${assignment.title} | due ${assignment.dueDate || "N/A"} | status ${
+        submission?.status || assignment.status || "Pending"
+      } | feedback ${submission?.feedback || "none"}`;
+    })
+    .join("\n");
+  const resultSummary = results
+    .slice(0, 6)
+    .map(
+      (result) =>
+        `${result.testName || "Assessment"} | ${result.assessmentType || "exam"} | ${
+          result.percentage || 0
+        }% | suspicious ${result.suspiciousScore || result.cheatingPercent || 0}%`
+    )
+    .join("\n");
+  const resourceSummary = resources
+    .slice(0, 5)
+    .map((resource) => `${resource.title} | ${resource.resourceType || "notes"}`)
+    .join("\n");
+
+  return [
+    `Student: ${user.name}`,
+    `Classroom: ${user.classroomName || "N/A"}`,
+    `Teacher: ${user.teacherName || "N/A"}`,
+    `Recent assignments:\n${assignmentSummary || "No assignments found."}`,
+    `Recent results:\n${resultSummary || "No results found."}`,
+    `Study vault resources:\n${resourceSummary || "No study resources found."}`,
+  ].join("\n\n");
+};
+
+const callOpenAiTutor = async ({ question, context, file }) => {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const content = [
+    {
+      type: "text",
+      text: `${context}\n\nStudent question:\n${question}\n\nAnswer like a helpful AI tutor. Give direct explanation, steps, examples, and an action plan. If an uploaded image is provided, analyze it for the student.`,
+    },
+  ];
+
+  if (file?.mimetype?.startsWith("image/")) {
+    const imageBase64 = fs.readFileSync(file.path).toString("base64");
+    content.push({
+      type: "image_url",
+      image_url: {
+        url: `data:${file.mimetype};base64,${imageBase64}`,
+      },
+    });
+  }
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_TUTOR_MODEL || "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are ProctorSecure AI Tutor. Be clear, practical, student-friendly, and grounded in the provided classroom context. Do not claim grades are official.",
+        },
+        { role: "user", content },
+      ],
+      temperature: 0.45,
+      max_tokens: 900,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.log("OPENAI TUTOR ERROR:", errorText);
+    return null;
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || null;
+};
+
+const buildLocalTutorAnswer = ({ user, question, assignments, results, resources, file }) => {
+  const lower = question.toLowerCase();
+  const latestAssignment = assignments[0];
+  const latestResult = results[0];
+  const weakResults = results
+    .filter((result) => Number(result.percentage || 0) < 60)
+    .slice(0, 3)
+    .map((result) => result.testName || "Assessment");
+  const relevantResource = resources.find((resource) =>
+    lower.includes(String(resource.title || "").toLowerCase().slice(0, 8))
+  );
+
+  const lines = [
+    `Hi ${user.name || "there"}, I checked your classroom context and prepared a focused answer.`,
+  ];
+
+  if (file) {
+    lines.push(
+      file.mimetype?.startsWith("image/")
+        ? "I received your image. If OPENAI_API_KEY is configured, the system analyzes it visually; otherwise use the steps below with the visible question/text."
+        : `I received your file: ${file.originalname}. For PDFs/docs, describe the exact confusing question and I will guide you step by step.`
+    );
+  }
+
+  if (lower.includes("assignment") || lower.includes("homework") || lower.includes("solve")) {
+    lines.push(
+      `Assignment focus: ${latestAssignment?.title || "No active assignment found"}. First write the required output, then solve one part at a time, then compare with teacher instructions before uploading.`
+    );
+  }
+
+  if (lower.includes("quiz") || lower.includes("mcq") || lower.includes("exam")) {
+    lines.push(
+      `Assessment plan: revise the concept, attempt 10 MCQs, mark every wrong answer, then repeat only the weak topic. Latest score: ${latestResult?.percentage || 0}%.`
+    );
+  }
+
+  if (weakResults.length) {
+    lines.push(`Weak area signal: your lower attempts include ${weakResults.join(", ")}. Spend the next session on these topics before broad revision.`);
+  }
+
+  if (relevantResource) {
+    lines.push(`Study Vault match: open "${relevantResource.title}" first, then ask me the exact paragraph/question you do not understand.`);
+  } else if (resources.length) {
+    lines.push(`Study Vault has ${resources.length} resource(s). Start with "${resources[0].title}" if your question is from class material.`);
+  }
+
+  lines.push(
+    "Step-by-step method:",
+    "1. Identify the topic and write what is being asked.",
+    "2. Solve the smallest part first and check units/options.",
+    "3. Explain the answer in your own words.",
+    "4. If still stuck, send the exact question or upload a clear image."
+  );
+
+  return lines.join("\n\n");
+};
 
 const signToken = (user) =>
   jwt.sign({ userId: user._id, role: user.role }, JWT_SECRET, {
@@ -1651,7 +1795,7 @@ app.delete("/api/paper-checks/:id", verifyToken, verifyTeacher, async (req, res)
   }
 });
 
-app.post("/api/ai-tutor/ask", verifyToken, async (req, res) => {
+app.post("/api/ai-tutor/ask", verifyToken, tutorUpload.single("file"), async (req, res) => {
   try {
     const user = await getDbUser(req.user.userId);
     if (!user) {
@@ -1659,37 +1803,31 @@ app.post("/api/ai-tutor/ask", verifyToken, async (req, res) => {
     }
 
     const question = normalizeText(req.body.question);
-    const context = normalizeText(req.body.context);
     if (!question) {
       return res.status(400).json({ message: "Question is required." });
     }
 
-    const lower = `${question} ${context}`.toLowerCase();
-    const tips = [];
+    const [assignments, results, resources] = await Promise.all([
+      Assignment.find({ classroomId: user.classroomId || null }).sort({ createdAt: -1 }).limit(8).lean(),
+      Result.find({ userId: user._id }).sort({ createdAt: -1 }).limit(8).lean(),
+      StudyResource.find({ classroomId: user.classroomId || null }).sort({ createdAt: -1 }).limit(8).lean(),
+    ]);
+    const context = formatTutorContext({ user, assignments, results, resources });
+    const openAiAnswer = await callOpenAiTutor({ question, context, file: req.file });
+    const answer =
+      openAiAnswer ||
+      buildLocalTutorAnswer({ user, question, assignments, results, resources, file: req.file });
 
-    if (lower.includes("assignment") || lower.includes("submit") || lower.includes("upload")) {
-      tips.push("Break the assignment into requirements, evidence, draft, and final upload. Start by writing the exact deliverables in bullet form.");
-    }
-    if (lower.includes("exam") || lower.includes("quiz") || lower.includes("mcq")) {
-      tips.push("For exams and quizzes, revise one concept block, attempt 10-15 MCQs, then review only the wrong answers before the next block.");
-    }
-    if (lower.includes("camera") || lower.includes("mic") || lower.includes("internet")) {
-      tips.push("Run System Checks before the exam, keep your face centered, close extra tabs, and use a stable network.");
-    }
-    if (lower.includes("result") || lower.includes("marks") || lower.includes("score")) {
-      tips.push("Compare your latest score with older attempts, identify the weakest topic, and spend the next study session only on that topic.");
-    }
-    if (!tips.length) {
-      tips.push("Use a simple plan: define the topic, list what you know, find the confusing step, practice one example, then summarize it in your own words.");
-    }
-
-    const answer = [
-      `Hi ${user.name || "there"}, here is a focused study plan for your question:`,
-      ...tips,
-      "Next action: write one small target you can finish in 20 minutes, then check your result or assignment feedback again.",
-    ].join("\n\n");
-
-    res.json({ answer });
+    res.json({
+      answer,
+      mode: openAiAnswer ? "ai" : "contextual-fallback",
+      attachment: req.file
+        ? {
+            fileName: req.file.originalname,
+            mimeType: req.file.mimetype,
+          }
+        : null,
+    });
   } catch (err) {
     console.log("AI TUTOR ERROR:", err);
     res.status(500).json({ message: "AI tutor could not respond right now." });
@@ -1813,8 +1951,15 @@ app.post("/api/system-checks", verifyToken, verifyApprovedStudent, async (req, r
       camera: normalizeText(req.body.camera) || "warning",
       microphone: normalizeText(req.body.microphone) || "warning",
       internet: normalizeText(req.body.internet) || "warning",
+      browser: normalizeText(req.body.browser) || "warning",
+      device: normalizeText(req.body.device) || "warning",
       speedMbps,
       latencyMs,
+      batteryPercent: Number(req.body.batteryPercent || 0),
+      screenWidth: Number(req.body.screenWidth || 0),
+      screenHeight: Number(req.body.screenHeight || 0),
+      userAgent: normalizeText(req.body.userAgent),
+      diagnostics: req.body.diagnostics || {},
       notes: normalizeText(req.body.notes),
     });
 
@@ -2031,6 +2176,94 @@ app.delete("/api/admin/results/:id", verifyToken, verifyAdmin, async (req, res) 
   } catch (err) {
     console.log("ADMIN RESULT DELETE ERROR:", err);
     res.status(500).json({ message: "Failed to remove result." });
+  }
+});
+
+app.post("/api/admin/teachers", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const name = normalizeText(req.body.name);
+    const email = normalizeText(req.body.email).toLowerCase();
+    const password = String(req.body.password || "Teacher-12345");
+    const department = normalizeText(req.body.department) || "General Department";
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Teacher name and email are required." });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "A user with this email already exists." });
+    }
+
+    const teacher = await User.create({
+      name,
+      email,
+      password: await bcrypt.hash(password, 10),
+      role: "teacher",
+      approvalStatus: "approved",
+      department,
+    });
+
+    res.status(201).json({ message: "Teacher created.", user: buildUserPayload(teacher) });
+  } catch (err) {
+    console.log("ADMIN CREATE TEACHER ERROR:", err);
+    res.status(500).json({ message: "Failed to create teacher." });
+  }
+});
+
+app.post("/api/admin/classrooms", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const teacherId = normalizeText(req.body.teacherId);
+    const name = normalizeText(req.body.name);
+    const department = normalizeText(req.body.department);
+    const program = normalizeText(req.body.program) || name;
+    const section = normalizeText(req.body.section) || "A";
+    const semester = normalizeText(req.body.semester);
+    const description = normalizeText(req.body.description);
+
+    const teacher = await User.findOne({ _id: teacherId, role: "teacher" });
+    if (!teacher || !name || !department) {
+      return res.status(400).json({ message: "Teacher, classroom name, and department are required." });
+    }
+
+    const classroom = await Classroom.create({
+      teacherId: teacher._id,
+      teacherName: teacher.name,
+      name,
+      department,
+      program,
+      section,
+      semester,
+      description,
+      inviteCode: makeInviteCode(),
+    });
+
+    teacher.managedClassrooms = [...(teacher.managedClassrooms || []), classroom._id];
+    if (!teacher.classroomId) {
+      teacher.classroomId = classroom._id;
+      teacher.classroomName = buildClassroomLabel(classroom);
+    }
+    await teacher.save();
+
+    res.status(201).json({ message: "Classroom created.", classroom: buildClassroomPayload(classroom) });
+  } catch (err) {
+    console.log("ADMIN CREATE CLASSROOM ERROR:", err);
+    res.status(500).json({ message: "Failed to create classroom." });
+  }
+});
+
+app.delete("/api/admin/exams/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const exam = await Exam.findByIdAndDelete(req.params.id);
+    if (!exam) {
+      return res.status(404).json({ message: "Assessment not found." });
+    }
+
+    await Question.deleteMany({ examId: exam._id });
+    res.json({ message: "Assessment and linked questions removed." });
+  } catch (err) {
+    console.log("ADMIN EXAM DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to remove assessment." });
   }
 });
 
