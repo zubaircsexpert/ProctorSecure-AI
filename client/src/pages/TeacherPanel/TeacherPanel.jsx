@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   BellRing,
   BookOpenCheck,
@@ -15,6 +16,7 @@ import {
   ShieldCheck,
   Square,
   Trash2,
+  TrendingUp,
   UserCheck,
   Users,
   X,
@@ -975,6 +977,36 @@ function TeacherPanel() {
                 <MetricCard label="Announcements" value={dashboardMetrics.notifications} />
               </div>
             </div>
+          </section>
+
+          <section style={styles.modulesGrid}>
+            <Link to="/teacher-study-vault" style={styles.moduleCard}>
+              <div style={styles.moduleIcon}>
+                <FileStack size={22} />
+              </div>
+              <div style={styles.moduleTitle}>Study Vault</div>
+              <p style={styles.moduleText}>
+                Upload classroom notes, PDFs, slides, recorded lecture links, and shared material.
+              </p>
+            </Link>
+            <Link to="/teacher-panel" onClick={() => setActiveTab("announcements")} style={styles.moduleCard}>
+              <div style={styles.moduleIcon}>
+                <BellRing size={22} />
+              </div>
+              <div style={styles.moduleTitle}>Announcements</div>
+              <p style={styles.moduleText}>
+                Publish dynamic notices so students see fresh classroom updates.
+              </p>
+            </Link>
+            <Link to="/teacher-panel" onClick={() => setActiveTab("results")} style={styles.moduleCard}>
+              <div style={styles.moduleIcon}>
+                <TrendingUp size={22} />
+              </div>
+              <div style={styles.moduleTitle}>Performance Trends</div>
+              <p style={styles.moduleText}>
+                Review AI exam and quiz attempts, scores, suspicious alerts, and progress signals.
+              </p>
+            </Link>
           </section>
 
           <section style={styles.gridTwo}>
@@ -2625,6 +2657,40 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
     gap: "12px",
+  },
+  modulesGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+    gap: "18px",
+  },
+  moduleCard: {
+    textDecoration: "none",
+    background: "rgba(255,255,255,0.96)",
+    borderRadius: "26px",
+    padding: "22px",
+    border: "1px solid rgba(148,163,184,0.14)",
+    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.06)",
+    display: "grid",
+    gap: "14px",
+  },
+  moduleIcon: {
+    width: "48px",
+    height: "48px",
+    borderRadius: "16px",
+    display: "grid",
+    placeItems: "center",
+    background: "linear-gradient(135deg, #dbeafe, #d1fae5)",
+    color: "#0f172a",
+  },
+  moduleTitle: {
+    fontSize: "22px",
+    fontWeight: 800,
+    color: "#0f172a",
+  },
+  moduleText: {
+    margin: 0,
+    color: "#64748b",
+    lineHeight: 1.7,
   },
   metricCard: {
     padding: "16px 18px",

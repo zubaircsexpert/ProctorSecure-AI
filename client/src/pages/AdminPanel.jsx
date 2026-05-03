@@ -6,9 +6,12 @@ import {
   ClipboardCheck,
   GraduationCap,
   Layers,
+  LogIn,
   Megaphone,
   RefreshCw,
+  Send,
   ShieldCheck,
+  Trash2,
   Users,
   XCircle,
 } from "lucide-react";
@@ -27,6 +30,17 @@ const emptyData = {
   assignments: [],
   submissions: [],
   notifications: [],
+  studyResources: [],
+  systemChecks: [],
+};
+
+const initialAnnouncementForm = {
+  title: "",
+  message: "",
+  audience: "all",
+  priority: "normal",
+  type: "general",
+  classroomId: "",
 };
 
 const formatDateTime = (value) => {
@@ -41,6 +55,7 @@ const AdminPanel = () => {
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState("");
   const [notice, setNotice] = useState("");
+  const [announcementForm, setAnnouncementForm] = useState(initialAnnouncementForm);
 
   const loadAdminData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -84,6 +99,48 @@ const AdminPanel = () => {
     }
   };
 
+  const openPortalAccess = async (userId) => {
+    setBusyKey(`impersonate-${userId}`);
+    try {
+      const response = await API.post(`/api/admin/impersonate/${userId}`);
+      localStorage.setItem("token", response.data.token);
+      localStorage.setItem("user", JSON.stringify(response.data.user));
+      window.location.href =
+        response.data.user.role === "teacher" ? "/teacher-panel" : "/dashboard";
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Portal access failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const publishAnnouncement = async (event) => {
+    event.preventDefault();
+    setBusyKey("admin-announcement");
+    try {
+      await API.post("/api/admin/notifications", announcementForm);
+      setAnnouncementForm(initialAnnouncementForm);
+      await loadAdminData(true);
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Announcement publish failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const deleteAdminItem = async (kind, id) => {
+    if (!window.confirm(`Remove this ${kind}?`)) return;
+    setBusyKey(`${kind}-${id}`);
+    try {
+      await API.delete(`/api/admin/${kind}/${id}`);
+      await loadAdminData(true);
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Delete failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
   const metrics = data.metrics || {};
   const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
@@ -91,6 +148,7 @@ const AdminPanel = () => {
     { id: "assessments", label: "AI Exams & Quizzes", icon: BookOpenCheck },
     { id: "results", label: "Results", icon: ClipboardCheck },
     { id: "content", label: "Assignments & Notices", icon: Megaphone },
+    { id: "system", label: "Vault & Checks", icon: Layers },
   ];
 
   const resultRows = useMemo(
@@ -176,7 +234,28 @@ const AdminPanel = () => {
           <Panel title="Teachers" kicker="Faculty accounts" icon={<ShieldCheck size={18} />}>
             {data.teachers.length === 0 ? <EmptyState text="No teacher accounts yet." /> : null}
             {data.teachers.map((teacher) => (
-              <UserRow key={teacher._id} user={teacher} />
+              <div key={teacher._id} style={styles.adminRow}>
+                <UserRow user={teacher} />
+                <div style={styles.actionRow}>
+                  <button
+                    type="button"
+                    style={styles.primaryButton}
+                    disabled={busyKey === `impersonate-${teacher._id}`}
+                    onClick={() => openPortalAccess(teacher._id)}
+                  >
+                    <LogIn size={15} />
+                    Open Teacher Portal
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.dangerButton}
+                    onClick={() => deleteAdminItem("users", teacher._id)}
+                  >
+                    <Trash2 size={15} />
+                    Remove
+                  </button>
+                </div>
+              </div>
             ))}
           </Panel>
 
@@ -186,6 +265,15 @@ const AdminPanel = () => {
               <div key={student._id} style={styles.adminRow}>
                 <UserRow user={student} />
                 <div style={styles.actionRow}>
+                  <button
+                    type="button"
+                    style={styles.primaryButton}
+                    disabled={busyKey === `impersonate-${student._id}`}
+                    onClick={() => openPortalAccess(student._id)}
+                  >
+                    <LogIn size={15} />
+                    Open Student Portal
+                  </button>
                   <button
                     type="button"
                     style={styles.successButton}
@@ -203,6 +291,14 @@ const AdminPanel = () => {
                   >
                     <XCircle size={15} />
                     Reject
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.dangerButton}
+                    onClick={() => deleteAdminItem("users", student._id)}
+                  >
+                    <Trash2 size={15} />
+                    Remove
                   </button>
                 </div>
               </div>
@@ -233,7 +329,17 @@ const AdminPanel = () => {
           {resultRows.length === 0 ? <EmptyState text="No results submitted yet." /> : null}
           <div style={styles.resultGrid}>
             {resultRows.map((result) => (
-              <ResultRow key={result._id} result={result} detailed />
+              <div key={result._id} style={styles.adminRow}>
+                <ResultRow result={result} detailed />
+                <button
+                  type="button"
+                  style={styles.dangerButton}
+                  onClick={() => deleteAdminItem("results", result._id)}
+                >
+                  <Trash2 size={15} />
+                  Delete Result
+                </button>
+              </div>
             ))}
           </div>
         </Panel>
@@ -247,16 +353,91 @@ const AdminPanel = () => {
               <div key={assignment._id} style={styles.adminRow}>
                 <strong style={styles.rowTitle}>{assignment.title}</strong>
                 <span style={styles.rowMeta}>{assignment.classroomName || "Classroom"} | Due {assignment.dueDate || "N/A"}</span>
+                <button type="button" style={styles.dangerButton} onClick={() => deleteAdminItem("assignments", assignment._id)}>
+                  <Trash2 size={15} />
+                  Remove Assignment
+                </button>
               </div>
             ))}
           </Panel>
 
           <Panel title="Announcements" kicker="Notification feed" icon={<Megaphone size={18} />}>
+            <form onSubmit={publishAnnouncement} style={styles.inlineForm}>
+              <input
+                value={announcementForm.title}
+                onChange={(event) => setAnnouncementForm({ ...announcementForm, title: event.target.value })}
+                placeholder="Announcement title"
+                style={styles.input}
+              />
+              <textarea
+                value={announcementForm.message}
+                onChange={(event) => setAnnouncementForm({ ...announcementForm, message: event.target.value })}
+                placeholder="Message for students/teachers"
+                style={{ ...styles.input, minHeight: "90px" }}
+              />
+              <select
+                value={announcementForm.audience}
+                onChange={(event) => setAnnouncementForm({ ...announcementForm, audience: event.target.value })}
+                style={styles.input}
+              >
+                <option value="all">All users</option>
+                <option value="all-students">All students</option>
+                <option value="teachers">Teachers</option>
+                <option value="classroom">Selected classroom</option>
+              </select>
+              <select
+                value={announcementForm.classroomId}
+                onChange={(event) => setAnnouncementForm({ ...announcementForm, classroomId: event.target.value })}
+                style={styles.input}
+              >
+                <option value="">No classroom</option>
+                {data.classrooms.map((classroom) => (
+                  <option key={classroom._id} value={classroom._id}>
+                    {classroom.name || classroom.program || classroom.department}
+                  </option>
+                ))}
+              </select>
+              <button type="submit" style={styles.primaryButton} disabled={busyKey === "admin-announcement"}>
+                <Send size={15} />
+                Publish Announcement
+              </button>
+            </form>
             {data.notifications.length === 0 ? <EmptyState text="No announcements yet." /> : null}
             {data.notifications.map((notice) => (
               <div key={notice._id} style={styles.adminRow}>
                 <strong style={styles.rowTitle}>{notice.title}</strong>
                 <span style={styles.rowMeta}>{notice.message}</span>
+                <button type="button" style={styles.dangerButton} onClick={() => deleteAdminItem("notifications", notice._id)}>
+                  <Trash2 size={15} />
+                  Remove Notice
+                </button>
+              </div>
+            ))}
+          </Panel>
+        </section>
+      ) : null}
+
+      {activeTab === "system" ? (
+        <section style={styles.gridTwo}>
+          <Panel title="Study Vault" kicker="All teacher resources" icon={<Layers size={18} />}>
+            {data.studyResources.length === 0 ? <EmptyState text="No study vault resources yet." /> : null}
+            {data.studyResources.map((resource) => (
+              <div key={resource._id} style={styles.adminRow}>
+                <strong style={styles.rowTitle}>{resource.title}</strong>
+                <span style={styles.rowMeta}>{resource.classroomName || "Classroom"} | {resource.resourceType || "notes"}</span>
+              </div>
+            ))}
+          </Panel>
+
+          <Panel title="System Checks" kicker="Student readiness logs" icon={<ShieldCheck size={18} />}>
+            {data.systemChecks.length === 0 ? <EmptyState text="No system check reports yet." /> : null}
+            {data.systemChecks.map((check) => (
+              <div key={check._id} style={styles.adminRow}>
+                <strong style={styles.rowTitle}>{check.studentName || "Student"}</strong>
+                <span style={styles.rowMeta}>
+                  {check.classroomName || "Classroom"} | Camera {check.camera} | Mic {check.microphone} | Internet {check.internet}
+                </span>
+                <span style={styles.rowMeta}>{check.speedMbps || 0} Mbps | {check.latencyMs || 0} ms | {formatDateTime(check.createdAt)}</span>
               </div>
             ))}
           </Panel>
@@ -576,6 +757,36 @@ const styles = {
     whiteSpace: "nowrap",
   }),
   actionRow: { display: "flex", gap: "10px", flexWrap: "wrap" },
+  inlineForm: {
+    display: "grid",
+    gap: "10px",
+    padding: "16px",
+    borderRadius: "18px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.14)",
+  },
+  input: {
+    width: "100%",
+    border: "1px solid rgba(148,163,184,0.22)",
+    borderRadius: "14px",
+    padding: "12px 14px",
+    fontSize: "14px",
+    fontFamily: "inherit",
+    boxSizing: "border-box",
+  },
+  primaryButton: {
+    border: "none",
+    borderRadius: "14px",
+    padding: "10px 13px",
+    background: "linear-gradient(135deg, #1d4ed8, #0f766e)",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "7px",
+  },
   successButton: {
     border: "none",
     borderRadius: "14px",

@@ -15,10 +15,15 @@ import Register from "./pages/Register";
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Schedule = lazy(() => import("./pages/Schedule"));
 const AssignmentList = lazy(() => import("./pages/StudentPanel/AssignmentList"));
+const AiTutor = lazy(() => import("./pages/StudentPanel/AiTutor"));
 const Dashboard = lazy(() => import("./pages/StudentPanel/Dashboard"));
 const Exam = lazy(() => import("./pages/StudentPanel/Exam"));
 const Notifications = lazy(() => import("./pages/StudentPanel/Notifications"));
+const PerformanceAnalytics = lazy(() => import("./pages/StudentPanel/PerformanceAnalytics"));
 const Results = lazy(() => import("./pages/StudentPanel/Results"));
+const StudyVault = lazy(() => import("./pages/StudentPanel/StudyVault"));
+const SystemChecks = lazy(() => import("./pages/StudentPanel/SystemChecks"));
+const StudyVaultManager = lazy(() => import("./pages/TeacherPanel/StudyVaultManager"));
 const TeacherPanel = lazy(() => import("./pages/TeacherPanel/TeacherPanel"));
 
 const NAVBAR_OFFSET = 104;
@@ -106,6 +111,17 @@ function App() {
         />
 
         <Route
+          path="/teacher-study-vault"
+          element={
+            <ProtectedRoute allowedRole="teacher">
+              <PageShell>
+                <StudyVaultManager />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
           path="/admin-panel"
           element={
             <ProtectedRoute allowedRole="admin">
@@ -133,6 +149,50 @@ function App() {
             <ProtectedRoute allowedRole="student">
               <PageShell>
                 <AssignmentList />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/ai-tutor"
+          element={
+            <ProtectedRoute allowedRole="student">
+              <PageShell>
+                <AiTutor />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/study-vault"
+          element={
+            <ProtectedRoute allowedRole="student">
+              <PageShell>
+                <StudyVault />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/system-checks"
+          element={
+            <ProtectedRoute allowedRole="student">
+              <PageShell>
+                <SystemChecks />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/performance-analytics"
+          element={
+            <ProtectedRoute allowedRole="student">
+              <PageShell>
+                <PerformanceAnalytics />
               </PageShell>
             </ProtectedRoute>
           }

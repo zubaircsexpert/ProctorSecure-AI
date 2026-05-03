@@ -7,8 +7,10 @@ import {
   CalendarClock,
   ClipboardCheck,
   FileStack,
+  Gauge,
   Shield,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import API from "../../services/api";
 
@@ -130,6 +132,30 @@ function Dashboard() {
   }, [latestResult, pendingAssignments.length, upcomingExams]);
 
   const quickModules = [
+    {
+      to: "/ai-tutor",
+      icon: BrainCircuit,
+      title: "AI Tutor",
+      text: "Ask for assignment help, quiz preparation, exam guidance, and study fixes.",
+    },
+    {
+      to: "/study-vault",
+      icon: FileStack,
+      title: "Study Vault",
+      text: "Open teacher notes, PDFs, slides, lecture links, and classroom resources.",
+    },
+    {
+      to: "/system-checks",
+      icon: Gauge,
+      title: "System Checks",
+      text: "Test camera, microphone, and internet readiness before secure exams.",
+    },
+    {
+      to: "/performance-analytics",
+      icon: TrendingUp,
+      title: "Performance Analytics",
+      text: "Track old results, score trends, and improvement suggestions.",
+    },
     {
       to: "/exam",
       icon: Shield,

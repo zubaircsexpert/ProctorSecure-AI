@@ -19,6 +19,8 @@ import Assignment from "./models/Assignment.js";
 import Submission from "./models/Submission.js";
 import Notification from "./models/Notification.js";
 import PaperCheck from "./models/PaperCheck.js";
+import StudyResource from "./models/StudyResource.js";
+import SystemCheck from "./models/SystemCheck.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
@@ -38,8 +40,9 @@ const paperChecksDir = path.join(uploadsDir, "paper-checks");
 const studentCardsDir = path.join(uploadsDir, "student-cards");
 const teacherFilesDir = path.join(uploadsDir, "assignment-files");
 const studentSubmissionsDir = path.join(uploadsDir, "assignment-submissions");
+const studyVaultDir = path.join(uploadsDir, "study-vault");
 
-[uploadsDir, paperChecksDir, studentCardsDir, teacherFilesDir, studentSubmissionsDir].forEach(
+[uploadsDir, paperChecksDir, studentCardsDir, teacherFilesDir, studentSubmissionsDir, studyVaultDir].forEach(
   (directory) => fs.mkdirSync(directory, { recursive: true })
 );
 
@@ -75,6 +78,7 @@ const submissionUpload = multer({
 const paperCheckUpload = multer({
   storage: createDiskStorage(paperChecksDir),
 });
+const studyVaultUpload = multer({ storage: createDiskStorage(studyVaultDir) });
 
 const safeJsonParse = (value, fallback) => {
   if (!value) return fallback;
@@ -268,6 +272,22 @@ const verifyAdmin = async (req, res, next) => {
   } catch (err) {
     console.log("VERIFY ADMIN ERROR:", err);
     res.status(500).json({ message: "Admin verification failed." });
+  }
+};
+
+const verifyStaff = async (req, res, next) => {
+  try {
+    const user = await getDbUser(req.user?.userId);
+
+    if (!user || !["teacher", "admin"].includes(user.role)) {
+      return res.status(403).json({ message: "Only staff can do this action." });
+    }
+
+    req.dbUser = user;
+    next();
+  } catch (err) {
+    console.log("VERIFY STAFF ERROR:", err);
+    res.status(500).json({ message: "Staff verification failed." });
   }
 };
 
@@ -1631,6 +1651,193 @@ app.delete("/api/paper-checks/:id", verifyToken, verifyTeacher, async (req, res)
   }
 });
 
+app.post("/api/ai-tutor/ask", verifyToken, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const question = normalizeText(req.body.question);
+    const context = normalizeText(req.body.context);
+    if (!question) {
+      return res.status(400).json({ message: "Question is required." });
+    }
+
+    const lower = `${question} ${context}`.toLowerCase();
+    const tips = [];
+
+    if (lower.includes("assignment") || lower.includes("submit") || lower.includes("upload")) {
+      tips.push("Break the assignment into requirements, evidence, draft, and final upload. Start by writing the exact deliverables in bullet form.");
+    }
+    if (lower.includes("exam") || lower.includes("quiz") || lower.includes("mcq")) {
+      tips.push("For exams and quizzes, revise one concept block, attempt 10-15 MCQs, then review only the wrong answers before the next block.");
+    }
+    if (lower.includes("camera") || lower.includes("mic") || lower.includes("internet")) {
+      tips.push("Run System Checks before the exam, keep your face centered, close extra tabs, and use a stable network.");
+    }
+    if (lower.includes("result") || lower.includes("marks") || lower.includes("score")) {
+      tips.push("Compare your latest score with older attempts, identify the weakest topic, and spend the next study session only on that topic.");
+    }
+    if (!tips.length) {
+      tips.push("Use a simple plan: define the topic, list what you know, find the confusing step, practice one example, then summarize it in your own words.");
+    }
+
+    const answer = [
+      `Hi ${user.name || "there"}, here is a focused study plan for your question:`,
+      ...tips,
+      "Next action: write one small target you can finish in 20 minutes, then check your result or assignment feedback again.",
+    ].join("\n\n");
+
+    res.json({ answer });
+  } catch (err) {
+    console.log("AI TUTOR ERROR:", err);
+    res.status(500).json({ message: "AI tutor could not respond right now." });
+  }
+});
+
+app.get("/api/study-vault", verifyToken, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    let query = {};
+    if (user.role === "teacher") {
+      query = { teacherId: user._id };
+    } else if (user.role === "student") {
+      query = { classroomId: user.classroomId || null };
+    }
+
+    const resources = await StudyResource.find(query).sort({ createdAt: -1 }).lean();
+    res.json(resources);
+  } catch (err) {
+    console.log("STUDY VAULT FETCH ERROR:", err);
+    res.status(500).json({ message: "Failed to load study vault." });
+  }
+});
+
+app.post(
+  "/api/study-vault",
+  verifyToken,
+  verifyStaff,
+  studyVaultUpload.single("file"),
+  async (req, res) => {
+    try {
+      const title = normalizeText(req.body.title);
+      const description = normalizeText(req.body.description);
+      const resourceType = normalizeText(req.body.resourceType) || "notes";
+      const externalUrl = normalizeText(req.body.externalUrl);
+      const classroomId = normalizeText(req.body.classroomId);
+
+      if (!title) {
+        return res.status(400).json({ message: "Title is required." });
+      }
+
+      let classroom = null;
+      if (req.dbUser.role === "teacher") {
+        classroom = await findTeacherClassroom(
+          req.dbUser._id,
+          classroomId || req.dbUser.classroomId
+        );
+      } else if (classroomId) {
+        classroom = await Classroom.findById(classroomId);
+      }
+
+      if (!classroom) {
+        return res.status(400).json({ message: "Valid classroom is required." });
+      }
+
+      const resource = await StudyResource.create({
+        teacherId: req.dbUser.role === "teacher" ? req.dbUser._id : classroom.teacherId || null,
+        teacherName: req.dbUser.role === "teacher" ? req.dbUser.name : "System Admin",
+        classroomId: classroom._id,
+        classroomName: buildClassroomLabel(classroom),
+        title,
+        description,
+        resourceType,
+        externalUrl,
+        fileUrl: req.file ? toRelativeUploadPath(req.file.path) : "",
+      });
+
+      await Notification.create({
+        title: `Study vault updated: ${resource.title}`,
+        message: description || "A new study resource is available in your Study Vault.",
+        type: "general",
+        priority: "normal",
+        audience: "classroom",
+        teacherId: resource.teacherId,
+        classroomId: classroom._id,
+        classroomName: buildClassroomLabel(classroom),
+        sender: req.dbUser.name,
+      });
+
+      res.status(201).json(resource);
+    } catch (err) {
+      console.log("STUDY VAULT CREATE ERROR:", err);
+      res.status(500).json({ message: "Failed to save study resource." });
+    }
+  }
+);
+
+app.delete("/api/study-vault/:id", verifyToken, verifyStaff, async (req, res) => {
+  try {
+    const query =
+      req.dbUser.role === "admin"
+        ? { _id: req.params.id }
+        : { _id: req.params.id, teacherId: req.dbUser._id };
+    const resource = await StudyResource.findOneAndDelete(query);
+
+    if (!resource) {
+      return res.status(404).json({ message: "Study resource not found." });
+    }
+
+    removeFileIfExists(resource.fileUrl);
+    res.json({ message: "Study resource deleted." });
+  } catch (err) {
+    console.log("STUDY VAULT DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to delete study resource." });
+  }
+});
+
+app.post("/api/system-checks", verifyToken, verifyApprovedStudent, async (req, res) => {
+  try {
+    const speedMbps = Number(req.body.speedMbps || 0);
+    const latencyMs = Number(req.body.latencyMs || 0);
+    const check = await SystemCheck.create({
+      studentId: req.dbUser._id,
+      studentName: req.dbUser.name,
+      classroomId: req.dbUser.classroomId || null,
+      classroomName: req.dbUser.classroomName || "",
+      camera: normalizeText(req.body.camera) || "warning",
+      microphone: normalizeText(req.body.microphone) || "warning",
+      internet: normalizeText(req.body.internet) || "warning",
+      speedMbps,
+      latencyMs,
+      notes: normalizeText(req.body.notes),
+    });
+
+    res.status(201).json(check);
+  } catch (err) {
+    console.log("SYSTEM CHECK SAVE ERROR:", err);
+    res.status(500).json({ message: "Failed to save system check." });
+  }
+});
+
+app.get("/api/system-checks/my", verifyToken, verifyApprovedStudent, async (req, res) => {
+  try {
+    const checks = await SystemCheck.find({ studentId: req.dbUser._id })
+      .sort({ createdAt: -1 })
+      .limit(10)
+      .lean();
+    res.json(checks);
+  } catch (err) {
+    console.log("SYSTEM CHECK FETCH ERROR:", err);
+    res.status(500).json({ message: "Failed to load system checks." });
+  }
+});
+
 app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
   try {
     const [
@@ -1642,6 +1849,8 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       assignments,
       submissions,
       notifications,
+      studyResources,
+      systemChecks,
     ] = await Promise.all([
       User.find()
         .select("-password")
@@ -1654,6 +1863,8 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       Assignment.find().sort({ createdAt: -1 }).lean(),
       Submission.find().sort({ submittedAt: -1 }).lean(),
       Notification.find().sort({ createdAt: -1 }).lean(),
+      StudyResource.find().sort({ createdAt: -1 }).lean(),
+      SystemCheck.find().sort({ createdAt: -1 }).lean(),
     ]);
 
     const teachers = users.filter((user) => user.role === "teacher");
@@ -1677,6 +1888,8 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
         assignments: assignments.length,
         submissions: submissions.length,
         notifications: notifications.length,
+        studyResources: studyResources.length,
+        systemChecks: systemChecks.length,
       },
       users,
       teachers,
@@ -1692,10 +1905,132 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       assignments,
       submissions,
       notifications,
+      studyResources,
+      systemChecks,
     });
   } catch (err) {
     console.log("ADMIN OVERVIEW ERROR:", err);
     res.status(500).json({ message: "Failed to load admin overview." });
+  }
+});
+
+app.post("/api/admin/impersonate/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user || user.role === "admin") {
+      return res.status(404).json({ message: "User account not found." });
+    }
+
+    const managedClassrooms =
+      user.role === "teacher" ? await ensureTeacherWorkspace(user) : [];
+    res.json({
+      token: signToken(user),
+      user: buildUserPayload(user, managedClassrooms),
+      message: `Admin access opened for ${user.role} portal.`,
+    });
+  } catch (err) {
+    console.log("ADMIN IMPERSONATE ERROR:", err);
+    res.status(500).json({ message: "Failed to open user portal access." });
+  }
+});
+
+app.post("/api/admin/notifications", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const title = normalizeText(req.body.title);
+    const message = normalizeText(req.body.message);
+    const audience = normalizeText(req.body.audience) || "all";
+    const classroomId = normalizeText(req.body.classroomId);
+    const classroom = classroomId ? await Classroom.findById(classroomId) : null;
+
+    if (!title || !message) {
+      return res.status(400).json({ message: "Title and message are required." });
+    }
+
+    const notification = await Notification.create({
+      title,
+      message,
+      type: normalizeText(req.body.type) || "general",
+      priority: normalizeText(req.body.priority) || "normal",
+      audience,
+      classroomId: classroom?._id || null,
+      classroomName: classroom ? buildClassroomLabel(classroom) : "",
+      teacherId: classroom?.teacherId || null,
+      sender: req.dbUser.name || "System Admin",
+    });
+
+    res.status(201).json(notification);
+  } catch (err) {
+    console.log("ADMIN NOTICE CREATE ERROR:", err);
+    res.status(500).json({ message: "Failed to publish announcement." });
+  }
+});
+
+app.delete("/api/admin/users/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user || user.role === "admin") {
+      return res.status(404).json({ message: "User account not found." });
+    }
+
+    await User.deleteOne({ _id: user._id });
+    if (user.role === "student") {
+      await Submission.deleteMany({ studentId: user._id });
+      await Result.deleteMany({ userId: user._id });
+      await SystemCheck.deleteMany({ studentId: user._id });
+    }
+
+    res.json({ message: "User removed successfully." });
+  } catch (err) {
+    console.log("ADMIN USER DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to remove user." });
+  }
+});
+
+app.delete("/api/admin/notifications/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const deleted = await Notification.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ message: "Announcement not found." });
+    }
+
+    res.json({ message: "Announcement removed." });
+  } catch (err) {
+    console.log("ADMIN NOTICE DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to remove announcement." });
+  }
+});
+
+app.delete("/api/admin/assignments/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const assignment = await Assignment.findByIdAndDelete(req.params.id);
+    if (!assignment) {
+      return res.status(404).json({ message: "Assignment not found." });
+    }
+
+    const submissions = await Submission.find({ assignmentId: assignment._id });
+    submissions.forEach((submission) => removeFileIfExists(submission.fileUrl));
+    await Submission.deleteMany({ assignmentId: assignment._id });
+    removeFileIfExists(assignment.fileUrl);
+
+    res.json({ message: "Assignment removed." });
+  } catch (err) {
+    console.log("ADMIN ASSIGNMENT DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to remove assignment." });
+  }
+});
+
+app.delete("/api/admin/results/:id", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const result = await Result.findByIdAndDelete(req.params.id);
+    if (!result) {
+      return res.status(404).json({ message: "Result not found." });
+    }
+
+    removeFileIfExists(result.writtenFileUrl);
+    res.json({ message: "Result removed." });
+  } catch (err) {
+    console.log("ADMIN RESULT DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to remove result." });
   }
 });
 
