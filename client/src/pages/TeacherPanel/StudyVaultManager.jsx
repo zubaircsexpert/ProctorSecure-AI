@@ -14,7 +14,7 @@ const initialForm = {
 const buildUploadUrl = (relativePath) =>
   relativePath ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}` : "";
 
-function StudyVaultManager() {
+function StudyVaultManager({ embedded = false }) {
   const [classrooms, setClassrooms] = useState([]);
   const [resources, setResources] = useState([]);
   const [form, setForm] = useState(initialForm);
@@ -67,15 +67,26 @@ function StudyVaultManager() {
   };
 
   return (
-    <div style={styles.page}>
-      <section style={styles.hero}>
-        <div>
-          <div style={styles.kicker}>Teacher Study Vault</div>
-          <h1 style={styles.title}>Upload notes, PDFs, slides and lectures</h1>
-          <p style={styles.text}>Students see resources from their classroom vault instantly.</p>
-        </div>
-        <div style={styles.heroIcon}><FileStack size={40} /></div>
-      </section>
+    <div style={embedded ? styles.embeddedPage : styles.page}>
+      {!embedded ? (
+        <section style={styles.hero}>
+          <div>
+            <div style={styles.kicker}>Teacher Study Vault</div>
+            <h1 style={styles.title}>Upload notes, PDFs, slides and lectures</h1>
+            <p style={styles.text}>Students see resources from their classroom vault instantly.</p>
+          </div>
+          <div style={styles.heroIcon}><FileStack size={40} /></div>
+        </section>
+      ) : (
+        <section style={styles.embeddedHeader}>
+          <div>
+            <div style={styles.kickerDark}>Teacher Study Vault</div>
+            <h2 style={styles.embeddedTitle}>Upload notes, PDFs, slides and lectures</h2>
+            <p style={styles.embeddedText}>Students see resources from their classroom vault instantly.</p>
+          </div>
+          <div style={styles.smallIcon}><FileStack size={24} /></div>
+        </section>
+      )}
 
       {notice ? <div style={styles.notice}>{notice}</div> : null}
 
@@ -150,11 +161,17 @@ function StudyVaultManager() {
 
 const styles = {
   page: { minHeight: "calc(100vh - 104px)", padding: "26px clamp(16px, 3vw, 34px) 40px", background: "linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)" },
+  embeddedPage: { display: "grid", gap: "18px" },
   hero: { display: "flex", justifyContent: "space-between", gap: "20px", alignItems: "center", padding: "30px", borderRadius: "28px", background: "linear-gradient(135deg, #0f172a, #155e75 52%, #2563eb)", color: "#fff", marginBottom: "20px" },
   kicker: { display: "inline-flex", padding: "8px 12px", borderRadius: "999px", background: "rgba(255,255,255,0.12)", textTransform: "uppercase", letterSpacing: "0.12em", fontSize: "12px", fontWeight: 800 },
+  kickerDark: { color: "#2563eb", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.12em", fontSize: "12px" },
   title: { margin: "14px 0 10px", fontSize: "clamp(32px, 5vw, 54px)", lineHeight: 1.04 },
   text: { margin: 0, color: "rgba(255,255,255,0.82)", lineHeight: 1.7 },
   heroIcon: { width: "84px", height: "84px", borderRadius: "24px", display: "grid", placeItems: "center", background: "rgba(255,255,255,0.12)", flexShrink: 0 },
+  embeddedHeader: { display: "flex", justifyContent: "space-between", gap: "18px", alignItems: "center", background: "#fff", border: "1px solid rgba(148,163,184,0.16)", borderRadius: "24px", padding: "22px", boxShadow: "0 18px 36px rgba(15,23,42,0.06)" },
+  embeddedTitle: { margin: "8px 0", color: "#0f172a", fontSize: "28px" },
+  embeddedText: { margin: 0, color: "#475569", lineHeight: 1.7 },
+  smallIcon: { width: "52px", height: "52px", borderRadius: "16px", display: "grid", placeItems: "center", background: "#dbeafe", color: "#1d4ed8", flexShrink: 0 },
   gridTwo: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "18px" },
   card: { background: "#fff", borderRadius: "24px", padding: "22px", border: "1px solid rgba(148,163,184,0.16)", boxShadow: "0 18px 36px rgba(15,23,42,0.06)" },
   cardTitle: { margin: "0 0 16px", color: "#0f172a", fontSize: "26px" },

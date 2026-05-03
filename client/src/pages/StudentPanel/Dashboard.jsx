@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  BellRing,
   BookOpenCheck,
   BrainCircuit,
   CalendarClock,
-  ClipboardCheck,
   FileStack,
   Gauge,
   Shield,
@@ -155,36 +153,6 @@ function Dashboard() {
       icon: TrendingUp,
       title: "Performance Analytics",
       text: "Track old results, score trends, and improvement suggestions.",
-    },
-    {
-      to: "/exam",
-      icon: Shield,
-      title: "Secure Exams",
-      text: "Open live exams, readiness checks, and AI proctoring workspace.",
-    },
-    {
-      to: "/quiz",
-      icon: BrainCircuit,
-      title: "Quizzes",
-      text: "Attempt timed MCQ quizzes and review your submitted quiz results.",
-    },
-    {
-      to: "/results",
-      icon: ClipboardCheck,
-      title: "Results Center",
-      text: "Review academic score, suspicious analytics, and integrity reports.",
-    },
-    {
-      to: "/assignment-list",
-      icon: FileStack,
-      title: "Assignments",
-      text: "Track tasks, upload files, and follow teacher review status.",
-    },
-    {
-      to: "/notifications",
-      icon: BellRing,
-      title: "Announcements",
-      text: "Read classroom alerts, approval updates, and official notices.",
     },
   ];
 

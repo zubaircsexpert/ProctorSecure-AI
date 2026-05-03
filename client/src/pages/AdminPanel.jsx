@@ -12,6 +12,7 @@ import {
   Send,
   ShieldCheck,
   Trash2,
+  Upload,
   Users,
   XCircle,
 } from "lucide-react";
@@ -43,6 +44,14 @@ const initialAnnouncementForm = {
   classroomId: "",
 };
 
+const initialStudyResourceForm = {
+  classroomId: "",
+  title: "",
+  description: "",
+  resourceType: "notes",
+  externalUrl: "",
+};
+
 const formatDateTime = (value) => {
   if (!value) return "Not recorded";
   const date = new Date(value);
@@ -56,6 +65,8 @@ const AdminPanel = () => {
   const [busyKey, setBusyKey] = useState("");
   const [notice, setNotice] = useState("");
   const [announcementForm, setAnnouncementForm] = useState(initialAnnouncementForm);
+  const [studyResourceForm, setStudyResourceForm] = useState(initialStudyResourceForm);
+  const [studyResourceFile, setStudyResourceFile] = useState(null);
 
   const loadAdminData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -136,6 +147,39 @@ const AdminPanel = () => {
       await loadAdminData(true);
     } catch (error) {
       setNotice(error.response?.data?.message || "Delete failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const publishStudyResource = async (event) => {
+    event.preventDefault();
+    setBusyKey("admin-study-resource");
+    try {
+      const payload = new FormData();
+      Object.entries(studyResourceForm).forEach(([key, value]) => payload.append(key, value));
+      if (studyResourceFile) payload.append("file", studyResourceFile);
+      await API.post("/api/study-vault", payload, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setStudyResourceForm(initialStudyResourceForm);
+      setStudyResourceFile(null);
+      await loadAdminData(true);
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Study resource publish failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const deleteStudyResource = async (resourceId) => {
+    if (!window.confirm("Remove this study resource?")) return;
+    setBusyKey(`study-${resourceId}`);
+    try {
+      await API.delete(`/api/study-vault/${resourceId}`);
+      await loadAdminData(true);
+    } catch (error) {
+      setNotice(error.response?.data?.message || "Study resource delete failed.");
     } finally {
       setBusyKey("");
     }
@@ -420,11 +464,68 @@ const AdminPanel = () => {
       {activeTab === "system" ? (
         <section style={styles.gridTwo}>
           <Panel title="Study Vault" kicker="All teacher resources" icon={<Layers size={18} />}>
+            <form onSubmit={publishStudyResource} style={styles.inlineForm}>
+              <input
+                value={studyResourceForm.title}
+                onChange={(event) => setStudyResourceForm({ ...studyResourceForm, title: event.target.value })}
+                placeholder="Resource title"
+                style={styles.input}
+              />
+              <select
+                value={studyResourceForm.classroomId}
+                onChange={(event) => setStudyResourceForm({ ...studyResourceForm, classroomId: event.target.value })}
+                style={styles.input}
+              >
+                <option value="">Select classroom</option>
+                {data.classrooms.map((classroom) => (
+                  <option key={classroom._id} value={classroom._id}>
+                    {classroom.name || classroom.program || classroom.department}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={studyResourceForm.resourceType}
+                onChange={(event) => setStudyResourceForm({ ...studyResourceForm, resourceType: event.target.value })}
+                style={styles.input}
+              >
+                <option value="notes">Notes</option>
+                <option value="pdf">PDF</option>
+                <option value="slides">Slides</option>
+                <option value="lecture">Recorded lecture</option>
+                <option value="link">Link</option>
+                <option value="other">Other</option>
+              </select>
+              <input
+                value={studyResourceForm.externalUrl}
+                onChange={(event) => setStudyResourceForm({ ...studyResourceForm, externalUrl: event.target.value })}
+                placeholder="Optional external link"
+                style={styles.input}
+              />
+              <textarea
+                value={studyResourceForm.description}
+                onChange={(event) => setStudyResourceForm({ ...studyResourceForm, description: event.target.value })}
+                placeholder="Resource description"
+                style={{ ...styles.input, minHeight: "86px" }}
+              />
+              <input
+                type="file"
+                onChange={(event) => setStudyResourceFile(event.target.files?.[0] || null)}
+                style={styles.input}
+              />
+              <button type="submit" style={styles.primaryButton} disabled={busyKey === "admin-study-resource"}>
+                <Upload size={15} />
+                Publish Resource
+              </button>
+            </form>
             {data.studyResources.length === 0 ? <EmptyState text="No study vault resources yet." /> : null}
             {data.studyResources.map((resource) => (
               <div key={resource._id} style={styles.adminRow}>
                 <strong style={styles.rowTitle}>{resource.title}</strong>
                 <span style={styles.rowMeta}>{resource.classroomName || "Classroom"} | {resource.resourceType || "notes"}</span>
+                <button type="button" style={styles.dangerButton} onClick={() => deleteStudyResource(resource._id)}>
+                  <Trash2 size={15} />
+                  Remove Resource
+                </button>
               </div>
             ))}
           </Panel>
