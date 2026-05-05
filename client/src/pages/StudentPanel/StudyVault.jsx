@@ -5,7 +5,11 @@ import API from "../../services/api";
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
 const buildUploadUrl = (relativePath) =>
-  relativePath ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}` : "";
+  relativePath?.startsWith("/api/")
+    ? `${API.defaults.baseURL}${relativePath}`
+    : relativePath
+    ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}`
+    : "";
 
 function StudyVault() {
   const [resources, setResources] = useState([]);
@@ -45,7 +49,7 @@ function StudyVault() {
 
       <section style={styles.grid}>
         {resources.map((resource) => {
-          const fileUrl = buildUploadUrl(resource.fileUrl);
+          const fileUrl = buildUploadUrl(resource.downloadUrl || resource.fileUrl);
           return (
             <article key={resource._id} style={styles.card}>
               <span style={styles.badge}>{resource.resourceType || "notes"}</span>

@@ -12,7 +12,11 @@ const initialForm = {
 };
 
 const buildUploadUrl = (relativePath) =>
-  relativePath ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}` : "";
+  relativePath?.startsWith("/api/")
+    ? `${API.defaults.baseURL}${relativePath}`
+    : relativePath
+    ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}`
+    : "";
 
 function StudyVaultManager({ embedded = false }) {
   const [classrooms, setClassrooms] = useState([]);
@@ -146,7 +150,7 @@ function StudyVaultManager({ embedded = false }) {
                   <span>{resource.classroomName || "Classroom"} | {resource.resourceType}</span>
                 </div>
                 <div style={styles.actions}>
-                  {resource.fileUrl ? <a href={buildUploadUrl(resource.fileUrl)} target="_blank" rel="noreferrer" style={styles.iconButton}><ExternalLink size={15} /></a> : null}
+                  {resource.downloadUrl || resource.fileUrl ? <a href={buildUploadUrl(resource.downloadUrl || resource.fileUrl)} target="_blank" rel="noreferrer" style={styles.iconButton}><ExternalLink size={15} /></a> : null}
                   <button type="button" style={styles.deleteButton} onClick={() => deleteResource(resource._id)}><Trash2 size={15} /></button>
                 </div>
               </div>

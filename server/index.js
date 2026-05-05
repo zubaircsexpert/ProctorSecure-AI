@@ -160,6 +160,24 @@ const buildExamPayload = (exam) => ({
   canStart: exam.status === "live" && exam.accessGranted === true,
 });
 
+const buildStudyResourcePayload = (resource) => {
+  const payload = resource.toObject ? resource.toObject() : { ...resource };
+  const localFilePath = payload.fileUrl ? path.join(uploadsDir, payload.fileUrl) : "";
+  const localFileAvailable =
+    Boolean(localFilePath) && localFilePath.startsWith(uploadsDir) && fs.existsSync(localFilePath);
+  const databaseFileAvailable = Boolean(payload.fileData && payload.fileMimeType);
+
+  return {
+    ...payload,
+    fileAvailable: localFileAvailable || databaseFileAvailable,
+    downloadUrl: databaseFileAvailable
+      ? `/api/study-vault/file/${payload._id}`
+      : localFileAvailable
+      ? `/uploads/${String(payload.fileUrl).replace(/^\/+/, "")}`
+      : "",
+  };
+};
+
 const formatTutorContext = ({ user, assignments, results, resources }) => {
   const assignmentSummary = assignments
     .slice(0, 5)
@@ -1849,10 +1867,52 @@ app.get("/api/study-vault", verifyToken, async (req, res) => {
     }
 
     const resources = await StudyResource.find(query).sort({ createdAt: -1 }).lean();
-    res.json(resources);
+    res.json(resources.map(buildStudyResourcePayload));
   } catch (err) {
     console.log("STUDY VAULT FETCH ERROR:", err);
     res.status(500).json({ message: "Failed to load study vault." });
+  }
+});
+
+app.get("/api/study-vault/file/:id", verifyToken, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    const resource = await StudyResource.findById(req.params.id);
+
+    if (!user || !resource) {
+      return res.status(404).send("Study resource file not found.");
+    }
+
+    const isAdmin = user.role === "admin";
+    const isTeacher = user.role === "teacher" && String(resource.teacherId || "") === String(user._id);
+    const isStudent =
+      user.role === "student" && String(resource.classroomId || "") === String(user.classroomId || "");
+
+    if (!isAdmin && !isTeacher && !isStudent) {
+      return res.status(403).send("You do not have access to this study resource.");
+    }
+
+    if (resource.fileData && resource.fileMimeType) {
+      const buffer = Buffer.from(resource.fileData, "base64");
+      res.setHeader("Content-Type", resource.fileMimeType);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${sanitizeFileName(resource.originalFileName || resource.title || "study-resource")}"`
+      );
+      return res.send(buffer);
+    }
+
+    if (resource.fileUrl) {
+      const absolutePath = path.join(uploadsDir, resource.fileUrl);
+      if (absolutePath.startsWith(uploadsDir) && fs.existsSync(absolutePath)) {
+        return res.sendFile(absolutePath);
+      }
+    }
+
+    res.status(404).send("This uploaded file is no longer available. Please upload it again.");
+  } catch (err) {
+    console.log("STUDY VAULT FILE ERROR:", err);
+    res.status(500).send("Failed to open study resource file.");
   }
 });
 
@@ -1897,6 +1957,9 @@ app.post(
         resourceType,
         externalUrl,
         fileUrl: req.file ? toRelativeUploadPath(req.file.path) : "",
+        fileData: req.file ? fs.readFileSync(req.file.path).toString("base64") : "",
+        fileMimeType: req.file?.mimetype || "",
+        originalFileName: req.file?.originalname || "",
       });
 
       await Notification.create({
@@ -1911,7 +1974,7 @@ app.post(
         sender: req.dbUser.name,
       });
 
-      res.status(201).json(resource);
+      res.status(201).json(buildStudyResourcePayload(resource));
     } catch (err) {
       console.log("STUDY VAULT CREATE ERROR:", err);
       res.status(500).json({ message: "Failed to save study resource." });
@@ -2050,7 +2113,7 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       assignments,
       submissions,
       notifications,
-      studyResources,
+      studyResources: studyResources.map(buildStudyResourcePayload),
       systemChecks,
     });
   } catch (err) {

@@ -21,6 +21,9 @@ const studyResourceSchema = new mongoose.Schema({
     default: "notes",
   },
   fileUrl: { type: String, default: "" },
+  fileData: { type: String, default: "" },
+  fileMimeType: { type: String, default: "" },
+  originalFileName: { type: String, default: "" },
   externalUrl: { type: String, default: "" },
   createdAt: { type: Date, default: Date.now },
 });
