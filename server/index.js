@@ -179,28 +179,76 @@ const buildStudyResourcePayload = (resource) => {
   };
 };
 
-const formatTutorContext = ({ user, assignments, results, resources }) => {
+const formatTutorContext = ({ user, assignments, results, resources, exams, questions }) => {
   const assignmentSummary = assignments
-    .slice(0, 5)
+    .slice(0, 8)
     .map((assignment) => {
       const submission = assignment.mySubmission || null;
-      return `${assignment.title} | due ${assignment.dueDate || "N/A"} | status ${
+      return `${assignment.title} | due ${assignment.dueDate || "N/A"} | submitted ${
+        submission ? "yes" : "no"
+      } | status ${
         submission?.status || assignment.status || "Pending"
-      } | feedback ${submission?.feedback || "none"}`;
+      } | marks ${submission?.marks ?? "N/A"} | feedback ${submission?.feedback || "none"} | instructions ${
+        assignment.description || "none"
+      }`;
     })
     .join("\n");
   const resultSummary = results
-    .slice(0, 6)
-    .map(
-      (result) =>
-        `${result.testName || "Assessment"} | ${result.assessmentType || "exam"} | ${
-          result.percentage || 0
-        }% | suspicious ${result.suspiciousScore || result.cheatingPercent || 0}%`
-    )
+    .slice(0, 8)
+    .map((result) => {
+      const wrongAnswers = (result.answerSheet || [])
+        .filter((answer) => !answer.isCorrect)
+        .slice(0, 4)
+        .map(
+          (answer) =>
+            `${answer.questionText || "Question"} | selected ${answer.selectedAnswer || "blank"} | correct ${
+              answer.correctAnswer || "N/A"
+            }`
+        )
+        .join("; ");
+      const detectionSummary = [
+        ["copy", result.copyWarnings],
+        ["paste", result.pasteWarnings],
+        ["tab", result.tabWarnings],
+        ["focus", result.focusWarnings],
+        ["head", result.headWarnings],
+        ["eyes", result.eyeWarnings],
+        ["screen", result.screenShareWarnings],
+      ]
+        .filter(([, count]) => Number(count || 0) > 0)
+        .map(([label, count]) => `${label}:${count}`)
+        .join(", ");
+
+      return `${result.testName || "Assessment"} | ${result.assessmentType || "exam"} | ${
+        result.percentage || 0
+      }% | score ${result.score || 0}/${result.total || 0} | unanswered ${
+        result.unansweredAnswers || 0
+      } | suspicious ${result.suspiciousScore || result.cheatingPercent || 0}% | trust ${
+        result.trustFactor || "N/A"
+      } | detections ${detectionSummary || "none"} | weak answers ${wrongAnswers || "none logged"}`;
+    })
     .join("\n");
   const resourceSummary = resources
     .slice(0, 5)
     .map((resource) => `${resource.title} | ${resource.resourceType || "notes"}`)
+    .join("\n");
+  const examSummary = exams
+    .slice(0, 8)
+    .map(
+      (exam) =>
+        `${exam.title} | ${exam.assessmentType || "exam"} | ${exam.status || "scheduled"} | ${
+          exam.responseMode || "mcq"
+        } | course ${exam.course || "N/A"} | syllabus ${exam.syllabus || "none"}`
+    )
+    .join("\n");
+  const questionSummary = questions
+    .slice(0, 10)
+    .map(
+      (question) =>
+        `${question.questionText} | options ${(question.options || []).join(", ")} | correct ${
+          question.correctAnswer || "N/A"
+        }`
+    )
     .join("\n");
 
   return [
@@ -209,17 +257,19 @@ const formatTutorContext = ({ user, assignments, results, resources }) => {
     `Teacher: ${user.teacherName || "N/A"}`,
     `Recent assignments:\n${assignmentSummary || "No assignments found."}`,
     `Recent results:\n${resultSummary || "No results found."}`,
+    `Live/scheduled assessments:\n${examSummary || "No active assessments found."}`,
+    `Recent classroom questions:\n${questionSummary || "No questions found."}`,
     `Study vault resources:\n${resourceSummary || "No study resources found."}`,
   ].join("\n\n");
 };
 
-const callOpenAiTutor = async ({ question, context, file }) => {
+const callOpenAiTutor = async ({ question, context, mode, file }) => {
   if (!process.env.OPENAI_API_KEY) return null;
 
   const content = [
     {
       type: "text",
-      text: `${context}\n\nStudent question:\n${question}\n\nAnswer like a helpful AI tutor. Give direct explanation, steps, examples, and an action plan. If an uploaded image is provided, analyze it for the student.`,
+      text: `${context}\n\nTutor mode: ${mode || "general"}\n\nStudent question:\n${question}\n\nAnswer like a complete student portal AI tool. Analyze the available portal context first, then help with exams, quizzes, assignments, question solving, result weaknesses, study planning, and next actions. If an uploaded image is provided, analyze it for the student.`,
     },
   ];
 
@@ -245,12 +295,12 @@ const callOpenAiTutor = async ({ question, context, file }) => {
         {
           role: "system",
           content:
-            "You are ProctorSecure AI Tutor. Be clear, practical, student-friendly, and grounded in the provided classroom context. Do not claim grades are official.",
+            "You are ProctorSecure AI Tutor, the default AI tool inside the student portal. Be practical, student-friendly, and grounded in portal data. Give concise analysis, exact next steps, and examples. You may help draft assignments and explain questions, but do not impersonate a student or claim grades are official.",
         },
         { role: "user", content },
       ],
       temperature: 0.45,
-      max_tokens: 900,
+      max_tokens: 1200,
     }),
   });
 
@@ -264,20 +314,45 @@ const callOpenAiTutor = async ({ question, context, file }) => {
   return data.choices?.[0]?.message?.content || null;
 };
 
-const buildLocalTutorAnswer = ({ user, question, assignments, results, resources, file }) => {
+const buildLocalTutorAnswer = ({ user, question, mode, assignments, results, resources, exams, questions, file }) => {
   const lower = question.toLowerCase();
   const latestAssignment = assignments[0];
   const latestResult = results[0];
+  const pendingAssignments = assignments.filter((assignment) => !assignment.mySubmission).slice(0, 4);
+  const submittedAssignments = assignments.filter((assignment) => assignment.mySubmission).slice(0, 4);
   const weakResults = results
     .filter((result) => Number(result.percentage || 0) < 60)
     .slice(0, 3)
     .map((result) => result.testName || "Assessment");
+  const detectionTotals = results.reduce(
+    (acc, result) => ({
+      copy: acc.copy + Number(result.copyWarnings || 0),
+      paste: acc.paste + Number(result.pasteWarnings || 0),
+      tab: acc.tab + Number(result.tabWarnings || 0) + Number(result.visibilityWarnings || 0),
+      head: acc.head + Number(result.headWarnings || 0),
+      eyes: acc.eyes + Number(result.eyeWarnings || 0),
+      focus: acc.focus + Number(result.focusWarnings || 0) + Number(result.screenShareWarnings || 0),
+    }),
+    { copy: 0, paste: 0, tab: 0, head: 0, eyes: 0, focus: 0 }
+  );
+  const weakAnswers = results
+    .flatMap((result) =>
+      (result.answerSheet || [])
+        .filter((answer) => !answer.isCorrect)
+        .slice(0, 3)
+        .map((answer) => answer.questionText || "Missed question")
+    )
+    .slice(0, 5);
   const relevantResource = resources.find((resource) =>
     lower.includes(String(resource.title || "").toLowerCase().slice(0, 8))
   );
+  const activeExam = exams.find((exam) => ["live", "scheduled"].includes(exam.status)) || exams[0];
+  const sampleQuestion = questions.find((item) =>
+    lower.includes(String(item.questionText || "").toLowerCase().slice(0, 12))
+  ) || questions[0];
 
   const lines = [
-    `Hi ${user.name || "there"}, I checked your classroom context and prepared a focused answer.`,
+    `Hi ${user.name || "there"}, I checked your student portal context and prepared a focused answer.`,
   ];
 
   if (file) {
@@ -288,20 +363,39 @@ const buildLocalTutorAnswer = ({ user, question, assignments, results, resources
     );
   }
 
-  if (lower.includes("assignment") || lower.includes("homework") || lower.includes("solve")) {
+  if (mode === "assignment" || lower.includes("assignment") || lower.includes("homework") || lower.includes("solve")) {
     lines.push(
-      `Assignment focus: ${latestAssignment?.title || "No active assignment found"}. First write the required output, then solve one part at a time, then compare with teacher instructions before uploading.`
+      `Assignment focus: ${latestAssignment?.title || "No active assignment found"}. Pending items: ${
+        pendingAssignments.map((assignment) => assignment.title).join(", ") || "none"
+      }. Submitted items: ${submittedAssignments.map((assignment) => assignment.title).join(", ") || "none"}.`,
+      "Assignment method: read the instructions, make a short outline, draft the answer, add examples or calculations, then check the due date and upload format before submission."
     );
   }
 
-  if (lower.includes("quiz") || lower.includes("mcq") || lower.includes("exam")) {
+  if (mode === "exam" || mode === "quiz" || lower.includes("quiz") || lower.includes("mcq") || lower.includes("exam")) {
     lines.push(
-      `Assessment plan: revise the concept, attempt 10 MCQs, mark every wrong answer, then repeat only the weak topic. Latest score: ${latestResult?.percentage || 0}%.`
+      `Assessment plan: latest score is ${latestResult?.percentage || 0}% in ${
+        latestResult?.testName || "your latest assessment"
+      }. Upcoming/live focus: ${activeExam?.title || "No active assessment found"}.`,
+      `Cheating-risk signals from recent attempts: copy ${detectionTotals.copy}, paste ${detectionTotals.paste}, tab/focus ${detectionTotals.tab + detectionTotals.focus}, head ${detectionTotals.head}, eyes ${detectionTotals.eyes}. Reduce these by staying fullscreen, centered, and using only the exam window.`
+    );
+  }
+
+  if (mode === "question" || lower.includes("question") || lower.includes("explain")) {
+    lines.push(
+      `Question help: ${sampleQuestion?.questionText || "Send the exact question and I will break it down."}`,
+      sampleQuestion
+        ? `Approach: identify the key concept, compare each option, eliminate wrong choices, then justify why "${sampleQuestion.correctAnswer}" fits.`
+        : "Approach: paste the question, tell me your selected option, and I will explain the correct reasoning."
     );
   }
 
   if (weakResults.length) {
     lines.push(`Weak area signal: your lower attempts include ${weakResults.join(", ")}. Spend the next session on these topics before broad revision.`);
+  }
+
+  if (weakAnswers.length) {
+    lines.push(`Missed-question pattern: review these first - ${weakAnswers.join(" | ")}.`);
   }
 
   if (relevantResource) {
@@ -311,11 +405,11 @@ const buildLocalTutorAnswer = ({ user, question, assignments, results, resources
   }
 
   lines.push(
-    "Step-by-step method:",
-    "1. Identify the topic and write what is being asked.",
-    "2. Solve the smallest part first and check units/options.",
-    "3. Explain the answer in your own words.",
-    "4. If still stuck, send the exact question or upload a clear image."
+    "Next action plan:",
+    "1. Tell me whether this is exam, quiz, assignment, question, or result analysis.",
+    "2. Send the exact question/instructions or upload a clear image.",
+    "3. I will explain the logic, draft a structure, and give a short checklist.",
+    "4. After your next result, ask me to analyze the faults and I will compare score, wrong answers, and proctoring warnings."
   );
 
   return lines.join("\n\n");
@@ -1822,24 +1916,65 @@ app.post("/api/ai-tutor/ask", verifyToken, tutorUpload.single("file"), async (re
     }
 
     const question = normalizeText(req.body.question);
+    const mode = normalizeText(req.body.mode) || "general";
     if (!question) {
       return res.status(400).json({ message: "Question is required." });
     }
 
-    const [assignments, results, resources] = await Promise.all([
-      Assignment.find({ classroomId: user.classroomId || null }).sort({ createdAt: -1 }).limit(8).lean(),
-      Result.find({ userId: user._id }).sort({ createdAt: -1 }).limit(8).lean(),
-      StudyResource.find({ classroomId: user.classroomId || null }).sort({ createdAt: -1 }).limit(8).lean(),
+    const [assignmentsRaw, submissions, results, resources, exams] = await Promise.all([
+      Assignment.find({ classroomId: user.classroomId || null }).sort({ createdAt: -1 }).limit(12).lean(),
+      Submission.find({ studentId: user._id }).sort({ submittedAt: -1 }).limit(20).lean(),
+      Result.find({ userId: user._id }).sort({ createdAt: -1 }).limit(12).lean(),
+      StudyResource.find({ classroomId: user.classroomId || null }).sort({ createdAt: -1 }).limit(12).lean(),
+      Exam.find({ classroomId: user.classroomId || null }).sort({ createdAt: -1 }).limit(12).lean(),
     ]);
-    const context = formatTutorContext({ user, assignments, results, resources });
-    const openAiAnswer = await callOpenAiTutor({ question, context, file: req.file });
+    const submissionMap = submissions.reduce((acc, submission) => {
+      acc[String(submission.assignmentId)] = submission;
+      return acc;
+    }, {});
+    const assignments = assignmentsRaw.map((assignment) => ({
+      ...assignment,
+      mySubmission: submissionMap[String(assignment._id)] || null,
+    }));
+    const examIds = exams.map((exam) => exam._id);
+    const scopedQuestions = examIds.length
+      ? await Question.find({ examId: { $in: examIds } }).sort({ createdAt: -1 }).limit(30).lean()
+      : [];
+    const context = formatTutorContext({
+      user,
+      assignments,
+      results,
+      resources,
+      exams,
+      questions: scopedQuestions,
+    });
+    const openAiAnswer = await callOpenAiTutor({ question, context, mode, file: req.file });
     const answer =
       openAiAnswer ||
-      buildLocalTutorAnswer({ user, question, assignments, results, resources, file: req.file });
+      buildLocalTutorAnswer({
+        user,
+        question,
+        mode,
+        assignments,
+        results,
+        resources,
+        exams,
+        questions: scopedQuestions,
+        file: req.file,
+      });
 
     res.json({
       answer,
       mode: openAiAnswer ? "ai" : "contextual-fallback",
+      tutorMode: mode,
+      contextSummary: {
+        assignments: assignments.length,
+        pendingAssignments: assignments.filter((assignment) => !assignment.mySubmission).length,
+        results: results.length,
+        resources: resources.length,
+        assessments: exams.length,
+        questions: scopedQuestions.length,
+      },
       attachment: req.file
         ? {
             fileName: req.file.originalname,

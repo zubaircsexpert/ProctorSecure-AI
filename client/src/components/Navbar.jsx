@@ -70,6 +70,7 @@ function Navbar() {
         ]
       : [
           { label: "Dashboard", to: "/dashboard" },
+          { label: "AI Tutor", to: "/ai-tutor" },
           { label: "Exam", to: "/exam" },
           { label: "Quiz", to: "/quiz" },
           { label: "Results", to: "/results" },
