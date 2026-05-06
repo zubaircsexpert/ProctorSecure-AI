@@ -169,6 +169,7 @@ const buildStudyResourcePayload = (resource) => {
 
   return {
     ...payload,
+    fileData: undefined,
     fileAvailable: localFileAvailable || databaseFileAvailable,
     downloadUrl: databaseFileAvailable
       ? `/api/study-vault/file/${payload._id}`
