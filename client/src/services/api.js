@@ -1,4 +1,5 @@
 import axios from "axios";
+import { clearAuthSession, getAuthToken } from "../utils/authSession";
 
 const browserHost = typeof window !== "undefined" ? window.location.hostname : "";
 
@@ -11,7 +12,7 @@ const baseURL =
 const API = axios.create({ baseURL });
 
 API.interceptors.request.use((request) => {
-  const token = localStorage.getItem("token");
+  const token = getAuthToken();
 
   if (token) {
     request.headers.Authorization = `Bearer ${token}`;
@@ -19,5 +20,15 @@ API.interceptors.request.use((request) => {
 
   return request;
 });
+
+API.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      clearAuthSession();
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default API;

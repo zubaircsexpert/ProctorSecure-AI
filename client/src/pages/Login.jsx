@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import API from "../services/api";
+import { saveAuthSession } from "../utils/authSession";
 
 const portalCards = [
   {
@@ -52,8 +53,7 @@ function Login() {
         return;
       }
 
-      localStorage.setItem("token", response.data.token);
-      localStorage.setItem("user", JSON.stringify(response.data.user));
+      saveAuthSession(response.data.token, response.data.user);
 
       navigate(
         response.data.user.role === "admin"

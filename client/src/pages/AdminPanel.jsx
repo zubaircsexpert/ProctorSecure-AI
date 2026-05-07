@@ -18,6 +18,7 @@ import {
   XCircle,
 } from "lucide-react";
 import API from "../services/api";
+import { saveAuthSession } from "../utils/authSession";
 
 const emptyData = {
   metrics: {},
@@ -153,8 +154,7 @@ const AdminPanel = () => {
     setBusyKey(`impersonate-${userId}`);
     try {
       const response = await API.post(`/api/admin/impersonate/${userId}`);
-      localStorage.setItem("token", response.data.token);
-      localStorage.setItem("user", JSON.stringify(response.data.user));
+      saveAuthSession(response.data.token, response.data.user);
       window.location.href =
         response.data.user.role === "teacher" ? "/teacher-panel" : "/dashboard";
     } catch (error) {
