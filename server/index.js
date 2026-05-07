@@ -21,6 +21,7 @@ import Notification from "./models/Notification.js";
 import PaperCheck from "./models/PaperCheck.js";
 import StudyResource from "./models/StudyResource.js";
 import SystemCheck from "./models/SystemCheck.js";
+import SystemAccess from "./models/SystemAccess.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
@@ -177,6 +178,42 @@ const buildStudyResourcePayload = (resource) => {
       ? `/uploads/${String(payload.fileUrl).replace(/^\/+/, "")}`
       : "",
   };
+};
+
+const getSystemAccess = async () =>
+  SystemAccess.findOneAndUpdate(
+    { key: "global" },
+    { $setOnInsert: { key: "global" } },
+    { new: true, upsert: true }
+  ).lean();
+
+const buildAccessPayload = (access) => ({
+  systemAccess: access?.systemAccess !== false,
+  studentAccess: access?.studentAccess !== false,
+  teacherAccess: access?.teacherAccess !== false,
+  updatedBy: access?.updatedBy || "System Admin",
+  updatedAt: access?.updatedAt || access?.createdAt || null,
+});
+
+const assertPortalAccess = async (role) => {
+  if (role === "admin") return null;
+
+  const access = await getSystemAccess();
+  const payload = buildAccessPayload(access);
+
+  if (!payload.systemAccess) {
+    return "System access is temporarily disabled by admin.";
+  }
+
+  if (role === "student" && !payload.studentAccess) {
+    return "Student portal access is temporarily disabled by admin.";
+  }
+
+  if (role === "teacher" && !payload.teacherAccess) {
+    return "Teacher portal access is temporarily disabled by admin.";
+  }
+
+  return null;
 };
 
 const formatTutorContext = ({ user, assignments, results, resources, exams, questions }) => {
@@ -508,6 +545,17 @@ const verifyTeacher = async (req, res, next) => {
       return res.status(403).json({ message: "Only teachers can do this action." });
     }
 
+    const accessMessage = await assertPortalAccess("teacher");
+    if (accessMessage) {
+      return res.status(403).json({ message: accessMessage });
+    }
+
+    if (user.approvalStatus !== "approved") {
+      return res.status(403).json({
+        message: "This teacher account access is currently restricted by admin.",
+      });
+    }
+
     req.dbUser = user;
     next();
   } catch (err) {
@@ -540,6 +588,19 @@ const verifyStaff = async (req, res, next) => {
       return res.status(403).json({ message: "Only staff can do this action." });
     }
 
+    if (user.role === "teacher") {
+      const accessMessage = await assertPortalAccess("teacher");
+      if (accessMessage) {
+        return res.status(403).json({ message: accessMessage });
+      }
+
+      if (user.approvalStatus !== "approved") {
+        return res.status(403).json({
+          message: "This teacher account access is currently restricted by admin.",
+        });
+      }
+    }
+
     req.dbUser = user;
     next();
   } catch (err) {
@@ -554,6 +615,11 @@ const verifyApprovedStudent = async (req, res, next) => {
 
     if (!user || user.role !== "student") {
       return res.status(403).json({ message: "Only students can do this action." });
+    }
+
+    const accessMessage = await assertPortalAccess("student");
+    if (accessMessage) {
+      return res.status(403).json({ message: accessMessage });
     }
 
     if (user.approvalStatus !== "approved") {
@@ -807,12 +873,17 @@ app.post("/api/auth/login", async (req, res) => {
       return res.status(400).json({ message: "Wrong password" });
     }
 
-    if (user.role === "student" && user.approvalStatus !== "approved") {
+    const accessMessage = await assertPortalAccess(user.role);
+    if (accessMessage) {
+      return res.status(403).json({ message: accessMessage });
+    }
+
+    if (["student", "teacher"].includes(user.role) && user.approvalStatus !== "approved") {
       return res.status(403).json({
         message:
-          user.approvalStatus === "pending"
+          user.role === "student" && user.approvalStatus === "pending"
             ? "Teacher approval is still pending for this student account."
-            : "This student account was not approved yet. Contact your teacher.",
+            : `This ${user.role} account access is currently restricted by admin.`,
       });
     }
 
@@ -2195,6 +2266,7 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       notifications,
       studyResources,
       systemChecks,
+      accessControl,
     ] = await Promise.all([
       User.find()
         .select("-password")
@@ -2209,6 +2281,7 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       Notification.find().sort({ createdAt: -1 }).lean(),
       StudyResource.find().sort({ createdAt: -1 }).lean(),
       SystemCheck.find().sort({ createdAt: -1 }).lean(),
+      getSystemAccess(),
     ]);
 
     const teachers = users.filter((user) => user.role === "teacher");
@@ -2224,6 +2297,8 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
         teachers: teachers.length,
         students: students.length,
         pendingStudents: students.filter((student) => student.approvalStatus === "pending").length,
+        blockedStudents: students.filter((student) => student.approvalStatus === "rejected").length,
+        blockedTeachers: teachers.filter((teacher) => teacher.approvalStatus === "rejected").length,
         classrooms: classrooms.length,
         aiExams: aiExams.length,
         quizzes: quizzes.length,
@@ -2238,6 +2313,7 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       users,
       teachers,
       students,
+      accessControl: buildAccessPayload(accessControl),
       classrooms,
       exams,
       aiExams,
@@ -2275,6 +2351,34 @@ app.post("/api/admin/impersonate/:id", verifyToken, verifyAdmin, async (req, res
   } catch (err) {
     console.log("ADMIN IMPERSONATE ERROR:", err);
     res.status(500).json({ message: "Failed to open user portal access." });
+  }
+});
+
+app.put("/api/admin/access-control", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const update = {};
+
+    ["systemAccess", "studentAccess", "teacherAccess"].forEach((key) => {
+      if (typeof req.body[key] === "boolean") {
+        update[key] = req.body[key];
+      }
+    });
+
+    update.updatedBy = req.dbUser.name || "System Admin";
+
+    const access = await SystemAccess.findOneAndUpdate(
+      { key: "global" },
+      { $set: update, $setOnInsert: { key: "global" } },
+      { new: true, upsert: true }
+    ).lean();
+
+    res.json({
+      message: "System access controls updated.",
+      accessControl: buildAccessPayload(access),
+    });
+  } catch (err) {
+    console.log("ADMIN ACCESS CONTROL ERROR:", err);
+    res.status(500).json({ message: "Failed to update system access controls." });
   }
 });
 
@@ -2474,17 +2578,17 @@ app.put("/api/admin/users/:id/status", verifyToken, verifyAdmin, async (req, res
     }
 
     const user = await User.findById(req.params.id);
-    if (!user || user.role !== "student") {
-      return res.status(404).json({ message: "Student not found." });
+    if (!user || !["student", "teacher"].includes(user.role)) {
+      return res.status(404).json({ message: "User account not found." });
     }
 
     user.approvalStatus = approvalStatus;
     await user.save();
 
-    res.json({ message: "Student status updated.", user: buildUserPayload(user) });
+    res.json({ message: `${user.role} status updated.`, user: buildUserPayload(user) });
   } catch (err) {
     console.log("ADMIN USER STATUS ERROR:", err);
-    res.status(500).json({ message: "Failed to update student status." });
+    res.status(500).json({ message: "Failed to update user status." });
   }
 });
 

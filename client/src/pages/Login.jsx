@@ -183,22 +183,23 @@ function Login() {
 const styles = {
   page: {
     minHeight: "100vh",
-    padding: "24px",
+    padding: "clamp(12px, 2vw, 24px)",
+    overflowX: "hidden",
     background:
       "radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 28%), radial-gradient(circle at bottom right, rgba(29, 78, 216, 0.14), transparent 34%), linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
   },
   shell: {
     width: "min(1240px, 100%)",
     margin: "0 auto",
-    minHeight: "calc(100vh - 48px)",
+    minHeight: "calc(100vh - clamp(24px, 4vw, 48px))",
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.15fr) minmax(360px, 460px)",
-    gap: "22px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 360px), 1fr))",
+    gap: "clamp(14px, 2vw, 22px)",
   },
   heroPanel: {
     background: "linear-gradient(145deg, #0f172a 0%, #123c6b 44%, #0f766e 100%)",
-    borderRadius: "34px",
-    padding: "34px",
+    borderRadius: "24px",
+    padding: "clamp(22px, 3vw, 34px)",
     color: "#fff",
     boxShadow: "0 30px 60px rgba(15, 23, 42, 0.18)",
     display: "grid",
@@ -220,7 +221,7 @@ const styles = {
     border: "1px solid rgba(255,255,255,0.14)",
   },
   brandTitle: {
-    fontSize: "30px",
+    fontSize: "clamp(22px, 3vw, 30px)",
     fontWeight: 900,
     letterSpacing: "0.08em",
   },
@@ -246,7 +247,7 @@ const styles = {
   },
   heroTitle: {
     margin: 0,
-    fontSize: "clamp(34px, 5vw, 54px)",
+    fontSize: "clamp(30px, 4vw, 46px)",
     lineHeight: 1.05,
   },
   heroText: {
@@ -258,7 +259,7 @@ const styles = {
   },
   insightGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
     gap: "14px",
   },
   insightCard: {
@@ -281,8 +282,8 @@ const styles = {
   },
   formPanel: {
     background: "rgba(255,255,255,0.96)",
-    borderRadius: "34px",
-    padding: "32px",
+    borderRadius: "24px",
+    padding: "clamp(20px, 3vw, 32px)",
     boxShadow: "0 24px 54px rgba(15, 23, 42, 0.1)",
     border: "1px solid rgba(148, 163, 184, 0.12)",
     display: "grid",

@@ -8,6 +8,7 @@ import {
   Layers,
   LogIn,
   Megaphone,
+  Power,
   RefreshCw,
   Send,
   ShieldCheck,
@@ -33,6 +34,13 @@ const emptyData = {
   notifications: [],
   studyResources: [],
   systemChecks: [],
+  accessControl: {
+    systemAccess: true,
+    studentAccess: true,
+    teacherAccess: true,
+    updatedBy: "System Admin",
+    updatedAt: null,
+  },
 };
 
 const initialAnnouncementForm = {
@@ -105,13 +113,25 @@ const AdminPanel = () => {
     loadAdminData();
   }, [loadAdminData]);
 
-  const updateStudentStatus = async (studentId, approvalStatus) => {
-    setBusyKey(`student-${studentId}-${approvalStatus}`);
+  const updateUserStatus = async (userId, approvalStatus) => {
+    setBusyKey(`user-${userId}-${approvalStatus}`);
     try {
-      await API.put(`/api/admin/users/${studentId}/status`, { approvalStatus });
+      await API.put(`/api/admin/users/${userId}/status`, { approvalStatus });
       await loadAdminData(true);
     } catch (error) {
-      setNotice(error.response?.data?.message || "Student status update failed.");
+      setNotice(error.response?.data?.message || "User access update failed.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const updateAccessControl = async (payload) => {
+    setBusyKey("admin-access-control");
+    try {
+      await API.put("/api/admin/access-control", payload);
+      await loadAdminData(true);
+    } catch (error) {
+      setNotice(error.response?.data?.message || "System access update failed.");
     } finally {
       setBusyKey("");
     }
@@ -235,6 +255,7 @@ const AdminPanel = () => {
   const metrics = data.metrics || {};
   const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
+    { id: "access", label: "Access Control", icon: Power },
     { id: "users", label: "Users", icon: Users },
     { id: "assessments", label: "AI Exams & Quizzes", icon: BookOpenCheck },
     { id: "results", label: "Results", icon: ClipboardCheck },
@@ -249,6 +270,7 @@ const AdminPanel = () => {
     ].sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0)),
     [data.aiExamResults, data.quizResults]
   );
+  const accessControl = data.accessControl || emptyData.accessControl;
 
   if (loading) {
     return (
@@ -320,6 +342,108 @@ const AdminPanel = () => {
         </div>
       ) : null}
 
+      {activeTab === "access" ? (
+        <section style={styles.sectionStack}>
+          <Panel title="System Access Control" kicker="Admin master switches" icon={<Power size={18} />}>
+            <div style={styles.accessGrid}>
+              <AccessCard
+                title="Whole System"
+                description="Temporarily block every student and teacher portal while admin remains active."
+                enabled={accessControl.systemAccess}
+                busy={busyKey === "admin-access-control"}
+                onToggle={() => updateAccessControl({ systemAccess: !accessControl.systemAccess })}
+              />
+              <AccessCard
+                title="Student Access"
+                description="Allow or pause all student logins, exams, assignments, AI tutor, and results APIs."
+                enabled={accessControl.studentAccess}
+                busy={busyKey === "admin-access-control"}
+                onToggle={() => updateAccessControl({ studentAccess: !accessControl.studentAccess })}
+              />
+              <AccessCard
+                title="Teacher Access"
+                description="Allow or pause all teacher logins, classes, exams, assignments, and checking tools."
+                enabled={accessControl.teacherAccess}
+                busy={busyKey === "admin-access-control"}
+                onToggle={() => updateAccessControl({ teacherAccess: !accessControl.teacherAccess })}
+              />
+            </div>
+            <div style={styles.accessFooter}>
+              Last updated by {accessControl.updatedBy || "System Admin"} |{" "}
+              {accessControl.updatedAt ? formatDateTime(accessControl.updatedAt) : "Not recorded"}
+            </div>
+          </Panel>
+
+          <section style={styles.gridTwo}>
+            <Panel title="Teacher Account Access" kicker="Faculty locks" icon={<ShieldCheck size={18} />}>
+              {data.teachers.length === 0 ? <EmptyState text="No teacher accounts yet." /> : null}
+              {data.teachers.map((teacher) => (
+                <div key={teacher._id} style={styles.adminRow}>
+                  <UserRow user={teacher} />
+                  <div style={styles.actionRow}>
+                    <button
+                      type="button"
+                      style={styles.successButton}
+                      disabled={busyKey === `user-${teacher._id}-approved`}
+                      onClick={() => updateUserStatus(teacher._id, "approved")}
+                    >
+                      <CheckCircle2 size={15} />
+                      Allow Access
+                    </button>
+                    <button
+                      type="button"
+                      style={styles.dangerButton}
+                      disabled={busyKey === `user-${teacher._id}-rejected`}
+                      onClick={() => updateUserStatus(teacher._id, "rejected")}
+                    >
+                      <XCircle size={15} />
+                      Block Access
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </Panel>
+
+            <Panel title="Student Account Access" kicker="Student locks" icon={<Users size={18} />}>
+              {data.students.length === 0 ? <EmptyState text="No student accounts yet." /> : null}
+              {data.students.map((student) => (
+                <div key={student._id} style={styles.adminRow}>
+                  <UserRow user={student} />
+                  <div style={styles.actionRow}>
+                    <button
+                      type="button"
+                      style={styles.successButton}
+                      disabled={busyKey === `user-${student._id}-approved`}
+                      onClick={() => updateUserStatus(student._id, "approved")}
+                    >
+                      <CheckCircle2 size={15} />
+                      Allow
+                    </button>
+                    <button
+                      type="button"
+                      style={styles.warningButton}
+                      disabled={busyKey === `user-${student._id}-pending`}
+                      onClick={() => updateUserStatus(student._id, "pending")}
+                    >
+                      Pending
+                    </button>
+                    <button
+                      type="button"
+                      style={styles.dangerButton}
+                      disabled={busyKey === `user-${student._id}-rejected`}
+                      onClick={() => updateUserStatus(student._id, "rejected")}
+                    >
+                      <XCircle size={15} />
+                      Block
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </Panel>
+          </section>
+        </section>
+      ) : null}
+
       {activeTab === "users" ? (
         <section style={styles.gridTwo}>
           <Panel title="Teachers" kicker="Faculty accounts" icon={<ShieldCheck size={18} />}>
@@ -346,6 +470,24 @@ const AdminPanel = () => {
                   >
                     <LogIn size={15} />
                     Open Teacher Portal
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.successButton}
+                    disabled={busyKey === `user-${teacher._id}-approved`}
+                    onClick={() => updateUserStatus(teacher._id, "approved")}
+                  >
+                    <CheckCircle2 size={15} />
+                    Allow
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.dangerButton}
+                    disabled={busyKey === `user-${teacher._id}-rejected`}
+                    onClick={() => updateUserStatus(teacher._id, "rejected")}
+                  >
+                    <XCircle size={15} />
+                    Block
                   </button>
                   <button
                     type="button"
@@ -395,8 +537,8 @@ const AdminPanel = () => {
                   <button
                     type="button"
                     style={styles.successButton}
-                    disabled={busyKey === `student-${student._id}-approved`}
-                    onClick={() => updateStudentStatus(student._id, "approved")}
+                    disabled={busyKey === `user-${student._id}-approved`}
+                    onClick={() => updateUserStatus(student._id, "approved")}
                   >
                     <CheckCircle2 size={15} />
                     Approve
@@ -404,8 +546,8 @@ const AdminPanel = () => {
                   <button
                     type="button"
                     style={styles.dangerButton}
-                    disabled={busyKey === `student-${student._id}-rejected`}
-                    onClick={() => updateStudentStatus(student._id, "rejected")}
+                    disabled={busyKey === `user-${student._id}-rejected`}
+                    onClick={() => updateUserStatus(student._id, "rejected")}
                   >
                     <XCircle size={15} />
                     Reject
@@ -676,6 +818,26 @@ const AssessmentPanel = ({ title, items, busyKey, onUpdate, onDelete }) => (
   </Panel>
 );
 
+const AccessCard = ({ title, description, enabled, busy, onToggle }) => (
+  <div style={styles.accessCard(enabled)}>
+    <div style={styles.accessTop}>
+      <div>
+        <strong style={styles.rowTitle}>{title}</strong>
+        <span style={styles.rowMeta}>{description}</span>
+      </div>
+      <span style={styles.accessStatus(enabled)}>{enabled ? "Enabled" : "Paused"}</span>
+    </div>
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={busy}
+      style={enabled ? styles.dangerButton : styles.successButton}
+    >
+      {enabled ? "Pause Access" : "Enable Access"}
+    </button>
+  </div>
+);
+
 const Panel = ({ kicker, title, icon, children }) => (
   <section style={styles.card}>
     <div style={styles.sectionHeader}>
@@ -883,6 +1045,40 @@ const styles = {
     color: "#1d4ed8",
   },
   cardGrid: { display: "grid", gap: "12px" },
+  accessGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
+    gap: "14px",
+  },
+  accessCard: (enabled) => ({
+    padding: "18px",
+    borderRadius: "18px",
+    background: enabled ? "#f0fdf4" : "#fff7ed",
+    border: enabled ? "1px solid #bbf7d0" : "1px solid #fed7aa",
+    display: "grid",
+    gap: "14px",
+  }),
+  accessTop: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: "12px",
+  },
+  accessStatus: (enabled) => ({
+    padding: "7px 10px",
+    borderRadius: "999px",
+    background: enabled ? "#dcfce7" : "#ffedd5",
+    color: enabled ? "#166534" : "#9a3412",
+    fontWeight: 900,
+    fontSize: "12px",
+    whiteSpace: "nowrap",
+  }),
+  accessFooter: {
+    marginTop: "14px",
+    color: "#64748b",
+    fontSize: "13px",
+    lineHeight: 1.6,
+  },
   metricCard: {
     padding: "18px 20px",
     borderRadius: "20px",

@@ -433,23 +433,24 @@ function Register() {
 const styles = {
   page: {
     minHeight: "100vh",
-    padding: "24px",
+    padding: "clamp(12px, 2vw, 24px)",
+    overflowX: "hidden",
     background:
       "radial-gradient(circle at top right, rgba(29, 78, 216, 0.12), transparent 28%), radial-gradient(circle at bottom left, rgba(15, 118, 110, 0.14), transparent 28%), linear-gradient(180deg, #eff6ff 0%, #f8fafc 100%)",
   },
   shell: {
     width: "min(1280px, 100%)",
     margin: "0 auto",
-    minHeight: "calc(100vh - 48px)",
+    minHeight: "calc(100vh - clamp(24px, 4vw, 48px))",
     display: "grid",
-    gridTemplateColumns: "minmax(0, 1.08fr) minmax(380px, 500px)",
-    gap: "22px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))",
+    gap: "clamp(14px, 2vw, 22px)",
   },
   infoPanel: {
     background: "linear-gradient(145deg, #0f172a 0%, #123c6b 40%, #1d4ed8 100%)",
     color: "#fff",
-    borderRadius: "34px",
-    padding: "34px",
+    borderRadius: "24px",
+    padding: "clamp(22px, 3vw, 34px)",
     display: "grid",
     alignContent: "space-between",
     gap: "28px",
@@ -470,7 +471,7 @@ const styles = {
     border: "1px solid rgba(255,255,255,0.14)",
   },
   brandTitle: {
-    fontSize: "28px",
+    fontSize: "clamp(22px, 3vw, 28px)",
     fontWeight: 900,
   },
   brandSubTitle: {
@@ -495,7 +496,7 @@ const styles = {
   },
   title: {
     margin: 0,
-    fontSize: "clamp(34px, 5vw, 52px)",
+    fontSize: "clamp(30px, 4vw, 46px)",
     lineHeight: 1.06,
   },
   text: {
@@ -507,7 +508,7 @@ const styles = {
   },
   highlightGrid: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 180px), 1fr))",
     gap: "14px",
   },
   highlightCard: {
@@ -531,8 +532,8 @@ const styles = {
   },
   formPanel: {
     background: "rgba(255,255,255,0.96)",
-    borderRadius: "34px",
-    padding: "32px",
+    borderRadius: "24px",
+    padding: "clamp(20px, 3vw, 32px)",
     border: "1px solid rgba(148,163,184,0.12)",
     boxShadow: "0 24px 54px rgba(15, 23, 42, 0.1)",
     display: "grid",
@@ -578,7 +579,7 @@ const styles = {
   },
   grid: {
     display: "grid",
-    gridTemplateColumns: "1fr 1fr",
+    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
     gap: "16px",
   },
   label: {
