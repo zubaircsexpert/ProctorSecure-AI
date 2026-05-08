@@ -8,6 +8,8 @@ import dns from "dns";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
+import pdfParse from "pdf-parse";
+import mammoth from "mammoth";
 import { fileURLToPath } from "url";
 
 import User from "./models/User.js";
@@ -58,6 +60,33 @@ app.use("/uploads", express.static(uploadsDir));
 const normalizeText = (value) => String(value || "").trim();
 const toRelativeUploadPath = (absolutePath) =>
   path.relative(uploadsDir, absolutePath).replace(/\\/g, "/");
+
+const extractTextFromUploadedFile = async (file) => {
+  if (!file || !file.path) return "";
+  const ext = path.extname(file.originalname || "").toLowerCase();
+
+  try {
+    if (ext === ".pdf") {
+      const dataBuffer = fs.readFileSync(file.path);
+      const data = await pdfParse(dataBuffer);
+      return normalizeText(data.text);
+    }
+
+    if (ext === ".docx") {
+      const result = await mammoth.extractRawText({ path: file.path });
+      return normalizeText(result.value);
+    }
+
+    if (ext === ".txt") {
+      return normalizeText(fs.readFileSync(file.path, "utf-8"));
+    }
+
+    return "";
+  } catch (error) {
+    console.log("FILE TEXT EXTRACTION ERROR:", error);
+    return "";
+  }
+};
 
 const sanitizeFileName = (name) =>
   normalizeText(name || "file")
@@ -2149,7 +2178,8 @@ app.post(
       const timeLimit = Number(req.body.timeLimit) || 0;
       const randomize = String(req.body.randomize) === "true";
       const negativeMarking = String(req.body.negativeMarking) === "true";
-      const payloadText = normalizeText(req.body.text);
+      const fileText = req.file ? await extractTextFromUploadedFile(req.file) : "";
+      const payloadText = normalizeText(req.body.text) || fileText;
       const sourceType = req.file ? "file" : "text";
 
       if (!title) {
@@ -2160,7 +2190,7 @@ app.post(
         return res.status(400).json({ message: "Please provide content text or upload a file." });
       }
 
-      const questionCount = Math.min(Math.max(Number(req.body.count) || 6, 3), 20);
+      const questionCount = Math.max(Number(req.body.count) || 6, 3);
       const generated = await callOpenAiQuizGenerator({
         payloadText,
         count: questionCount,

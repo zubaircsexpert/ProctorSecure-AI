@@ -479,7 +479,7 @@ function QuizGenerator() {
                     <input
                       type="number"
                       min={3}
-                      max={20}
+                      max={50}
                       value={quizForm.count}
                       onChange={(event) => handleFieldChange("count", Number(event.target.value))}
                       style={{ width: "100%", padding: "14px 16px", borderRadius: "16px", border: "1px solid #cbd5e1" }}
