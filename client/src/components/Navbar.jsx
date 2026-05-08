@@ -56,12 +56,13 @@ function Navbar() {
       : role === "teacher"
       ? [
           { label: "Teacher Panel", to: "/teacher-panel" },
+          { label: "Quiz Generator", to: "/quiz-generator" },
           { label: "Schedule", to: "/schedule" },
         ]
       : [
           { label: "Dashboard", to: "/dashboard" },
-          { label: "Exam", to: "/exam" },
           { label: "Quiz", to: "/quiz" },
+          { label: "Quiz Generator", to: "/quiz-generator" },
           { label: "Results", to: "/results" },
           { label: "Assignments", to: "/assignment-list" },
           { label: "Schedule", to: "/schedule" },
