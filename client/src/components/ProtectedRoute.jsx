@@ -1,21 +1,9 @@
 import { Navigate } from "react-router-dom";
-
-const getStoredUser = () => {
-  try {
-    const rawUser = localStorage.getItem("user");
-    if (!rawUser || rawUser === "undefined") {
-      return null;
-    }
-    return JSON.parse(rawUser);
-  } catch (error) {
-    console.error("Protected route user parse error:", error);
-    return null;
-  }
-};
+import { getAuthToken, getAuthUser } from "../utils/authSession";
 
 function ProtectedRoute({ children, allowedRole }) {
-  const token = localStorage.getItem("token");
-  const user = getStoredUser();
+  const token = getAuthToken();
+  const user = getAuthUser();
 
   if (!token || !user) {
     return <Navigate to="/" replace />;

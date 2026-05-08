@@ -11,6 +11,7 @@ import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
+import { getAuthUser } from "./utils/authSession";
 
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
 const Schedule = lazy(() => import("./pages/Schedule"));
@@ -27,19 +28,6 @@ const StudyVaultManager = lazy(() => import("./pages/TeacherPanel/StudyVaultMana
 const TeacherPanel = lazy(() => import("./pages/TeacherPanel/TeacherPanel"));
 
 const NAVBAR_OFFSET = 104;
-
-const getStoredUser = () => {
-  try {
-    const rawUser = localStorage.getItem("user");
-    if (!rawUser || rawUser === "undefined") {
-      return null;
-    }
-    return JSON.parse(rawUser);
-  } catch (error) {
-    console.error("Stored user parse error:", error);
-    return null;
-  }
-};
 
 const NavbarWrapper = () => {
   const location = useLocation();
@@ -77,7 +65,7 @@ const PageLoader = () => (
 );
 
 function App() {
-  const user = getStoredUser();
+  const user = getAuthUser();
 
   return (
     <Router>

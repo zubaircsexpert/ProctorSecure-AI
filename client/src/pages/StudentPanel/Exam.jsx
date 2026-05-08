@@ -3,6 +3,7 @@ import API from "../../services/api";
 import Timer from "../../components/Timer";
 import Proctoring from "../../components/Proctoring";
 import WarningModal from "../../components/WarningModal";
+import { getAuthUser } from "../../utils/authSession";
 
 const ACTIVE_SESSION_KEY = "proctor-ai-active-exam";
 
@@ -572,16 +573,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
       const intelligenceScore = clamp(round(academicAccuracy * 0.74 + integrityScore * 0.26));
       const trustFactor = computeTrustFactor(suspiciousScore);
 
-      let user = { name: "Student", id: "" };
-
-      try {
-        const savedUser = localStorage.getItem("user");
-        if (savedUser) {
-          user = { ...user, ...JSON.parse(savedUser) };
-        }
-      } catch (err) {
-        console.error("Failed to parse user for result submission:", err);
-      }
+      const user = { name: "Student", id: "", ...(getAuthUser() || {}) };
 
       const resultData = {
         examId: selectedExam._id,

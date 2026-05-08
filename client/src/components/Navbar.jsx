@@ -2,23 +2,13 @@ import { useEffect, useState } from "react";
 import { Bell, Menu, ShieldCheck, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import API from "../services/api";
+import { clearAuthSession, getAuthUser } from "../utils/authSession";
 
 const NAV_HEIGHT = 84;
 
-const getSavedUser = () => {
-  try {
-    const rawUser = localStorage.getItem("user");
-    if (!rawUser || rawUser === "undefined") return null;
-    return JSON.parse(rawUser);
-  } catch (error) {
-    console.error("Navbar user parse error:", error);
-    return null;
-  }
-};
-
 function Navbar() {
   const location = useLocation();
-  const user = getSavedUser();
+  const user = getAuthUser();
   const [notificationCount, setNotificationCount] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
@@ -78,8 +68,7 @@ function Navbar() {
         ];
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("user");
+    clearAuthSession();
     window.location.href = "/";
   };
 
