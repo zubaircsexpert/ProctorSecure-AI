@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Clock, CheckCircle, XCircle } from "lucide-react";
 import API from "../../services/api";
 
 const difficultyOptions = [
@@ -7,9 +8,52 @@ const difficultyOptions = [
   { value: "hard", label: "Hard" },
 ];
 
-const contentTypes = [
-  { id: "text", label: "Paste Text" },
-  { id: "file", label: "Upload File" },
+const DEFAULT_QUESTIONS = [
+  {
+    _id: "default-1",
+    questionText: "What is the primary purpose of a database management system?",
+    options: ["Data storage only", "Data organization and retrieval", "Network management", "System security"],
+    correctAnswer: "Data organization and retrieval",
+    explanation: "DBMS organizes, stores, and efficiently retrieves data with data integrity.",
+    difficultyTag: "easy",
+    topic: "Database",
+  },
+  {
+    _id: "default-2",
+    questionText: "Which of the following is a relational database?",
+    options: ["MongoDB", "MySQL", "Redis", "Cassandra"],
+    correctAnswer: "MySQL",
+    explanation: "MySQL is a popular open-source relational database management system.",
+    difficultyTag: "medium",
+    topic: "Database",
+  },
+  {
+    _id: "default-3",
+    questionText: "What does SQL stand for?",
+    options: ["Structured Query Language", "Simple Question Language", "Standard Query Logic", "Syntax Query Language"],
+    correctAnswer: "Structured Query Language",
+    explanation: "SQL is used to communicate with databases using structured queries.",
+    difficultyTag: "easy",
+    topic: "Database",
+  },
+  {
+    _id: "default-4",
+    questionText: "Which key constraint ensures that each row is uniquely identifiable?",
+    options: ["Foreign Key", "Primary Key", "Unique Key", "Composite Key"],
+    correctAnswer: "Primary Key",
+    explanation: "A Primary Key uniquely identifies each record in a table.",
+    difficultyTag: "medium",
+    topic: "Database",
+  },
+  {
+    _id: "default-5",
+    questionText: "What is normalization in database design?",
+    options: ["Data backup process", "Reducing data redundancy and improving integrity", "Encrypting data", "Creating backups"],
+    correctAnswer: "Reducing data redundancy and improving integrity",
+    explanation: "Normalization organizes data to reduce redundancy and dependency.",
+    difficultyTag: "hard",
+    topic: "Database",
+  },
 ];
 
 const downloadBlob = (blob, fileName) => {
