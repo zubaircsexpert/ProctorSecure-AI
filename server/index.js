@@ -22,6 +22,8 @@ import PaperCheck from "./models/PaperCheck.js";
 import StudyResource from "./models/StudyResource.js";
 import SystemCheck from "./models/SystemCheck.js";
 import SystemAccess from "./models/SystemAccess.js";
+import Quiz from "./models/Quiz.js";
+import GeneratedQuestion from "./models/GeneratedQuestion.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
@@ -298,6 +300,76 @@ const formatTutorContext = ({ user, assignments, results, resources, exams, ques
     `Recent classroom questions:\n${questionSummary || "No questions found."}`,
     `Study vault resources:\n${resourceSummary || "No study resources found."}`,
   ].join("\n\n");
+};
+
+const parseAiJson = (rawText) => {
+  const trimmed = String(rawText || "").trim();
+  const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) return null;
+
+  try {
+    return JSON.parse(jsonMatch[0]);
+  } catch (error) {
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      return null;
+    }
+  }
+};
+
+const callOpenAiQuizGenerator = async ({ payloadText, count, difficulty, subject, category, file }) => {
+  if (!process.env.OPENAI_API_KEY) return null;
+
+  const prompt = `Generate ${count} unique multiple-choice questions from the provided educational content. Use the content to identify key concepts, topics, and exam-style phrasing. Output a JSON object only, using this exact format:\n{\n  \"title\": \"Quiz Title\",\n  \"subject\": \"Subject Name\",\n  \"category\": \"Category\",\n  \"difficulty\": \"${difficulty}\",\n  \"questions\": [\n    {\n      \"questionText\": \"...\",\n      \"options\": [\"A...\", \"B...\", \"C...\", \"D...\"],\n      \"correctAnswer\": \"...\",\n      \"explanation\": \"...\",\n      \"difficultyTag\": \"${difficulty}\",\n      \"topic\": \"...\"\n    }\n  ]\n}\nDo not include any additional prose outside the JSON object. If the content is not enough, generate meaningful conceptual questions relevant to ${subject || "general study"}.`;
+
+  const content = [
+    {
+      type: "text",
+      text: `${prompt}\n\nContent:\n${payloadText || "No text provided."}`,
+    },
+  ];
+
+  if (file?.mimetype?.startsWith("image/")) {
+    const imageBase64 = fs.readFileSync(file.path).toString("base64");
+    content.push({
+      type: "image_url",
+      image_url: {
+        url: `data:${file.mimetype};base64,${imageBase64}`,
+      },
+    });
+  }
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are a quiz generation engine. Create exam-style multiple-choice quiz questions with clear options, correct answers, explanations, topic tags, and difficulty levels.",
+        },
+        { role: "user", content },
+      ],
+      temperature: 0.35,
+      max_tokens: 1600,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.log("OPENAI QUIZ ERROR:", errorText);
+    return null;
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content || "";
+  return parseAiJson(text);
 };
 
 const callOpenAiTutor = async ({ question, context, mode, file }) => {
@@ -2056,6 +2128,118 @@ app.post("/api/ai-tutor/ask", verifyToken, tutorUpload.single("file"), async (re
   } catch (err) {
     console.log("AI TUTOR ERROR:", err);
     res.status(500).json({ message: "AI tutor could not respond right now." });
+  }
+});
+
+app.post(
+  "/api/quiz-generator",
+  verifyToken,
+  tutorUpload.single("file"),
+  async (req, res) => {
+    try {
+      const user = await getDbUser(req.user.userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found." });
+      }
+
+      const title = normalizeText(req.body.title);
+      const subject = normalizeText(req.body.subject) || "General";
+      const category = normalizeText(req.body.category) || "General";
+      const difficulty = normalizeText(req.body.difficulty) || "medium";
+      const timeLimit = Number(req.body.timeLimit) || 0;
+      const randomize = String(req.body.randomize) === "true";
+      const negativeMarking = String(req.body.negativeMarking) === "true";
+      const payloadText = normalizeText(req.body.text);
+      const sourceType = req.file ? "file" : "text";
+
+      if (!title) {
+        return res.status(400).json({ message: "Quiz title is required." });
+      }
+
+      if (!payloadText && !req.file) {
+        return res.status(400).json({ message: "Please provide content text or upload a file." });
+      }
+
+      const questionCount = Math.min(Math.max(Number(req.body.count) || 6, 3), 20);
+      const generated = await callOpenAiQuizGenerator({
+        payloadText,
+        count: questionCount,
+        difficulty,
+        subject,
+        category,
+        file: req.file,
+      });
+
+      const fallbackQuestions = (count) => {
+        return Array.from({ length: count }, (_, index) => ({
+          questionText: `Review the content and prepare a conceptual question #${index + 1}.`,
+          options: ["Option A", "Option B", "Option C", "Option D"],
+          correctAnswer: "Option A",
+          explanation: "Review the source material and choose the best answer.",
+          difficultyTag: difficulty,
+          topic: category || "General",
+        }));
+      };
+
+      const quizPayload = generated || {
+        title,
+        subject,
+        category,
+        difficulty,
+        questions: fallbackQuestions(questionCount),
+      };
+
+      const quiz = new Quiz({
+        title,
+        subject,
+        category,
+        difficulty,
+        timeLimit,
+        randomize,
+        negativeMarking,
+        sourceType,
+        sourceText: payloadText,
+        sourceFile: req.file ? toRelativeUploadPath(req.file.path) : "",
+        createdBy: user._id,
+      });
+
+      await quiz.save();
+
+      const questionDocs = await GeneratedQuestion.insertMany(
+        (quizPayload.questions || []).map((item) => ({
+          quizId: quiz._id,
+          questionText: normalizeText(item.questionText || item.question || ""),
+          options: item.options || [],
+          correctAnswer: normalizeText(item.correctAnswer || item.answer || ""),
+          explanation: normalizeText(item.explanation || ""),
+          difficultyTag: normalizeText(item.difficultyTag || difficulty || "medium"),
+          topic: normalizeText(item.topic || item.topicName || "General"),
+        }))
+      );
+
+      quiz.questions = questionDocs.map((question) => question._id);
+      await quiz.save();
+
+      const responseQuiz = await Quiz.findById(quiz._id).populate("questions").lean();
+      res.json({ message: "Quiz generated and saved successfully.", quiz: responseQuiz });
+    } catch (err) {
+      console.log("QUIZ GENERATOR ERROR:", err);
+      res.status(500).json({ message: "Quiz generator failed to create your quiz." });
+    }
+  }
+);
+
+app.get("/api/quiz-generator/my", verifyToken, async (req, res) => {
+  try {
+    const quizzes = await Quiz.find({ createdBy: req.user.userId })
+      .sort({ createdAt: -1 })
+      .populate("questions")
+      .lean();
+
+    res.json(quizzes);
+  } catch (err) {
+    console.log("QUIZ FETCH ERROR:", err);
+    res.status(500).json({ message: "Failed to load saved quizzes." });
   }
 });
 
