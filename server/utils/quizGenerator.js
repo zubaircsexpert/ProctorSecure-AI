@@ -165,9 +165,29 @@ const buildQuestionFromSentence = (sentence, keyword, idx, difficulty, subject) 
 /**
  * Process PDF and extract rich text with structure
  */
-export const processPdfAdvanced = async (pdfParse, dataBuffer) => {
+export const processPdfAdvanced = async (pdfParser, dataBuffer) => {
   try {
-    const data = await pdfParse(dataBuffer);
+    if (typeof pdfParser === "function" && /^class\s/.test(Function.prototype.toString.call(pdfParser))) {
+      const parser = new pdfParser({ data: dataBuffer });
+      try {
+        const textResult = await parser.getText();
+        const infoResult = await parser.getInfo({ parsePageInfo: true }).catch(() => ({}));
+        const text = textResult?.text || "";
+
+        return {
+          text,
+          pages: textResult?.total || infoResult?.total || infoResult?.pages?.length || 0,
+          metadata: infoResult?.info || infoResult?.metadata || {},
+          lines: text.split("\n").filter((line) => line.trim()),
+          version: infoResult?.version,
+          rawText: text,
+        };
+      } finally {
+        await parser.destroy?.();
+      }
+    }
+
+    const data = await pdfParser(dataBuffer);
 
     return {
       text: data.text || "",

@@ -8,7 +8,7 @@ import dns from "dns";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
-import pdfParse from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
 import { fileURLToPath } from "url";
 
@@ -80,7 +80,7 @@ const extractTextFromUploadedFile = async (file) => {
   try {
     if (ext === ".pdf") {
       const dataBuffer = fs.readFileSync(file.path);
-      const pdfResult = await processPdfAdvanced(pdfParse, dataBuffer);
+      const pdfResult = await processPdfAdvanced(PDFParse, dataBuffer);
       return normalizeExtractedText(pdfResult.text || "");
     }
 
