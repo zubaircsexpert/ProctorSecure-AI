@@ -45,3 +45,8 @@ export const getAuthUser = () => {
     return null;
   }
 };
+
+export const updateStoredUser = (user) => {
+  if (!hasBrowserStorage()) return;
+  window.sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+};

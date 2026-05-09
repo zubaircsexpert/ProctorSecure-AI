@@ -10,6 +10,8 @@ import fs from "fs";
 import multer from "multer";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
+import crypto from "crypto";
+import nodemailer from "nodemailer";
 import { fileURLToPath } from "url";
 
 import User from "./models/User.js";
@@ -116,6 +118,51 @@ const sanitizeFileName = (name) =>
   normalizeText(name || "file")
     .replace(/[^a-zA-Z0-9._-]/g, "-")
     .replace(/-+/g, "-");
+
+const hashResetToken = (token) =>
+  crypto.createHash("sha256").update(String(token || "")).digest("hex");
+
+const getClientUrl = () =>
+  String(process.env.CLIENT_URL || process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
+
+const sendPasswordResetEmail = async ({ email, name, resetUrl }) => {
+  const smtpHost = process.env.SMTP_HOST;
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+
+  if (!smtpHost || !smtpUser || !smtpPass) {
+    console.log(`PASSWORD RESET LINK for ${email}: ${resetUrl}`);
+    return { sent: false, reason: "SMTP_NOT_CONFIGURED" };
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: smtpHost,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: String(process.env.SMTP_SECURE || "false") === "true",
+    auth: {
+      user: smtpUser,
+      pass: smtpPass,
+    },
+  });
+
+  await transporter.sendMail({
+    from: process.env.MAIL_FROM || smtpUser,
+    to: email,
+    subject: "Reset your ProctorSecure AI password",
+    html: `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#0f172a">
+        <h2>Password reset request</h2>
+        <p>Hello ${name || "there"},</p>
+        <p>Use the button below to reset your ProctorSecure AI password. This link expires in 30 minutes.</p>
+        <p><a href="${resetUrl}" style="display:inline-block;background:#2563eb;color:#fff;padding:12px 18px;border-radius:10px;text-decoration:none;font-weight:700">Reset password</a></p>
+        <p>If the button does not work, open this link:</p>
+        <p style="word-break:break-all">${resetUrl}</p>
+      </div>
+    `,
+  });
+
+  return { sent: true };
+};
 
 const createDiskStorage = (destination) =>
   multer.diskStorage({
@@ -1092,6 +1139,155 @@ app.get("/api/auth/me", verifyToken, async (req, res) => {
   } catch (err) {
     console.log("AUTH ME ERROR:", err);
     res.status(500).json({ message: "Failed to load profile." });
+  }
+});
+
+app.put("/api/auth/profile", verifyToken, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const name = normalizeText(req.body.name);
+    const email = normalizeText(req.body.email).toLowerCase();
+    const department = normalizeText(req.body.department);
+    const rollNumber = normalizeText(req.body.rollNumber);
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Name and email are required." });
+    }
+
+    const existing = await User.findOne({ email, _id: { $ne: user._id } });
+    if (existing) {
+      return res.status(400).json({ message: "This email is already in use." });
+    }
+
+    user.name = name;
+    user.email = email;
+    if (user.role === "teacher" || user.role === "admin") {
+      user.department = department;
+    }
+    if (user.role === "student") {
+      user.rollNumber = rollNumber;
+    }
+
+    await user.save();
+    const managedClassrooms = user.role === "teacher" ? await ensureTeacherWorkspace(user) : [];
+
+    res.json({
+      message: "Profile updated successfully.",
+      user: buildUserPayload(user, managedClassrooms),
+    });
+  } catch (err) {
+    console.log("PROFILE UPDATE ERROR:", err);
+    res.status(500).json({ message: "Failed to update profile." });
+  }
+});
+
+app.put("/api/auth/change-password", verifyToken, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select("+password");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const currentPassword = String(req.body.currentPassword || "");
+    const newPassword = String(req.body.newPassword || "");
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: "Current and new password are required." });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters." });
+    }
+
+    const validPassword = await bcrypt.compare(currentPassword, user.password);
+    if (!validPassword) {
+      return res.status(400).json({ message: "Current password is incorrect." });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordToken = "";
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    res.json({ message: "Password changed successfully." });
+  } catch (err) {
+    console.log("CHANGE PASSWORD ERROR:", err);
+    res.status(500).json({ message: "Failed to change password." });
+  }
+});
+
+app.post("/api/auth/forgot-password", async (req, res) => {
+  try {
+    const email = normalizeText(req.body.email).toLowerCase();
+    if (!email) {
+      return res.status(400).json({ message: "Email is required." });
+    }
+
+    const user = await User.findOne({ email }).select("+resetPasswordToken +resetPasswordExpires");
+    const genericMessage = "If an account exists for this email, a password reset link has been sent.";
+
+    if (!user) {
+      return res.json({ message: genericMessage });
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    user.resetPasswordToken = hashResetToken(rawToken);
+    user.resetPasswordExpires = new Date(Date.now() + 30 * 60 * 1000);
+    await user.save();
+
+    const resetUrl = `${getClientUrl()}/reset-password?token=${rawToken}`;
+    const emailResult = await sendPasswordResetEmail({
+      email: user.email,
+      name: user.name,
+      resetUrl,
+    });
+
+    res.json({
+      message: genericMessage,
+      resetPreviewUrl:
+        !emailResult.sent && process.env.NODE_ENV !== "production" ? resetUrl : undefined,
+    });
+  } catch (err) {
+    console.log("FORGOT PASSWORD ERROR:", err);
+    res.status(500).json({ message: "Failed to start password reset." });
+  }
+});
+
+app.post("/api/auth/reset-password", async (req, res) => {
+  try {
+    const token = normalizeText(req.body.token);
+    const newPassword = String(req.body.newPassword || "");
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ message: "Reset token and new password are required." });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: "New password must be at least 6 characters." });
+    }
+
+    const user = await User.findOne({
+      resetPasswordToken: hashResetToken(token),
+      resetPasswordExpires: { $gt: new Date() },
+    }).select("+password +resetPasswordToken +resetPasswordExpires");
+
+    if (!user) {
+      return res.status(400).json({ message: "Reset link is invalid or expired." });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.resetPasswordToken = "";
+    user.resetPasswordExpires = null;
+    await user.save();
+
+    res.json({ message: "Password reset successfully. You can now sign in." });
+  } catch (err) {
+    console.log("RESET PASSWORD ERROR:", err);
+    res.status(500).json({ message: "Failed to reset password." });
   }
 });
 

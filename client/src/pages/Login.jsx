@@ -29,6 +29,10 @@ function Login() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
+  const [resetPreviewUrl, setResetPreviewUrl] = useState("");
 
   const handleLogin = async (event) => {
     event.preventDefault();
@@ -70,6 +74,28 @@ function Login() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async (event) => {
+    event.preventDefault();
+    setResetMessage("");
+    setResetPreviewUrl("");
+
+    if (!resetEmail) {
+      setResetMessage("Please enter your email for password reset.");
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      const response = await API.post("/api/auth/forgot-password", { email: resetEmail });
+      setResetMessage(response.data.message || "Password reset link sent if the account exists.");
+      setResetPreviewUrl(response.data.resetPreviewUrl || "");
+    } catch (error) {
+      setResetMessage(error.response?.data?.message || "Password reset request failed.");
+    } finally {
+      setResetLoading(false);
     }
   };
 
@@ -174,6 +200,27 @@ function Login() {
               Sign up
             </Link>
           </div>
+
+          <form onSubmit={handleForgotPassword} style={styles.resetBox}>
+            <div style={styles.resetTitle}>Forgot password?</div>
+            <div style={styles.resetText}>Enter your email and we will send a reset link.</div>
+            <input
+              type="email"
+              value={resetEmail}
+              onChange={(event) => setResetEmail(event.target.value)}
+              placeholder="account email"
+              style={styles.resetInput}
+            />
+            <button type="submit" disabled={resetLoading} style={styles.resetButton}>
+              {resetLoading ? "Sending..." : "Send reset link"}
+            </button>
+            {resetMessage ? <div style={styles.resetMessage}>{resetMessage}</div> : null}
+            {resetPreviewUrl ? (
+              <Link to={resetPreviewUrl.replace(/^https?:\/\/[^/]+/, "")} style={styles.previewLink}>
+                Open reset link
+              </Link>
+            ) : null}
+          </form>
         </section>
       </div>
     </div>
@@ -393,6 +440,49 @@ const styles = {
   registerLink: {
     color: "#1d4ed8",
     fontWeight: 800,
+    textDecoration: "none",
+  },
+  resetBox: {
+    marginTop: "18px",
+    padding: "16px",
+    borderRadius: "18px",
+    background: "#f8fafc",
+    border: "1px solid #e2e8f0",
+    display: "grid",
+    gap: "10px",
+  },
+  resetTitle: {
+    color: "#0f172a",
+    fontWeight: 900,
+  },
+  resetText: {
+    color: "#64748b",
+    fontSize: "13px",
+  },
+  resetInput: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "12px 14px",
+    borderRadius: "14px",
+    border: "1px solid #cbd5e1",
+  },
+  resetButton: {
+    border: "none",
+    borderRadius: "14px",
+    padding: "12px 14px",
+    background: "#0f172a",
+    color: "#fff",
+    fontWeight: 800,
+    cursor: "pointer",
+  },
+  resetMessage: {
+    color: "#0f766e",
+    fontWeight: 800,
+    fontSize: "13px",
+  },
+  previewLink: {
+    color: "#2563eb",
+    fontWeight: 900,
     textDecoration: "none",
   },
 };

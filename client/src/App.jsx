@@ -14,6 +14,8 @@ import Register from "./pages/Register";
 import { getAuthUser } from "./utils/authSession";
 
 const AdminPanel = lazy(() => import("./pages/AdminPanel"));
+const Profile = lazy(() => import("./pages/Profile"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const Schedule = lazy(() => import("./pages/Schedule"));
 const AssignmentList = lazy(() => import("./pages/StudentPanel/AssignmentList"));
 const AiTutor = lazy(() => import("./pages/StudentPanel/AiTutor"));
@@ -76,6 +78,18 @@ function App() {
         <Routes>
           <Route path="/" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <PageShell>
+                <Profile />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
 
         <Route
           path="/dashboard"
