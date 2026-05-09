@@ -273,11 +273,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
     }
 
     loadQuestions(selectedExam._id, true);
-    const questionInterval = window.setInterval(() => {
-      loadQuestions(selectedExam._id, false);
-    }, 5000);
-
-    return () => window.clearInterval(questionInterval);
+    return undefined;
   }, [loadQuestions, selectedExam, submitted]);
 
   useEffect(() => {

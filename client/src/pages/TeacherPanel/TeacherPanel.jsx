@@ -133,9 +133,11 @@ const getDaysUntil = (value) => {
 const buildUploadUrl = (fileRef) => {
   const target = typeof fileRef === "string" ? fileRef : fileRef?.downloadUrl || fileRef?.fileUrl || "";
   if (!target) return "";
+  const cleanPath = String(target).replace(/^\/+/, "");
   if (/^https?:\/\//i.test(target)) return target;
   if (target.startsWith("/api/")) return `${API.defaults.baseURL}${target}`;
-  return `${FILE_BASE_URL}/${String(target).replace(/^\/+/, "")}`;
+  if (cleanPath.startsWith("uploads/")) return `${API.defaults.baseURL}/${cleanPath}`;
+  return `${FILE_BASE_URL}/${cleanPath}`;
 };
 
 function TeacherPanel() {
@@ -624,6 +626,28 @@ function TeacherPanel() {
       setNotice({
         type: "error",
         text: error.response?.data?.message || "Failed to add question.",
+      });
+    } finally {
+      setBusyKey("");
+    }
+  };
+
+  const deleteQuestion = async (questionId) => {
+    if (!window.confirm("Delete this MCQ?")) {
+      return;
+    }
+
+    setBusyKey(`delete-question-${questionId}`);
+    setNotice(emptyNotice);
+
+    try {
+      await API.delete(`/api/questions/delete/${questionId}`);
+      await loadWorkspace(true);
+      setNotice({ type: "success", text: "MCQ deleted successfully." });
+    } catch (error) {
+      setNotice({
+        type: "error",
+        text: error.response?.data?.message || "Failed to delete MCQ.",
       });
     } finally {
       setBusyKey("");
@@ -1468,6 +1492,28 @@ function TeacherPanel() {
                   <button type="submit" style={styles.primaryButton} disabled={busyKey === "add-question"}>
                     {busyKey === "add-question" ? "Saving..." : "Add MCQ"}
                   </button>
+
+                  <div style={styles.questionPreviewList}>
+                    {(questionsByExam[String(questionForm.examId)] || []).map((question, index) => (
+                      <div key={question._id} style={styles.questionPreviewRow}>
+                        <div>
+                          <strong>
+                            Q{index + 1}. {question.questionText}
+                          </strong>
+                          <span>Correct: {question.correctAnswer}</span>
+                        </div>
+                        <button
+                          type="button"
+                          style={styles.dangerIconButton}
+                          onClick={() => deleteQuestion(question._id)}
+                          disabled={busyKey === `delete-question-${question._id}`}
+                          title="Delete MCQ"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </>
               )}
             </form>
@@ -2811,6 +2857,34 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     gap: "10px",
+  },
+  dangerIconButton: {
+    width: "38px",
+    height: "38px",
+    borderRadius: "13px",
+    border: "none",
+    background: "#fee2e2",
+    color: "#b91c1c",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    flexShrink: 0,
+  },
+  questionPreviewList: {
+    display: "grid",
+    gap: "10px",
+    marginTop: "16px",
+  },
+  questionPreviewRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "12px",
+    alignItems: "center",
+    padding: "13px 14px",
+    borderRadius: "16px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148, 163, 184, 0.16)",
+    color: "#0f172a",
   },
   actionRow: {
     display: "flex",

@@ -5,8 +5,12 @@ import API from "../../services/api";
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
 const buildUploadUrl = (relativePath) =>
-  relativePath?.startsWith("/api/")
+  /^https?:\/\//i.test(relativePath || "")
+    ? relativePath
+    : relativePath?.startsWith("/api/")
     ? `${API.defaults.baseURL}${relativePath}`
+    : String(relativePath || "").replace(/^\/+/, "").startsWith("uploads/")
+    ? `${API.defaults.baseURL}/${String(relativePath).replace(/^\/+/, "")}`
     : relativePath
     ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}`
     : "";

@@ -293,6 +293,20 @@ const buildExamPayload = (exam) => ({
   canStart: exam.status === "live" && exam.accessGranted === true,
 });
 
+const shuffleList = (list) =>
+  [...list]
+    .map((item) => ({ item, rank: Math.random() }))
+    .sort((left, right) => left.rank - right.rank)
+    .map(({ item }) => item);
+
+const buildStudentQuestionPayload = (question) => {
+  const payload = question.toObject ? question.toObject() : { ...question };
+  return {
+    ...payload,
+    options: shuffleList(payload.options || []),
+  };
+};
+
 const buildStudyResourcePayload = (resource) => {
   const payload = resource.toObject ? resource.toObject() : { ...resource };
   const localFilePath = payload.fileUrl ? path.join(uploadsDir, payload.fileUrl) : "";
@@ -1278,8 +1292,7 @@ app.post("/api/auth/forgot-password", async (req, res) => {
 
     res.json({
       message: genericMessage,
-      resetPreviewUrl:
-        !emailResult.sent && process.env.NODE_ENV !== "production" ? resetUrl : undefined,
+      resetPreviewUrl: !emailResult.sent ? resetUrl : undefined,
     });
   } catch (err) {
     console.log("FORGOT PASSWORD ERROR:", err);
@@ -1899,10 +1912,30 @@ app.get("/api/questions/:examId", verifyToken, async (req, res) => {
       createdAt: 1,
     });
 
-    res.json(questions);
+    res.json(user.role === "teacher" ? questions : shuffleList(questions).map(buildStudentQuestionPayload));
   } catch (err) {
     console.log("FETCH EXAM QUESTIONS ERROR:", err);
     res.status(500).json({ message: "Failed to load questions" });
+  }
+});
+
+app.delete("/api/questions/delete/:id", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const teacherExams = await Exam.find({ teacherId: req.dbUser._id }).select("_id");
+    const examIds = teacherExams.map((exam) => exam._id);
+    const deletedQuestion = await Question.findOneAndDelete({
+      _id: req.params.id,
+      examId: { $in: examIds },
+    });
+
+    if (!deletedQuestion) {
+      return res.status(404).json({ message: "Question not found." });
+    }
+
+    res.json({ message: "Question deleted." });
+  } catch (err) {
+    console.log("DELETE QUESTION ERROR:", err);
+    res.status(500).json({ message: "Failed to delete question." });
   }
 });
 

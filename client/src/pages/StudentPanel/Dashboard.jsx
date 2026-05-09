@@ -131,6 +131,12 @@ function Dashboard() {
 
   const quickModules = [
     {
+      to: "/exam",
+      icon: Shield,
+      title: "AI Exam",
+      text: "Open teacher-approved secure exams with live camera, focus, copy/paste, and movement checks.",
+    },
+    {
       to: "/ai-tutor",
       icon: BrainCircuit,
       title: "AI Tutor",
@@ -291,6 +297,10 @@ function Dashboard() {
                   </div>
                 </div>
               ))}
+              <Link to="/exam" style={styles.examLaunch}>
+                <Shield size={18} />
+                <span>Open AI Exam Center</span>
+              </Link>
             </div>
           )}
         </div>
@@ -522,6 +532,18 @@ const styles = {
     gap: "6px",
     color: "#475569",
     minWidth: "190px",
+  },
+  examLaunch: {
+    textDecoration: "none",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    padding: "13px 16px",
+    borderRadius: "16px",
+    background: "#0f172a",
+    color: "#fff",
+    fontWeight: 900,
   },
   feedCard: {
     padding: "16px 18px",

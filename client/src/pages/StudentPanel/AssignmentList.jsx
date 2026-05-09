@@ -7,9 +7,11 @@ const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 const buildFileUrl = (item) => {
   const target = item?.downloadUrl || item?.fileUrl || "";
   if (!target) return "";
+  const cleanPath = String(target).replace(/^\/+/, "");
   if (/^https?:\/\//i.test(target)) return target;
   if (target.startsWith("/api/")) return `${API.defaults.baseURL}${target}`;
-  return `${FILE_BASE_URL}/${String(target).replace(/^\/+/, "")}`;
+  if (cleanPath.startsWith("uploads/")) return `${API.defaults.baseURL}/${cleanPath}`;
+  return `${FILE_BASE_URL}/${cleanPath}`;
 };
 
 const AssignmentList = () => {
