@@ -39,9 +39,8 @@ export const extractTextFromImageWithLanguage = async (imagePath, languages = ["
       return { text: "", confidence: 0, error: "File not found" };
     }
 
-    const worker = await Tesseract.createWorker();
-    await worker.loadLanguage(languages);
-    await worker.initialize(languages);
+    const languageList = Array.isArray(languages) ? languages.join("+") : String(languages || "eng");
+    const worker = await Tesseract.createWorker(languageList);
 
     const result = await worker.recognize(imagePath);
     await worker.terminate();
@@ -50,7 +49,7 @@ export const extractTextFromImageWithLanguage = async (imagePath, languages = ["
       text: result.data.text || "",
       confidence: result.data.confidence || 0,
       psm: result.data.psm,
-      languages: languages,
+      languages,
       lines: (result.data.lines || []).map((line) => ({
         text: line.text,
         confidence: line.confidence,
@@ -58,8 +57,109 @@ export const extractTextFromImageWithLanguage = async (imagePath, languages = ["
     };
   } catch (error) {
     console.error("Multi-language OCR Error:", error.message);
+    if (Array.isArray(languages) && languages.length > 1) {
+      return extractTextFromImage(imagePath);
+    }
     return { text: "", confidence: 0, error: error.message };
   }
+};
+
+const splitSourceSentences = (text) => {
+    const normalized = String(text || "").replace(/\s+/g, " ").trim();
+    const sentences = normalized
+      .split(/(?<=[.!?])\s+|[\n\r]+|(?:\s[-*]\s)/)
+      .map((sentence) => sentence.trim().replace(/^[\d.)\-\s]+/, ""))
+      .filter((sentence) => sentence.length >= 45 && sentence.length <= 260);
+
+    if (sentences.length >= 3) return sentences;
+
+    const words = normalized.split(" ").filter(Boolean);
+    const chunked = [];
+    for (let index = 0; index < words.length; index += 24) {
+      const chunk = words.slice(index, index + 32).join(" ").trim();
+      if (chunk.length >= 45) chunked.push(chunk);
+    }
+
+    return [...sentences, ...chunked]
+      .filter((sentence, idx, arr) => arr.indexOf(sentence) === idx)
+      .slice(0, 30);
+};
+
+const extractKeywordPhrases = (text, subject = "General") => {
+  const stopWords = new Set([
+    "about",
+    "after",
+    "also",
+    "because",
+    "between",
+    "could",
+    "every",
+    "from",
+    "have",
+    "into",
+    "more",
+    "most",
+    "only",
+    "other",
+    "should",
+    "such",
+    "than",
+    "that",
+    "their",
+    "there",
+    "these",
+    "this",
+    "through",
+    "used",
+    "were",
+    "when",
+    "where",
+    "which",
+    "while",
+    "with",
+    "would",
+  ]);
+
+  const phrases = new Map();
+  const source = `${subject} ${text}`;
+  const phraseMatches = source.match(/\b[A-Z][A-Za-z0-9-]*(?:\s+[A-Z][A-Za-z0-9-]*){0,3}\b/g) || [];
+  phraseMatches.forEach((phrase) => {
+    const cleaned = phrase.trim();
+    if (cleaned.length > 3) phrases.set(cleaned.toLowerCase(), cleaned);
+  });
+
+  const words = source.match(/\b[A-Za-z][A-Za-z0-9-]{4,}\b/g) || [];
+  words.forEach((word) => {
+    const cleaned = word.trim();
+    if (!stopWords.has(cleaned.toLowerCase())) {
+      phrases.set(cleaned.toLowerCase(), cleaned);
+    }
+  });
+
+  return [...phrases.values()].slice(0, 80);
+};
+
+const shortenOption = (sentence) => {
+  const cleaned = String(sentence || "").trim().replace(/\s+/g, " ");
+  return cleaned.length > 145 ? `${cleaned.slice(0, 142).trim()}...` : cleaned;
+};
+
+const buildQuestionFromSentence = (sentence, keyword, idx, difficulty, subject) => {
+  const questionTemplates = [
+    `According to the uploaded ${subject} material, which statement best explains ${keyword}?`,
+    `Which source-based statement is most directly connected with ${keyword}?`,
+    `What does the provided content indicate about ${keyword}?`,
+    `In the study material, which option correctly describes the idea around ${keyword}?`,
+  ];
+
+  return {
+    questionText: questionTemplates[idx % questionTemplates.length],
+    correctAnswer: shortenOption(sentence),
+    explanation: `The correct option is taken from the uploaded content and directly supports the question about ${keyword}.`,
+    difficultyTag: difficulty,
+    topic: keyword || subject || "General",
+    conceptsInvolved: [keyword || subject || "General"],
+  };
 };
 
 /**
@@ -226,30 +326,48 @@ export const parseAIMCQResponse = (rawResponse) => {
  * Generate fallback high-quality MCQs from text
  */
 export const generateFallbackMCQs = (text, count = 5, difficulty = "medium", subject = "General") => {
-  const lines = text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 20 && l.length < 500);
+  const sentences = splitSourceSentences(text);
+  const keywords = extractKeywordPhrases(text, subject);
+  const sourceOptions = sentences.map(shortenOption).filter((option, idx, arr) => arr.indexOf(option) === idx);
 
   const questions = [];
+  const usableCount = Math.min(count, sentences.length);
 
-  for (let i = 0; i < Math.min(count, lines.length); i++) {
-    const line = lines[i];
-    const words = line.split(" ");
+  for (let i = 0; i < usableCount; i++) {
+    const sentence = sentences[i];
+    const sentenceLower = sentence.toLowerCase();
+    const keyword =
+      keywords.find((item) => sentenceLower.includes(item.toLowerCase())) ||
+      keywords[i % Math.max(keywords.length, 1)] ||
+      subject ||
+      "the selected topic";
 
-    questions.push({
-      questionText: `Based on the provided content, what is the main concept related to: "${line.substring(0, 60)}..."?`,
-      options: [
-        `Option related to the key concept in the text`,
-        `An alternative interpretation of the material`,
-        `A contrasting viewpoint on the topic`,
-        `A supporting example or detail from the content`,
-      ],
-      correctAnswer: `Option related to the key concept in the text`,
-      explanation: `This option directly addresses the main concept from the provided material: "${line.substring(0, 100)}..."`,
-      difficultyTag: difficulty,
-      topic: subject || "General",
-    });
+    const baseQuestion = buildQuestionFromSentence(sentence, keyword, i, difficulty, subject);
+    const distractors = sourceOptions
+      .filter((option) => option !== baseQuestion.correctAnswer)
+      .filter((option) => !option.toLowerCase().includes(String(keyword).toLowerCase()))
+      .slice(i + 1)
+      .concat(sourceOptions.filter((option) => option !== baseQuestion.correctAnswer))
+      .filter((option, idx, arr) => arr.indexOf(option) === idx)
+      .slice(0, 3);
+
+    const keywordDistractors = keywords
+      .filter((item) => item.toLowerCase() !== String(keyword).toLowerCase())
+      .slice(0, 3)
+      .map((item) => `The material mainly identifies ${item} as the answer instead.`);
+
+    const options = [baseQuestion.correctAnswer, ...distractors, ...keywordDistractors]
+      .filter(Boolean)
+      .filter((option, idx, arr) => arr.indexOf(option) === idx)
+      .slice(0, 4);
+
+    if (options.length >= 4) {
+      const rotatedOptions = [...options.slice(i % 4), ...options.slice(0, i % 4)];
+      questions.push({
+        ...baseQuestion,
+        options: rotatedOptions,
+      });
+    }
   }
 
   return questions;

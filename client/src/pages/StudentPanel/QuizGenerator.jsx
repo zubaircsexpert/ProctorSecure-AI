@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Clock, CheckCircle, XCircle, Loader, AlertCircle, FileText, Globe } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Loader, AlertCircle, FileText, Globe, Trash2 } from "lucide-react";
 import API from "../../services/api";
 
 const difficultyOptions = [
@@ -46,6 +46,8 @@ function QuizGenerator() {
   const [savedQuizzes, setSavedQuizzes] = useState([]);
   const [extractedTextPreview, setExtractedTextPreview] = useState("");
   const [showTextPreview, setShowTextPreview] = useState(false);
+  const [deleteModal, setDeleteModal] = useState({ show: false, quizId: null, quizTitle: "" });
+  const [deleting, setDeleting] = useState(false);
 
   // Quiz taking state
   const [currentQuestion, setCurrentQuestion] = useState(0);
@@ -61,6 +63,28 @@ function QuizGenerator() {
     } catch (error) {
       console.error("Load saved quizzes error:", error);
     }
+  };
+
+  const handleDeleteQuiz = async () => {
+    if (!deleteModal.quizId) return;
+    setDeleting(true);
+    try {
+      await API.delete(`/api/quiz-generator/${deleteModal.quizId}`);
+      await loadSavedQuizzes();
+      setDeleteModal({ show: false, quizId: null, quizTitle: "" });
+      setNotice("Quiz deleted successfully!");
+      setNoticeType("success");
+    } catch (error) {
+      console.error("Delete quiz error:", error);
+      setNotice("Failed to delete quiz.");
+      setNoticeType("error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const confirmDelete = (quizId, title) => {
+    setDeleteModal({ show: true, quizId, quizTitle: title });
   };
 
   useEffect(() => {
@@ -91,6 +115,12 @@ function QuizGenerator() {
   const handleFileChange = (event) => {
     const selected = event.target.files?.[0] || null;
     setFile(selected);
+    setExtractedTextPreview("");
+    setShowTextPreview(false);
+  };
+
+  const handleRemoveFile = () => {
+    setFile(null);
     setExtractedTextPreview("");
     setShowTextPreview(false);
   };
@@ -747,10 +777,33 @@ function QuizGenerator() {
                   </label>
                   <input
                     type="file"
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.txt"
+                    accept=".pdf,.docx,.png,.jpg,.jpeg,.gif,.webp,.txt"
+                    title={file ? `Selected: ${file.name}` : "Upload PDF, DOCX, image, or text file"}
                     onChange={handleFileChange}
                     style={{ width: "100%" }}
                   />
+                  {file ? (
+                    <button
+                      type="button"
+                      onClick={handleRemoveFile}
+                      style={{
+                        border: "1px solid #fecaca",
+                        borderRadius: "12px",
+                        background: "#fff1f2",
+                        color: "#b91c1c",
+                        cursor: "pointer",
+                        fontWeight: 800,
+                        padding: "10px 12px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: "8px",
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      Remove uploaded file
+                    </button>
+                  ) : null}
                   {file ? (
                     <div style={{ color: "#10b981", fontSize: "14px", fontWeight: 700 }}>
                       ✅ File selected: {file.name}
@@ -898,6 +951,85 @@ function QuizGenerator() {
                   <div>✅ Quality validation</div>
                 </div>
               </div>
+
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "20px",
+                  padding: "20px",
+                  border: "1px solid #e2e8f0",
+                  boxShadow: "0 12px 30px rgba(15, 23, 42, 0.06)",
+                }}
+              >
+                <div style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a", marginBottom: "14px" }}>
+                  Saved Quizzes
+                </div>
+                {savedQuizzes.length ? (
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {savedQuizzes.slice(0, 6).map((savedQuiz) => (
+                      <div
+                        key={savedQuiz._id}
+                        style={{
+                          display: "grid",
+                          gap: "10px",
+                          padding: "12px",
+                          borderRadius: "14px",
+                          background: "#f8fafc",
+                          border: "1px solid #e2e8f0",
+                        }}
+                      >
+                        <div>
+                          <div style={{ color: "#0f172a", fontWeight: 800, fontSize: "13px" }}>
+                            {savedQuiz.title}
+                          </div>
+                          <div style={{ color: "#64748b", fontSize: "12px", marginTop: "3px" }}>
+                            {savedQuiz.questions?.length || 0} MCQs - {savedQuiz.difficulty || "medium"}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleStartQuiz(savedQuiz)}
+                            style={{
+                              flex: 1,
+                              border: "none",
+                              borderRadius: "12px",
+                              padding: "10px 12px",
+                              background: "#2563eb",
+                              color: "#fff",
+                              fontWeight: 800,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Start
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => confirmDelete(savedQuiz._id, savedQuiz.title)}
+                            title="Delete quiz"
+                            style={{
+                              border: "none",
+                              width: "42px",
+                              borderRadius: "12px",
+                              background: "#fee2e2",
+                              color: "#b91c1c",
+                              cursor: "pointer",
+                              display: "grid",
+                              placeItems: "center",
+                            }}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ color: "#64748b", fontSize: "13px", lineHeight: 1.6 }}>
+                    Generated quizzes will appear here after saving.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : null}
@@ -981,6 +1113,72 @@ function QuizGenerator() {
           </div>
         ) : null}
       </div>
+
+      {deleteModal.show ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.58)",
+            display: "grid",
+            placeItems: "center",
+            padding: "20px",
+            zIndex: 50,
+          }}
+        >
+          <div
+            style={{
+              width: "min(440px, 100%)",
+              background: "#ffffff",
+              borderRadius: "22px",
+              padding: "24px",
+              boxShadow: "0 30px 80px rgba(15, 23, 42, 0.3)",
+            }}
+          >
+            <div style={{ fontSize: "20px", fontWeight: 900, color: "#0f172a", marginBottom: "8px" }}>
+              Delete quiz?
+            </div>
+            <div style={{ color: "#475569", lineHeight: 1.7, marginBottom: "22px" }}>
+              This will remove "{deleteModal.quizTitle}" and all generated MCQs for this quiz.
+            </div>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setDeleteModal({ show: false, quizId: null, quizTitle: "" })}
+                disabled={deleting}
+                style={{
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "14px",
+                  padding: "12px 16px",
+                  background: "#ffffff",
+                  color: "#0f172a",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteQuiz}
+                disabled={deleting}
+                style={{
+                  border: "none",
+                  borderRadius: "14px",
+                  padding: "12px 16px",
+                  background: "#dc2626",
+                  color: "#ffffff",
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  opacity: deleting ? 0.7 : 1,
+                }}
+              >
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <style>{`
         @keyframes spin {

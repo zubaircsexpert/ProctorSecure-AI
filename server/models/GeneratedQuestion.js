@@ -19,6 +19,7 @@ const generatedQuestionSchema = new mongoose.Schema({
   explanation: { type: String, default: "" },
   difficultyTag: { type: String, default: "medium" },
   topic: { type: String, default: "General" },
+  conceptsInvolved: { type: [String], default: [] },
   createdAt: { type: Date, default: Date.now },
 });
 

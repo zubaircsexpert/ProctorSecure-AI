@@ -2264,24 +2264,31 @@ app.post(
       let extractedText = "";
       let extractionConfidence = 0;
       let sourceType = "text";
+      const fileIsImage = Boolean(req.file?.mimetype?.startsWith("image/"));
+      const canUseVisionModel = Boolean(process.env.OPENAI_API_KEY && fileIsImage);
 
       if (req.file) {
         sourceType = "file";
         console.log(`Analyzing ${req.file.originalname}...`);
         extractedText = await extractTextFromUploadedFile(req.file);
 
-        if (!extractedText) {
+        if (!extractedText && !canUseVisionModel) {
           return res.status(400).json({
             message:
-              "Could not extract text from the uploaded file. Please ensure the file contains readable text or images.",
+              "Could not extract readable text from the uploaded file. For images, upload a clearer picture with visible text. For scanned PDFs, paste the text or upload the page as an image.",
           });
         }
       }
 
       // Use provided text or fall back to extracted text
-      const payloadText = normalizeText(req.body.text) || extractedText;
+      const payloadText =
+        normalizeText(req.body.text) ||
+        extractedText ||
+        (canUseVisionModel
+          ? "Generate MCQs by visually analyzing the uploaded image. Use only readable content visible in the image."
+          : "");
 
-      if (!payloadText || payloadText.length < 50) {
+      if ((!payloadText || payloadText.length < 50) && !canUseVisionModel) {
         return res.status(400).json({
           message:
             "Insufficient content provided. Please provide at least 50 characters of educational material.",
@@ -2302,7 +2309,7 @@ app.post(
         `Generating ${questionCount} ${difficulty} MCQs in ${language}...`
       );
 
-      const generated = await callOpenAiQuizGenerator({
+      let generated = await callOpenAiQuizGenerator({
         payloadText: cleanedText,
         count: questionCount,
         difficulty,
@@ -2312,11 +2319,29 @@ app.post(
         file: req.file,
       });
 
-      // If AI generation fails, throw an error instead of using fallback
+      if (!generated?.questions?.length && cleanedText.length >= 50) {
+        const fallbackQuestions = generateFallbackMCQs(
+          cleanedText,
+          questionCount,
+          difficulty,
+          subject
+        );
+        if (fallbackQuestions.length) {
+          generated = {
+            title: `Quiz on ${subject}`,
+            subject,
+            category,
+            difficulty,
+            language,
+            questions: fallbackQuestions,
+          };
+        }
+      }
+
       if (!generated || !generated.questions || generated.questions.length === 0) {
         return res.status(500).json({
           message:
-            "AI quiz generation failed. This may be due to: insufficient content, API issues, or text that is not suitable for MCQ generation. Please try again or provide different content.",
+            "AI quiz generation failed. The uploaded image/PDF did not provide enough readable material for real MCQs. Please upload a clearer file or paste the study text.",
           details: {
             contentLength: cleanedText.length,
             conceptsFound: concepts.conceptCount,
@@ -2332,8 +2357,9 @@ app.post(
             q.questionText &&
             q.questionText.length > 10 &&
             Array.isArray(q.options) &&
-            q.options.length >= 2 &&
+            q.options.length >= 4 &&
             q.correctAnswer &&
+            q.options.map((option) => normalizeText(option)).includes(normalizeText(q.correctAnswer)) &&
             q.explanation
           );
         })
@@ -2438,6 +2464,34 @@ app.get("/api/quiz-generator/my", verifyToken, async (req, res) => {
   } catch (err) {
     console.log("QUIZ FETCH ERROR:", err);
     res.status(500).json({ message: "Failed to load saved quizzes." });
+  }
+});
+
+app.delete("/api/quiz-generator/:id", verifyToken, async (req, res) => {
+  try {
+    const quiz = await Quiz.findOne({
+      _id: req.params.id,
+      createdBy: req.user.userId,
+    });
+
+    if (!quiz) {
+      return res.status(404).json({ message: "Quiz not found." });
+    }
+
+    await GeneratedQuestion.deleteMany({ quizId: quiz._id });
+
+    if (quiz.sourceFile) {
+      const absolutePath = path.resolve(uploadsDir, quiz.sourceFile);
+      if (absolutePath.startsWith(path.resolve(uploadsDir)) && fs.existsSync(absolutePath)) {
+        fs.unlinkSync(absolutePath);
+      }
+    }
+
+    await quiz.deleteOne();
+    res.json({ message: "Quiz deleted successfully." });
+  } catch (err) {
+    console.log("QUIZ DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to delete quiz." });
   }
 });
 
