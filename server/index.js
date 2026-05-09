@@ -40,6 +40,7 @@ import {
   extractConceptsFromText,
   chunkTextForAI,
   parseAIMCQResponse,
+  sanitizeCompetitiveMCQ,
   generateFallbackMCQs,
   buildEnhancedQuizPrompt,
   enhanceQuizMetadata,
@@ -202,10 +203,35 @@ const safeJsonParse = (value, fallback) => {
 const removeFileIfExists = (fileName) => {
   if (!fileName) return;
 
-  const absolutePath = path.join(uploadsDir, fileName);
-  if (absolutePath.startsWith(uploadsDir) && fs.existsSync(absolutePath)) {
+  const absolutePath = resolveUploadPath(fileName);
+  if (absolutePath && fs.existsSync(absolutePath)) {
     fs.unlinkSync(absolutePath);
   }
+};
+
+const resolveUploadPath = (fileName) => {
+  if (!fileName) return "";
+  const absolutePath = path.resolve(uploadsDir, String(fileName).replace(/^\/+/, ""));
+  const rootPath = path.resolve(uploadsDir);
+  return absolutePath.startsWith(rootPath) ? absolutePath : "";
+};
+
+const buildAssignmentPayload = (assignment) => {
+  const item = assignment?.toObject ? assignment.toObject() : assignment;
+  if (!item) return item;
+  return {
+    ...item,
+    downloadUrl: item.fileUrl ? `/api/assignments/file/assignment/${item._id}` : "",
+  };
+};
+
+const buildSubmissionPayload = (submission) => {
+  const item = submission?.toObject ? submission.toObject() : submission;
+  if (!item) return item;
+  return {
+    ...item,
+    downloadUrl: item.fileUrl ? `/api/assignments/file/submission/${item._id}` : "",
+  };
 };
 
 const makeInviteCode = () =>
@@ -477,7 +503,7 @@ const callOpenAiQuizGenerator = async ({
           {
             role: "system",
             content:
-              "You are an expert AI Quiz Generator specializing in creating high-quality, contextual, exam-style multiple-choice questions from educational materials. Generate ONLY realistic questions derived from the provided content. Never use placeholder options like 'Option A' or 'Option B'. Each option must be meaningful, distinct, and plausible.",
+              "You are an expert PPSC/FPSC competitive-exam MCQ generator. Generate only short, one-line, fact-based questions from the provided content. Never mention uploaded material, source, passage, or document. Each question must have exactly 4 short realistic options and one correct answer.",
           },
           {
             role: "user",
@@ -2049,11 +2075,14 @@ app.get("/api/assignments/all", verifyToken, async (req, res) => {
         return acc;
       }, {});
 
-      const payload = assignments.map((assignment) => ({
-        ...assignment.toObject(),
-        submissions: grouped[String(assignment._id)] || [],
-        submissionCount: (grouped[String(assignment._id)] || []).length,
-      }));
+      const payload = assignments.map((assignment) => {
+        const submissionsForAssignment = (grouped[String(assignment._id)] || []).map(buildSubmissionPayload);
+        return {
+          ...buildAssignmentPayload(assignment),
+          submissions: submissionsForAssignment,
+          submissionCount: submissionsForAssignment.length,
+        };
+      });
 
       return res.json(payload);
     }
@@ -2075,8 +2104,8 @@ app.get("/api/assignments/all", verifyToken, async (req, res) => {
     const payload = assignments.map((assignment) => {
       const mySubmission = submissionsMap[String(assignment._id)] || null;
       return {
-        ...assignment.toObject(),
-        mySubmission,
+        ...buildAssignmentPayload(assignment),
+        mySubmission: mySubmission ? buildSubmissionPayload(mySubmission) : null,
         status: mySubmission?.status || "Pending",
         marks:
           mySubmission?.status === "Checked"
@@ -2091,6 +2120,69 @@ app.get("/api/assignments/all", verifyToken, async (req, res) => {
   } catch (err) {
     console.log("FETCH ASSIGNMENTS ERROR:", err);
     res.status(500).json({ message: "Error fetching assignments" });
+  }
+});
+
+app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const kind = normalizeText(req.params.kind);
+    const id = normalizeText(req.params.id);
+    let fileUrl = "";
+    let fileName = "assignment-file";
+
+    if (kind === "assignment") {
+      const assignment = await Assignment.findById(id);
+      if (!assignment) {
+        return res.status(404).json({ message: "Assignment not found." });
+      }
+
+      const canAccess =
+        user.role === "admin" ||
+        (user.role === "teacher" && String(assignment.teacherId) === String(user._id)) ||
+        (user.role === "student" && String(assignment.classroomId || "") === String(user.classroomId || ""));
+
+      if (!canAccess) {
+        return res.status(403).json({ message: "You cannot access this assignment file." });
+      }
+
+      fileUrl = assignment.fileUrl;
+      fileName = assignment.title || "assignment-file";
+    } else if (kind === "submission") {
+      const submission = await Submission.findById(id);
+      if (!submission) {
+        return res.status(404).json({ message: "Submission not found." });
+      }
+
+      const assignment = await Assignment.findById(submission.assignmentId);
+      const canAccess =
+        user.role === "admin" ||
+        (user.role === "student" && String(submission.studentId) === String(user._id)) ||
+        (user.role === "teacher" && assignment && String(assignment.teacherId) === String(user._id));
+
+      if (!canAccess) {
+        return res.status(403).json({ message: "You cannot access this submission file." });
+      }
+
+      fileUrl = submission.fileUrl;
+      fileName = `${submission.studentName || "student"}-submission`;
+    } else {
+      return res.status(400).json({ message: "Invalid assignment file type." });
+    }
+
+    const absolutePath = resolveUploadPath(fileUrl);
+    if (!absolutePath || !fs.existsSync(absolutePath)) {
+      return res.status(404).json({ message: "File not found on server." });
+    }
+
+    return res.download(absolutePath, `${sanitizeFileName(fileName)}${path.extname(absolutePath)}`);
+  } catch (err) {
+    console.log("ASSIGNMENT FILE ERROR:", err);
+    res.status(500).json({ message: "Failed to load assignment file." });
   }
 });
 
@@ -2139,7 +2231,7 @@ app.post(
         sender: req.dbUser.name,
       });
 
-      res.status(201).json(assignment);
+      res.status(201).json(buildAssignmentPayload(assignment));
     } catch (err) {
       console.log("CREATE ASSIGNMENT ERROR:", err);
       res.status(500).json({ message: "Failed to create assignment" });
@@ -2171,7 +2263,7 @@ app.delete("/api/assignments/delete/:id", verifyToken, verifyTeacher, async (req
 });
 
 app.post(
-  "/api/assignments/upload",
+  ["/api/assignments/upload", "/api/assignments/submit"],
   verifyToken,
   verifyApprovedStudent,
   submissionUpload.single("file"),
@@ -2227,7 +2319,7 @@ app.post(
         submission = await Submission.create(payload);
       }
 
-      res.json({ message: "Assignment submitted successfully.", submission });
+      res.json({ message: "Assignment submitted successfully.", submission: buildSubmissionPayload(submission) });
     } catch (err) {
       console.log("SUBMIT ASSIGNMENT ERROR:", err);
       res.status(500).json({ message: "Upload failed" });
@@ -2265,7 +2357,7 @@ app.post("/api/assignments/give-marks", verifyToken, verifyTeacher, async (req, 
     submission.reviewedAt = new Date();
     await submission.save();
 
-    res.json({ message: "Marks added successfully", submission });
+    res.json({ message: "Marks added successfully", submission: buildSubmissionPayload(submission) });
   } catch (err) {
     console.log("MARK SUBMISSION ERROR:", err);
     res.status(500).json({ message: "Error adding marks" });
@@ -2550,19 +2642,17 @@ app.post(
         });
       }
 
-      // Validate generated questions
+      // Validate and compact generated questions into PPSC/FPSC-style MCQs.
       const validatedQuestions = (generated.questions || [])
-        .filter((q) => {
-          return (
-            q.questionText &&
-            q.questionText.length > 10 &&
-            Array.isArray(q.options) &&
-            q.options.length >= 4 &&
-            q.correctAnswer &&
-            q.options.map((option) => normalizeText(option)).includes(normalizeText(q.correctAnswer)) &&
-            q.explanation
-          );
-        })
+        .map((q) =>
+          sanitizeCompetitiveMCQ(
+            q,
+            difficulty,
+            subject,
+            (generated.questions || []).flatMap((item) => item.options || [])
+          )
+        )
+        .filter(Boolean)
         .slice(0, questionCount);
 
       if (validatedQuestions.length === 0) {

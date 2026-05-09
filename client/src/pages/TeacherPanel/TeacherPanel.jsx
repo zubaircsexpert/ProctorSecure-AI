@@ -130,8 +130,13 @@ const getDaysUntil = (value) => {
   return Math.ceil((target - Date.now()) / (1000 * 60 * 60 * 24));
 };
 
-const buildUploadUrl = (relativePath) =>
-  relativePath ? `${FILE_BASE_URL}/${String(relativePath).replace(/^\/+/, "")}` : "";
+const buildUploadUrl = (fileRef) => {
+  const target = typeof fileRef === "string" ? fileRef : fileRef?.downloadUrl || fileRef?.fileUrl || "";
+  if (!target) return "";
+  if (/^https?:\/\//i.test(target)) return target;
+  if (target.startsWith("/api/")) return `${API.defaults.baseURL}${target}`;
+  return `${FILE_BASE_URL}/${String(target).replace(/^\/+/, "")}`;
+};
 
 function TeacherPanel() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -1996,7 +2001,7 @@ function TeacherPanel() {
 
                     {assignment.fileUrl ? (
                       <a
-                        href={buildUploadUrl(assignment.fileUrl)}
+                        href={buildUploadUrl(assignment)}
                         target="_blank"
                         rel="noreferrer"
                         style={styles.fileLink}
@@ -2027,7 +2032,7 @@ function TeacherPanel() {
                                 </div>
                                 {submission.fileUrl ? (
                                   <a
-                                    href={buildUploadUrl(submission.fileUrl)}
+                                    href={buildUploadUrl(submission)}
                                     target="_blank"
                                     rel="noreferrer"
                                     style={styles.fileLink}

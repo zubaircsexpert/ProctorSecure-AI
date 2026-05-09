@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import axios from "axios";
+import API from "../services/api";
 
 const AssignmentSection = ({ user }) => {
   const [assignments, setAssignments] = useState([]);
 
   useEffect(() => {
     // Fetch assignments from backend
-    axios.get("/api/assignments/all").then(res => setAssignments(res.data));
+    API.get("/api/assignments/all").then((res) => setAssignments(res.data));
   }, []);
 
   const handleFileUpload = async (e, id) => {
@@ -16,7 +16,7 @@ const AssignmentSection = ({ user }) => {
     formData.append("assignmentId", id);
     formData.append("studentId", user._id);
 
-    await axios.post("/api/assignments/submit", formData);
+    await API.post("/api/assignments/submit", formData);
     alert("Assignment Uploaded!");
   };
 

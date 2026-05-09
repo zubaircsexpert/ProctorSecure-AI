@@ -4,10 +4,20 @@ import API from "../../services/api";
 
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
+const buildFileUrl = (item) => {
+  const target = item?.downloadUrl || item?.fileUrl || "";
+  if (!target) return "";
+  if (/^https?:\/\//i.test(target)) return target;
+  if (target.startsWith("/api/")) return `${API.defaults.baseURL}${target}`;
+  return `${FILE_BASE_URL}/${String(target).replace(/^\/+/, "")}`;
+};
+
 const AssignmentList = () => {
   const [assignments, setAssignments] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState({});
   const [submittingId, setSubmittingId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [notice, setNotice] = useState("");
 
   const fetchAssignments = async () => {
     try {
@@ -15,6 +25,9 @@ const AssignmentList = () => {
       setAssignments(Array.isArray(response.data) ? response.data : []);
     } catch (error) {
       console.error("Assignment fetch failed", error);
+      setNotice(error.response?.data?.message || "Assignments could not be loaded.");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -40,10 +53,11 @@ const AssignmentList = () => {
         ...previous,
         [assignmentId]: null,
       }));
+      setNotice("Assignment uploaded successfully.");
       await fetchAssignments();
     } catch (error) {
       console.error("Assignment upload failed", error);
-      window.alert(error.response?.data?.message || "Upload failed.");
+      setNotice(error.response?.data?.message || "Upload failed.");
     } finally {
       setSubmittingId("");
     }
@@ -73,6 +87,8 @@ const AssignmentList = () => {
         </div>
       </section>
 
+      {notice ? <div style={styles.notice}>{notice}</div> : null}
+
       <section style={styles.card}>
         <div style={styles.sectionHead}>
           <div>
@@ -84,7 +100,9 @@ const AssignmentList = () => {
           </div>
         </div>
 
-        {assignments.length === 0 ? (
+        {loading ? (
+          <div style={styles.emptyState}>Loading assignments...</div>
+        ) : assignments.length === 0 ? (
           <div style={styles.emptyState}>No assignment has been posted for your class yet.</div>
         ) : (
           <div style={styles.list}>
@@ -127,7 +145,7 @@ const AssignmentList = () => {
                   <div style={styles.linkRow}>
                     {assignment.fileUrl ? (
                       <a
-                        href={`${FILE_BASE_URL}/${assignment.fileUrl}`}
+                        href={buildFileUrl(assignment)}
                         target="_blank"
                         rel="noreferrer"
                         style={styles.linkChip}
@@ -139,7 +157,7 @@ const AssignmentList = () => {
 
                     {mySubmission?.fileUrl ? (
                       <a
-                        href={`${FILE_BASE_URL}/${mySubmission.fileUrl}`}
+                        href={buildFileUrl(mySubmission)}
                         target="_blank"
                         rel="noreferrer"
                         style={{ ...styles.linkChip, background: "#ecfdf5", color: "#15803d" }}
@@ -203,6 +221,15 @@ const styles = {
     padding: "26px clamp(16px, 3vw, 34px) 40px",
     background:
       "radial-gradient(circle at top right, rgba(15,118,110,0.08), transparent 28%), linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)",
+  },
+  notice: {
+    margin: "0 0 18px 0",
+    padding: "14px 16px",
+    borderRadius: "16px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    border: "1px solid #bfdbfe",
+    fontWeight: 800,
   },
   hero: {
     display: "grid",

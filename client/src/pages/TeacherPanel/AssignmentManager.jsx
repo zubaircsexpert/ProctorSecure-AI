@@ -1,7 +1,16 @@
 import React from "react";
 import { FileUp, Paperclip, ExternalLink, CheckCircle, Trash2 } from "lucide-react";
+import API from "../../services/api";
 
-const FILE_BASE_URL = "https://proctorsecure-ai-jkc2.onrender.com/uploads";
+const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
+
+const buildFileUrl = (item, fallbackPath = "") => {
+  const target = item?.downloadUrl || item?.fileUrl || fallbackPath || "";
+  if (!target) return "";
+  if (/^https?:\/\//i.test(target)) return target;
+  if (target.startsWith("/api/")) return `${API.defaults.baseURL}${target}`;
+  return `${FILE_BASE_URL}/${String(target).replace(/^\/+/, "")}`;
+};
 
 const AssignmentManager = ({
   assignForm,
@@ -310,7 +319,7 @@ const AssignmentManager = ({
             <div style={linkWrap}>
               {assignment.fileUrl && (
                 <a
-                  href={`${FILE_BASE_URL}/${assignment.fileUrl}`}
+                  href={buildFileUrl(assignment)}
                   target="_blank"
                   rel="noreferrer"
                   style={fileLink}
@@ -321,7 +330,7 @@ const AssignmentManager = ({
               )}
               {assignment.submissionUrl && (
                 <a
-                  href={`${FILE_BASE_URL}/${assignment.submissionUrl}`}
+                  href={buildFileUrl(null, assignment.submissionUrl)}
                   target="_blank"
                   rel="noreferrer"
                   style={{ ...fileLink, background: "#ecfdf5", color: "#15803d" }}

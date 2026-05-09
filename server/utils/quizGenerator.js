@@ -65,24 +65,24 @@ export const extractTextFromImageWithLanguage = async (imagePath, languages = ["
 };
 
 const splitSourceSentences = (text) => {
-    const normalized = String(text || "").replace(/\s+/g, " ").trim();
-    const sentences = normalized
-      .split(/(?<=[.!?])\s+|[\n\r]+|(?:\s[-*]\s)/)
-      .map((sentence) => sentence.trim().replace(/^[\d.)\-\s]+/, ""))
-      .filter((sentence) => sentence.length >= 45 && sentence.length <= 260);
+  const normalized = String(text || "").replace(/\s+/g, " ").trim();
+  const sentences = normalized
+    .split(/(?<=[.!?])\s+|[\n\r]+|(?:\s[-*]\s)/)
+    .map((sentence) => sentence.trim().replace(/^[\d.)\-\s]+/, ""))
+    .filter((sentence) => sentence.length >= 12 && sentence.length <= 180);
 
-    if (sentences.length >= 3) return sentences;
+  if (sentences.length >= 3) return sentences;
 
-    const words = normalized.split(" ").filter(Boolean);
-    const chunked = [];
-    for (let index = 0; index < words.length; index += 24) {
-      const chunk = words.slice(index, index + 32).join(" ").trim();
-      if (chunk.length >= 45) chunked.push(chunk);
-    }
+  const words = normalized.split(" ").filter(Boolean);
+  const chunked = [];
+  for (let index = 0; index < words.length; index += 12) {
+    const chunk = words.slice(index, index + 18).join(" ").trim();
+    if (chunk.length >= 12) chunked.push(chunk);
+  }
 
-    return [...sentences, ...chunked]
-      .filter((sentence, idx, arr) => arr.indexOf(sentence) === idx)
-      .slice(0, 30);
+  return [...sentences, ...chunked]
+    .filter((sentence, idx, arr) => arr.indexOf(sentence) === idx)
+    .slice(0, 80);
 };
 
 const extractKeywordPhrases = (text, subject = "General") => {
@@ -139,27 +139,171 @@ const extractKeywordPhrases = (text, subject = "General") => {
   return [...phrases.values()].slice(0, 80);
 };
 
-const shortenOption = (sentence) => {
-  const cleaned = String(sentence || "").trim().replace(/\s+/g, " ");
-  return cleaned.length > 145 ? `${cleaned.slice(0, 142).trim()}...` : cleaned;
+const sentenceCase = (value) => {
+  const text = String(value || "").trim();
+  return text ? `${text.charAt(0).toUpperCase()}${text.slice(1)}` : "";
 };
 
-const buildQuestionFromSentence = (sentence, keyword, idx, difficulty, subject) => {
-  const questionTemplates = [
-    `According to the uploaded ${subject} material, which statement best explains ${keyword}?`,
-    `Which source-based statement is most directly connected with ${keyword}?`,
-    `What does the provided content indicate about ${keyword}?`,
-    `In the study material, which option correctly describes the idea around ${keyword}?`,
-  ];
+const cleanExamText = (value, maxWords = 7, maxChars = 54) => {
+  const withoutLabels = String(value || "")
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/\([^)]{35,}\)/g, " ")
+    .replace(/^[A-D][.)]\s*/i, "")
+    .replace(/^[\d.)\-\s]+/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const compact = withoutLabels
+    .split(/\s+/)
+    .filter((word) => word.length <= 28)
+    .slice(0, maxWords)
+    .join(" ")
+    .replace(/[,:;.\s]+$/, "")
+    .trim();
 
-  return {
-    questionText: questionTemplates[idx % questionTemplates.length],
-    correctAnswer: shortenOption(sentence),
-    explanation: `The correct option is taken from the uploaded content and directly supports the question about ${keyword}.`,
-    difficultyTag: difficulty,
-    topic: keyword || subject || "General",
-    conceptsInvolved: [keyword || subject || "General"],
-  };
+  return sentenceCase(compact.length > maxChars ? compact.slice(0, maxChars).replace(/\s+\S*$/, "") : compact);
+};
+
+const isBadExamText = (value) => {
+  const text = String(value || "").trim();
+  const words = text.split(/\s+/).filter(Boolean);
+  return (
+    !text ||
+    text.length > 90 ||
+    words.length > 14 ||
+    /according to|uploaded|material|statement best explains|source-based|provided content/i.test(text)
+  );
+};
+
+const normalizeQuestion = (question) => {
+  const text = cleanExamText(question, 14, 88).replace(/\?+$/, "");
+  return text ? `${text}?` : "";
+};
+
+const normalizeOption = (option) => cleanExamText(option, 5, 42);
+
+const shuffleBySeed = (items, seed = 0) => {
+  const copy = [...items];
+  for (let i = copy.length - 1; i > 0; i -= 1) {
+    const j = (seed + i * 7) % (i + 1);
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+};
+
+const buildDistractors = (correctAnswer, pool, count = 3) => {
+  const correct = normalizeOption(correctAnswer);
+  const normalizedPool = pool
+    .map((item) => normalizeOption(item))
+    .filter((item) => item && item.toLowerCase() !== correct.toLowerCase())
+    .filter((item, idx, arr) => arr.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === idx);
+
+  const generic = [
+    "India",
+    "China",
+    "Australia",
+    "Canada",
+    "Nile",
+    "Amazon",
+    "Karachi",
+    "Islamabad",
+    "Lahore",
+    "1956",
+    "1947",
+    "1962",
+    "CPU",
+    "RAM",
+    "HTTP",
+    "Democracy",
+  ].filter((item) => item.toLowerCase() !== correct.toLowerCase());
+
+  return [...normalizedPool, ...generic]
+    .filter((item, idx, arr) => arr.findIndex((candidate) => candidate.toLowerCase() === item.toLowerCase()) === idx)
+    .slice(0, count);
+};
+
+const addFact = (facts, seen, questionText, correctAnswer, topic, sourceType = "fact") => {
+  const question = normalizeQuestion(questionText);
+  const answer = normalizeOption(correctAnswer);
+  if (!question || !answer || isBadExamText(question) || answer.length < 2) return;
+
+  const key = `${question.toLowerCase()}::${answer.toLowerCase()}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  facts.push({ questionText: question, correctAnswer: answer, topic: cleanExamText(topic || answer, 5, 42), sourceType });
+};
+
+const extractExamFacts = (text, subject = "General") => {
+  const facts = [];
+  const seen = new Set();
+  const sentences = splitSourceSentences(text);
+  const lines = String(text || "")
+    .split(/\n|(?<=\.)\s+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  [...lines, ...sentences].forEach((line) => {
+    const cleanLine = line.replace(/\s+/g, " ").trim();
+    if (!cleanLine || cleanLine.length > 190) return;
+
+    const capital = cleanLine.match(/capital of ([A-Za-z\s-]{3,40})\s+(?:is|:|-)\s+([A-Za-z\s-]{3,35})/i);
+    if (capital) {
+      addFact(facts, seen, `Capital of ${capital[1]}?`, capital[2], "Capital", "capital");
+    }
+
+    const namedFact = cleanLine.match(/^([A-Za-z][A-Za-z\s/-]{3,48})\s*(?:-|:|=)\s*([A-Za-z0-9][A-Za-z0-9\s/-]{1,48})$/);
+    if (namedFact) {
+      const label = cleanExamText(namedFact[1], 7, 54);
+      const answer = cleanExamText(namedFact[2], 5, 42);
+      const lowerLabel = label.toLowerCase();
+      if (/capital/.test(lowerLabel)) addFact(facts, seen, `${label}?`, answer, label, "pair");
+      else if (/first|largest|longest|highest|deepest|oldest|founder|president|prime minister|river|mountain|city|country/.test(lowerLabel)) {
+        addFact(facts, seen, `Which is the ${label}?`, answer, label, "pair");
+      } else {
+        addFact(facts, seen, `What is ${label}?`, answer, label, "pair");
+      }
+    }
+
+    [
+      { regex: /\blongest\s+river\s+([A-Za-z-]{3,30})/i, question: "Which is the longest river?", topic: "Longest river" },
+      { regex: /\blargest\s*(?:\([^)]*\))?\s+([A-Za-z-]{3,30})/i, question: "Which river has largest volume?", topic: "Largest river" },
+      { regex: /\bdeepest\s+river\s+([A-Za-z-]{3,30})/i, question: "Which is the deepest river?", topic: "Deepest river" },
+      { regex: /\bhighest\s+mountain\s+([A-Za-z-]{3,30})/i, question: "Which is the highest mountain?", topic: "Highest mountain" },
+    ].forEach((pattern) => {
+      const match = cleanLine.match(pattern.regex);
+      if (match) addFact(facts, seen, pattern.question, match[1], pattern.topic, "direct");
+    });
+
+    const superlative = cleanLine.match(/\b(first|largest|longest|highest|deepest|oldest|smallest)\s+([A-Za-z\s-]{3,45})\s+(?:is|was|:|-)\s*([A-Z][A-Za-z0-9\s-]{2,42})/i);
+    if (superlative) {
+      const topic = `${superlative[1]} ${superlative[2]}`;
+      addFact(facts, seen, `Which is the ${topic}?`, superlative[3], topic, "superlative");
+    }
+
+    const definition = cleanLine.match(/^([A-Z][A-Za-z0-9\s/-]{2,45})\s+(?:is|means|refers to|stands for)\s+(.{4,90})$/i);
+    if (definition && !/^capital of\b/i.test(definition[1])) {
+      addFact(facts, seen, `What is ${definition[1]}?`, definition[2], definition[1], "definition");
+    }
+
+    const firstPerson = cleanLine.match(/^([A-Z][A-Za-z\s.-]{3,45})\s+was\s+(?:the\s+)?first\s+([A-Za-z\s-]{3,55})/);
+    if (firstPerson) {
+      addFact(facts, seen, `Who was the first ${firstPerson[2]}?`, firstPerson[1], firstPerson[2], "person");
+    }
+
+    const dateFact = cleanLine.match(/\b([A-Z][A-Za-z\s-]{3,45})\s+(?:was|were|is|formed|founded|established|created)\s+(?:in|on)\s+(\d{4}|[A-Z][a-z]+\s+\d{1,2},?\s+\d{4})/);
+    if (dateFact) {
+      addFact(facts, seen, `When was ${dateFact[1]} founded?`, dateFact[2], dateFact[1], "date");
+    }
+  });
+
+  if (facts.length >= 3) return facts.slice(0, 80);
+
+  const keywords = extractKeywordPhrases(text, subject);
+  keywords.slice(0, 30).forEach((keyword, index) => {
+    const answer = keywords[(index + 1) % keywords.length] || keyword;
+    addFact(facts, seen, `Which term is linked with ${keyword}?`, answer, keyword, "keyword");
+  });
+
+  return facts.slice(0, 80);
 };
 
 /**
@@ -342,52 +486,75 @@ export const parseAIMCQResponse = (rawResponse) => {
   }
 };
 
+export const sanitizeCompetitiveMCQ = (question, difficulty = "medium", subject = "General", pool = []) => {
+  if (!question) return null;
+
+  const questionText = normalizeQuestion(question.questionText);
+  const correctAnswer = normalizeOption(question.correctAnswer);
+  const rawOptions = Array.isArray(question.options) ? question.options : [];
+  const options = rawOptions
+    .map(normalizeOption)
+    .filter(Boolean)
+    .filter((option, idx, arr) => arr.findIndex((item) => item.toLowerCase() === option.toLowerCase()) === idx);
+
+  if (!questionText || !correctAnswer || isBadExamText(questionText)) return null;
+
+  const answerExists = options.some((option) => option.toLowerCase() === correctAnswer.toLowerCase());
+  const distractors = buildDistractors(correctAnswer, [...options, ...pool], 3);
+  const finalOptions = [answerExists ? options.find((option) => option.toLowerCase() === correctAnswer.toLowerCase()) : correctAnswer, ...distractors]
+    .filter(Boolean)
+    .filter((option, idx, arr) => arr.findIndex((item) => item.toLowerCase() === option.toLowerCase()) === idx)
+    .slice(0, 4);
+
+  if (finalOptions.length !== 4) return null;
+
+  const finalAnswer =
+    finalOptions.find((option) => option.toLowerCase() === correctAnswer.toLowerCase()) || finalOptions[0];
+
+  return {
+    questionText,
+    options: finalOptions,
+    correctAnswer: finalAnswer,
+    explanation:
+      cleanExamText(question.explanation, 18, 140) ||
+      `${finalAnswer} is the correct answer based on the uploaded study material.`,
+    difficultyTag: question.difficultyTag || difficulty,
+    topic: cleanExamText(question.topic || subject, 5, 42) || subject || "General",
+    conceptsInvolved: Array.isArray(question.conceptsInvolved)
+      ? question.conceptsInvolved.map((item) => cleanExamText(item, 4, 32)).filter(Boolean).slice(0, 4)
+      : [cleanExamText(question.topic || subject, 4, 32) || "General"],
+  };
+};
+
 /**
- * Generate fallback high-quality MCQs from text
+ * Generate fallback competitive-exam MCQs from extracted facts.
  */
 export const generateFallbackMCQs = (text, count = 5, difficulty = "medium", subject = "General") => {
-  const sentences = splitSourceSentences(text);
-  const keywords = extractKeywordPhrases(text, subject);
-  const sourceOptions = sentences.map(shortenOption).filter((option, idx, arr) => arr.indexOf(option) === idx);
-
+  const facts = extractExamFacts(text, subject);
+  const answerPool = facts.map((fact) => fact.correctAnswer);
   const questions = [];
-  const usableCount = Math.min(count, sentences.length);
 
-  for (let i = 0; i < usableCount; i++) {
-    const sentence = sentences[i];
-    const sentenceLower = sentence.toLowerCase();
-    const keyword =
-      keywords.find((item) => sentenceLower.includes(item.toLowerCase())) ||
-      keywords[i % Math.max(keywords.length, 1)] ||
-      subject ||
-      "the selected topic";
+  for (let i = 0; i < facts.length && questions.length < count; i += 1) {
+    const fact = facts[i];
+    const distractors = buildDistractors(fact.correctAnswer, answerPool, 3);
+    const options = shuffleBySeed([fact.correctAnswer, ...distractors].slice(0, 4), i);
 
-    const baseQuestion = buildQuestionFromSentence(sentence, keyword, i, difficulty, subject);
-    const distractors = sourceOptions
-      .filter((option) => option !== baseQuestion.correctAnswer)
-      .filter((option) => !option.toLowerCase().includes(String(keyword).toLowerCase()))
-      .slice(i + 1)
-      .concat(sourceOptions.filter((option) => option !== baseQuestion.correctAnswer))
-      .filter((option, idx, arr) => arr.indexOf(option) === idx)
-      .slice(0, 3);
+    const sanitized = sanitizeCompetitiveMCQ(
+      {
+        questionText: fact.questionText,
+        options,
+        correctAnswer: fact.correctAnswer,
+        explanation: `${fact.correctAnswer} is the correct answer for ${fact.topic || subject}.`,
+        difficultyTag: difficulty,
+        topic: fact.topic || subject,
+        conceptsInvolved: [fact.topic || subject],
+      },
+      difficulty,
+      subject,
+      answerPool
+    );
 
-    const keywordDistractors = keywords
-      .filter((item) => item.toLowerCase() !== String(keyword).toLowerCase())
-      .slice(0, 3)
-      .map((item) => `The material mainly identifies ${item} as the answer instead.`);
-
-    const options = [baseQuestion.correctAnswer, ...distractors, ...keywordDistractors]
-      .filter(Boolean)
-      .filter((option, idx, arr) => arr.indexOf(option) === idx)
-      .slice(0, 4);
-
-    if (options.length >= 4) {
-      const rotatedOptions = [...options.slice(i % 4), ...options.slice(0, i % 4)];
-      questions.push({
-        ...baseQuestion,
-        options: rotatedOptions,
-      });
-    }
+    if (sanitized) questions.push(sanitized);
   }
 
   return questions;
@@ -415,16 +582,17 @@ export const buildEnhancedQuizPrompt = (
     hard: "Focus on synthesis, evaluation, critical analysis, and complex reasoning. Include multi-step problem solving and comparison of concepts.",
   };
 
-  const prompt = `You are an expert AI Quiz Generator for academic assessments. Generate EXACTLY ${count} unique, high-quality multiple-choice questions from the provided educational content.
+  const prompt = `You are an expert PPSC/FPSC/entry-test MCQ generator. Generate EXACTLY ${count} concise competitive-exam questions from the provided educational content.
 
 CRITICAL REQUIREMENTS:
-1. Each question MUST be directly derived from the provided content
-2. Generate REAL exam-style questions, NOT placeholder content
-3. Each option MUST be meaningful and plausible (avoid "Option A", "Option B", etc.)
-4. Ensure options are similar in length and complexity
-5. Make exactly ONE option clearly correct
-6. Provide clear, educational explanations
-7. ${languageInstruction}
+1. Create short one-line MCQs like PPSC/FPSC past papers.
+2. Do NOT copy full PDF lines. Extract facts, dates, terms, definitions, people, places, abbreviations, and concepts.
+3. Question length target: 3-12 words. Never mention uploaded material, source, passage, paragraph, or document.
+4. Each question MUST have exactly 4 short options. Option target: 1-5 words.
+5. Create realistic distractors from related facts in the content.
+6. Exactly one option must be correct and correctAnswer must exactly match one option.
+7. Prefer direct forms such as "Capital of Australia?", "Who was the first Prime Minister of Pakistan?", "Which is the longest river?"
+8. ${languageInstruction}
 
 DIFFICULTY LEVEL: ${difficulty.toUpperCase()}
 ${difficultyGuide[difficulty] || difficultyGuide.medium}
@@ -440,15 +608,15 @@ OUTPUT FORMAT (JSON only, no additional text):
   "language": "${language}",
   "questions": [
     {
-      "questionText": "Complete question (at least 10 words, derived from content)",
+      "questionText": "Short exam-style question?",
       "options": [
-        "First meaningful option (8-15 words)",
-        "Second meaningful option (8-15 words)",
-        "Third meaningful option (8-15 words)",
-        "Fourth meaningful option (8-15 words)"
+        "Short option",
+        "Short option",
+        "Short option",
+        "Short option"
       ],
       "correctAnswer": "Exact text of the correct option from above",
-      "explanation": "Clear explanation (2-3 sentences) with reference to the source material",
+      "explanation": "One short reason for the answer",
       "difficultyTag": "${difficulty}",
       "topic": "Specific topic from ${subject}",
       "conceptsInvolved": ["concept1", "concept2"]
@@ -460,11 +628,10 @@ EDUCATIONAL CONTENT:
 ${extractedText}
 
 VALIDATION CHECKLIST:
-- Every question is conceptually unique
-- Each option is distinct and realistic
+- Every question is concise, readable, and conceptually unique
+- Every question has exactly 4 short options
 - No placeholder text is used
 - All questions relate to the provided content
-- Explanations reference specific parts of the material
 - Difficulty matches the requested level
 `;
 
@@ -509,6 +676,7 @@ export default {
   chunkTextForAI,
   validateMCQOptions,
   parseAIMCQResponse,
+  sanitizeCompetitiveMCQ,
   generateFallbackMCQs,
   buildEnhancedQuizPrompt,
   enhanceQuizMetadata,
