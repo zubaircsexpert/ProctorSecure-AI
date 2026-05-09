@@ -22,6 +22,7 @@ const AiTutor = lazy(() => import("./pages/StudentPanel/AiTutor"));
 const QuizGenerator = lazy(() => import("./pages/StudentPanel/QuizGenerator"));
 const Dashboard = lazy(() => import("./pages/StudentPanel/Dashboard"));
 const Exam = lazy(() => import("./pages/StudentPanel/Exam"));
+const ExamAI = lazy(() => import("./pages/ExamAI"));
 const Notifications = lazy(() => import("./pages/StudentPanel/Notifications"));
 const PerformanceAnalytics = lazy(() => import("./pages/StudentPanel/PerformanceAnalytics"));
 const Results = lazy(() => import("./pages/StudentPanel/Results"));
@@ -218,6 +219,17 @@ function App() {
             <ProtectedRoute allowedRole="student">
               <PageShell>
                 <Exam />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/exam-ai"
+          element={
+            <ProtectedRoute>
+              <PageShell top={0}>
+                <ExamAI />
               </PageShell>
             </ProtectedRoute>
           }

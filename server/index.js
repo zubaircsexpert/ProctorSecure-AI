@@ -28,6 +28,10 @@ import SystemCheck from "./models/SystemCheck.js";
 import SystemAccess from "./models/SystemAccess.js";
 import Quiz from "./models/Quiz.js";
 import GeneratedQuestion from "./models/GeneratedQuestion.js";
+import ExamAI from "./models/ExamAI.js";
+import ExamAIResult from "./models/ExamAIResult.js";
+import ExamViolation from "./models/ExamViolation.js";
+import AIReport from "./models/AIReport.js";
 import {
   extractTextFromImage,
   extractTextFromImageWithLanguage,
@@ -3244,6 +3248,290 @@ app.put("/api/admin/exams/:id/status", verifyToken, verifyAdmin, async (req, res
   } catch (err) {
     console.log("ADMIN EXAM STATUS ERROR:", err);
     res.status(500).json({ message: "Failed to update assessment status." });
+  }
+});
+
+const violationWeights = {
+  tab_switch: 10,
+  focus_loss: 10,
+  fullscreen_exit: 15,
+  copy: 25,
+  paste: 25,
+  cut: 20,
+  right_click: 12,
+  text_selection: 8,
+  inspect_element: 40,
+  keyboard_shortcut: 20,
+  print_screen: 30,
+  browser_resize: 8,
+  inactivity: 10,
+  no_face: 25,
+  multiple_faces: 50,
+  looking_away: 20,
+  head_movement: 15,
+  voice_detected: 20,
+  camera_disabled: 35,
+  microphone_disabled: 15,
+};
+
+const getIntegrityStatus = (score) => {
+  if (score >= 150) return "Failed Integrity Check";
+  if (score >= 70) return "Suspicious";
+  return "Passed";
+};
+
+const buildExamAIPayload = (exam) => ({
+  id: exam._id,
+  title: exam.title,
+  description: exam.description || "",
+  subject: exam.subject,
+  duration: exam.duration,
+  totalMarks: exam.totalMarks,
+  passingMarks: exam.passingMarks,
+  isPublished: exam.isPublished,
+  status: exam.status,
+  securitySettings: exam.securitySettings || {},
+  aiMonitoring: exam.aiMonitoring || {},
+  cheatingThresholds: exam.cheatingThresholds || {},
+  questionCount: exam.questions?.length || exam.questionCount || 0,
+  questions: (exam.questions || []).map((question) => ({
+    id: question._id,
+    questionText: question.questionText,
+    options: question.options || [],
+    correctAnswer: question.correctAnswer,
+    explanation: question.explanation || "",
+    topic: question.topic || exam.subject,
+  })),
+  createdAt: exam.createdAt,
+});
+
+app.get("/api/exam-ai", verifyToken, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    const query =
+      user.role === "teacher"
+        ? { createdBy: user._id }
+        : user.role === "student"
+        ? {
+            isPublished: true,
+            status: "published",
+            $or: [
+              { showAllClassroomStudents: true, classroom: user.classroomId || null },
+              { allowedStudents: user._id },
+            ],
+          }
+        : {};
+
+    const exams = await ExamAI.find(query).sort({ createdAt: -1 }).populate("questions").lean();
+    res.json(exams.map(buildExamAIPayload));
+  } catch (err) {
+    console.log("EXAM AI LIST ERROR:", err);
+    res.status(500).json({ message: "Failed to load Exam AI workspace." });
+  }
+});
+
+app.post("/api/exam-ai", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const title = normalizeText(req.body.title);
+    const subject = normalizeText(req.body.subject) || "General";
+    const duration = Number(req.body.duration) || 30;
+    const passingMarks = Number(req.body.passingMarks) || 1;
+    const questions = Array.isArray(req.body.questions) ? req.body.questions : [];
+
+    if (!title || questions.length < 1) {
+      return res.status(400).json({ message: "Title and at least one MCQ are required." });
+    }
+
+    const questionDocs = await GeneratedQuestion.insertMany(
+      questions.map((question, index) => ({
+        quizId: null,
+        questionText: normalizeText(question.questionText),
+        options: (question.options || []).map((option) => normalizeText(option)).filter(Boolean).slice(0, 4),
+        correctAnswer: normalizeText(question.correctAnswer),
+        explanation: normalizeText(question.explanation || ""),
+        difficultyTag: normalizeText(question.difficultyTag || "medium"),
+        topic: normalizeText(question.topic || subject),
+        conceptsInvolved: question.conceptsInvolved || [],
+        order: index + 1,
+      }))
+    );
+
+    const exam = await ExamAI.create({
+      title,
+      description: normalizeText(req.body.description),
+      subject,
+      duration,
+      totalMarks: questions.length,
+      passingMarks,
+      questions: questionDocs.map((question) => question._id),
+      questionCount: questionDocs.length,
+      createdBy: req.user.userId,
+      classroom: req.body.classroom || null,
+      isPublished: Boolean(req.body.isPublished),
+      status: req.body.isPublished ? "published" : "draft",
+      securitySettings: req.body.securitySettings || {},
+      aiMonitoring: req.body.aiMonitoring || {},
+    });
+
+    const responseExam = await ExamAI.findById(exam._id).populate("questions").lean();
+    res.status(201).json({ message: "Exam AI created.", exam: buildExamAIPayload(responseExam) });
+  } catch (err) {
+    console.log("EXAM AI CREATE ERROR:", err);
+    res.status(500).json({ message: "Failed to create Exam AI." });
+  }
+});
+
+app.put("/api/exam-ai/:id/status", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam AI not found." });
+
+    exam.isPublished = Boolean(req.body.isPublished);
+    exam.status = exam.isPublished ? "published" : "draft";
+    await exam.save();
+    res.json({ message: "Exam AI status updated." });
+  } catch (err) {
+    console.log("EXAM AI STATUS ERROR:", err);
+    res.status(500).json({ message: "Failed to update Exam AI status." });
+  }
+});
+
+app.delete("/api/exam-ai/:id", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam AI not found." });
+
+    await GeneratedQuestion.deleteMany({ _id: { $in: exam.questions || [] } });
+    await ExamViolation.deleteMany({ examId: exam._id });
+    await ExamAIResult.deleteMany({ examId: exam._id });
+    await AIReport.deleteMany({ examId: exam._id });
+    await exam.deleteOne();
+    res.json({ message: "Exam AI deleted." });
+  } catch (err) {
+    console.log("EXAM AI DELETE ERROR:", err);
+    res.status(500).json({ message: "Failed to delete Exam AI." });
+  }
+});
+
+app.post("/api/exam-ai/:id/violations", verifyToken, verifyApprovedStudent, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    const exam = await ExamAI.findById(req.params.id);
+    if (!user || !exam) return res.status(404).json({ message: "Exam AI not found." });
+
+    const violationType = normalizeText(req.body.violationType || req.body.type || "unknown");
+    const weight = Number(req.body.weight ?? violationWeights[violationType] ?? 5);
+
+    const violation = await ExamViolation.create({
+      studentId: user._id,
+      studentName: user.name,
+      examId: exam._id,
+      violationType,
+      message: normalizeText(req.body.message),
+      confidenceScore: Number(req.body.confidenceScore || 1),
+      weight,
+      metadata: req.body.metadata || {},
+    });
+
+    res.status(201).json({ violation, weight });
+  } catch (err) {
+    console.log("EXAM AI VIOLATION ERROR:", err);
+    res.status(500).json({ message: "Failed to store violation." });
+  }
+});
+
+app.post("/api/exam-ai/:id/submit", verifyToken, verifyApprovedStudent, async (req, res) => {
+  try {
+    const user = await getDbUser(req.user.userId);
+    const exam = await ExamAI.findById(req.params.id).populate("questions");
+    if (!user || !exam) return res.status(404).json({ message: "Exam AI not found." });
+
+    const submittedAnswers = req.body.answers || {};
+    let correctAnswers = 0;
+    const answers = (exam.questions || []).map((question, index) => {
+      const selected = submittedAnswers[question._id] ?? submittedAnswers[index] ?? "";
+      const isCorrect = normalizeText(selected) === normalizeText(question.correctAnswer);
+      if (isCorrect) correctAnswers += 1;
+      return {
+        questionId: question._id,
+        questionText: question.questionText,
+        selectedAnswer: selected,
+        correctAnswer: question.correctAnswer,
+        isCorrect,
+        explanation: question.explanation || "",
+      };
+    });
+
+    const storedViolations = await ExamViolation.find({ examId: exam._id, studentId: user._id }).lean();
+    const incomingViolations = Array.isArray(req.body.violations) ? req.body.violations : [];
+    const incomingScore = incomingViolations.reduce(
+      (sum, item) => sum + Number(item.weight ?? violationWeights[item.violationType] ?? 0),
+      0
+    );
+    const cheatingScore =
+      storedViolations.reduce((sum, item) => sum + Number(item.weight || 0), 0) + incomingScore;
+    const totalMarks = exam.questions.length || 1;
+    const percentage = Math.round((correctAnswers / totalMarks) * 100);
+    const integrityScore = Math.max(0, 100 - cheatingScore);
+    const integrityStatus = getIntegrityStatus(cheatingScore);
+
+    const result = await ExamAIResult.create({
+      studentId: user._id,
+      studentName: user.name,
+      examId: exam._id,
+      examTitle: exam.title,
+      score: correctAnswers,
+      totalMarks,
+      percentage,
+      correctAnswers,
+      wrongAnswers: totalMarks - correctAnswers,
+      answers,
+      cheatingScore,
+      integrityScore,
+      integrityStatus,
+    });
+
+    const violationSummary = [...storedViolations, ...incomingViolations].reduce((acc, item) => {
+      const key = item.violationType || "unknown";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    const report = await AIReport.create({
+      studentId: user._id,
+      studentName: user.name,
+      examId: exam._id,
+      examTitle: exam.title,
+      resultId: result._id,
+      totalViolations: storedViolations.length + incomingViolations.length,
+      cheatingScore,
+      integrityScore,
+      integrityStatus,
+      violationSummary,
+      academicSummary: { score: correctAnswers, totalMarks, percentage },
+      voiceActivityAnalysis: { events: violationSummary.voice_detected || 0 },
+      eyeMovementAnalysis: { lookingAway: violationSummary.looking_away || 0 },
+    });
+
+    exam.totalAttempts += 1;
+    await exam.save();
+
+    res.status(201).json({ message: "Exam submitted.", result, report });
+  } catch (err) {
+    console.log("EXAM AI SUBMIT ERROR:", err);
+    res.status(500).json({ message: "Failed to submit Exam AI." });
+  }
+});
+
+app.get("/api/exam-ai/reports/all", verifyToken, verifyStaff, async (req, res) => {
+  try {
+    const reports = await AIReport.find().sort({ createdAt: -1 }).lean();
+    res.json(reports);
+  } catch (err) {
+    console.log("EXAM AI REPORTS ERROR:", err);
+    res.status(500).json({ message: "Failed to load AI reports." });
   }
 });
 

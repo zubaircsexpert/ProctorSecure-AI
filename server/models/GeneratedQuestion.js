@@ -4,7 +4,7 @@ const generatedQuestionSchema = new mongoose.Schema({
   quizId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Quiz",
-    required: true,
+    default: null,
   },
   questionText: { type: String, required: true, trim: true },
   options: {
