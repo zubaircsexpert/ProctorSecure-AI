@@ -1,59 +1,16 @@
 import { useEffect, useState } from "react";
-import { Clock, CheckCircle, XCircle } from "lucide-react";
+import { Clock, CheckCircle, XCircle, Loader, AlertCircle, FileText, Globe } from "lucide-react";
 import API from "../../services/api";
 
 const difficultyOptions = [
-  { value: "easy", label: "Easy" },
-  { value: "medium", label: "Medium" },
-  { value: "hard", label: "Hard" },
+  { value: "easy", label: "Easy - Basic definitions" },
+  { value: "medium", label: "Medium - Application & analysis" },
+  { value: "hard", label: "Hard - Synthesis & evaluation" },
 ];
 
-const DEFAULT_QUESTIONS = [
-  {
-    _id: "default-1",
-    questionText: "What is the primary purpose of a database management system?",
-    options: ["Data storage only", "Data organization and retrieval", "Network management", "System security"],
-    correctAnswer: "Data organization and retrieval",
-    explanation: "DBMS organizes, stores, and efficiently retrieves data with data integrity.",
-    difficultyTag: "easy",
-    topic: "Database",
-  },
-  {
-    _id: "default-2",
-    questionText: "Which of the following is a relational database?",
-    options: ["MongoDB", "MySQL", "Redis", "Cassandra"],
-    correctAnswer: "MySQL",
-    explanation: "MySQL is a popular open-source relational database management system.",
-    difficultyTag: "medium",
-    topic: "Database",
-  },
-  {
-    _id: "default-3",
-    questionText: "What does SQL stand for?",
-    options: ["Structured Query Language", "Simple Question Language", "Standard Query Logic", "Syntax Query Language"],
-    correctAnswer: "Structured Query Language",
-    explanation: "SQL is used to communicate with databases using structured queries.",
-    difficultyTag: "easy",
-    topic: "Database",
-  },
-  {
-    _id: "default-4",
-    questionText: "Which key constraint ensures that each row is uniquely identifiable?",
-    options: ["Foreign Key", "Primary Key", "Unique Key", "Composite Key"],
-    correctAnswer: "Primary Key",
-    explanation: "A Primary Key uniquely identifies each record in a table.",
-    difficultyTag: "medium",
-    topic: "Database",
-  },
-  {
-    _id: "default-5",
-    questionText: "What is normalization in database design?",
-    options: ["Data backup process", "Reducing data redundancy and improving integrity", "Encrypting data", "Creating backups"],
-    correctAnswer: "Reducing data redundancy and improving integrity",
-    explanation: "Normalization organizes data to reduce redundancy and dependency.",
-    difficultyTag: "hard",
-    topic: "Database",
-  },
+const languageOptions = [
+  { value: "english", label: "English" },
+  { value: "urdu", label: "اردو (Urdu)" },
 ];
 
 const downloadBlob = (blob, fileName) => {
@@ -65,7 +22,6 @@ const downloadBlob = (blob, fileName) => {
   link.remove();
 };
 
-
 function QuizGenerator() {
   const [mode, setMode] = useState("generator"); // generator, quiz, results
   const [quizForm, setQuizForm] = useState({
@@ -73,18 +29,24 @@ function QuizGenerator() {
     subject: "",
     category: "",
     difficulty: "medium",
+    language: "english",
     count: 8,
     timeLimit: 30,
     randomize: true,
     negativeMarking: false,
     text: "",
   });
+
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState(""); // Track generation progress
   const [notice, setNotice] = useState("");
+  const [noticeType, setNoticeType] = useState(""); // error, success
   const [quiz, setQuiz] = useState(null);
   const [savedQuizzes, setSavedQuizzes] = useState([]);
-  
+  const [extractedTextPreview, setExtractedTextPreview] = useState("");
+  const [showTextPreview, setShowTextPreview] = useState(false);
+
   // Quiz taking state
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -129,52 +91,93 @@ function QuizGenerator() {
   const handleFileChange = (event) => {
     const selected = event.target.files?.[0] || null;
     setFile(selected);
+    setExtractedTextPreview("");
+    setShowTextPreview(false);
   };
 
   const handleGenerateQuiz = async (event) => {
     event.preventDefault();
     setNotice("");
+    setNoticeType("");
 
     if (!quizForm.title) {
       setNotice("Quiz title is required.");
+      setNoticeType("error");
       return;
     }
 
     if (!quizForm.text && !file) {
       setNotice("Please paste content or upload a file to generate quiz questions.");
+      setNoticeType("error");
+      return;
+    }
+
+    if (quizForm.text && quizForm.text.length < 50) {
+      setNotice("Content is too short. Please provide at least 50 characters.");
+      setNoticeType("error");
       return;
     }
 
     const formData = new FormData();
     formData.append("title", quizForm.title);
-    formData.append("subject", quizForm.subject);
-    formData.append("category", quizForm.category);
+    formData.append("subject", quizForm.subject || "General");
+    formData.append("category", quizForm.category || quizForm.subject || "General");
     formData.append("difficulty", quizForm.difficulty);
+    formData.append("language", quizForm.language);
     formData.append("count", quizForm.count);
     formData.append("timeLimit", quizForm.timeLimit);
     formData.append("randomize", quizForm.randomize);
     formData.append("negativeMarking", quizForm.negativeMarking);
     formData.append("text", quizForm.text);
+
     if (file) {
       formData.append("file", file);
+      setLoadingStatus("📁 Analyzing file...");
+    } else {
+      setLoadingStatus("🤖 Processing content...");
     }
 
     try {
       setLoading(true);
+
+      // Simulate progress updates
+      const progressUpdates = [
+        "📁 Analyzing file...",
+        "🔍 Extracting text and concepts...",
+        "🧠 Sending to AI engine...",
+        "✨ Generating intelligent MCQs...",
+        "✅ Validating questions...",
+      ];
+
+      let updateIndex = 0;
+      const progressInterval = setInterval(() => {
+        if (updateIndex < progressUpdates.length - 1) {
+          updateIndex++;
+          setLoadingStatus(progressUpdates[updateIndex]);
+        }
+      }, 1000);
+
       const response = await API.post("/api/quiz-generator", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
+      clearInterval(progressInterval);
+
       const generatedQuiz = response.data.quiz;
       setQuiz(generatedQuiz);
       setAnswers({});
-      setNotice(response.data.message || "Quiz generated successfully.");
+      setNotice(response.data.message || "✅ Quiz generated successfully!");
+      setNoticeType("success");
       setFile(null);
       setQuizForm((prev) => ({ ...prev, text: "" }));
+      setLoadingStatus("");
+      setExtractedTextPreview("");
       loadSavedQuizzes();
     } catch (error) {
       console.error("Quiz generation error:", error);
-      setNotice(error?.response?.data?.message || "Failed to generate quiz. Try again.");
+      setNotice(error?.response?.data?.message || "❌ Failed to generate quiz. Try again.");
+      setNoticeType("error");
+      setLoadingStatus("");
     } finally {
       setLoading(false);
     }
@@ -231,17 +234,18 @@ function QuizGenerator() {
     });
 
     const percentage = Math.round((score / questionsToUse.length) * 100);
-    
+
     // Generate AI Analysis
     const analysisPrompt = `Analyze these quiz results:\nScore: ${percentage}%\nTotal: ${questionsToUse.length}\nCorrect: ${score}\n\nWeaker topics: ${
       results
         .filter((r) => !r.isCorrect)
         .map((r) => r.topic)
         .join(", ")
-    }\n\nGive a brief learning recommendation.`;
-    
+    }\n\nGive a brief, actionable learning recommendation (2-3 sentences).`;
+
     try {
-      const analysisResponse = await API.post("/api/ai-tutor/ask", 
+      const analysisResponse = await API.post(
+        "/api/ai-tutor/ask",
         { question: analysisPrompt, mode: "quiz" },
         { headers: { "Content-Type": "application/json" } }
       );
@@ -257,21 +261,9 @@ function QuizGenerator() {
       percentage,
       totalQuestions: questionsToUse.length,
     }));
-    
+
     setQuizStarted(false);
     setMode("results");
-  };
-
-  const handleUseDefaults = () => {
-    setQuiz({
-      title: "Default Sample Quiz",
-      subject: "Database Fundamentals",
-      category: "General",
-      difficulty: "medium",
-      timeLimit: 15,
-      questions: DEFAULT_QUESTIONS,
-    });
-    setAnswers({});
   };
 
   const formatTime = (seconds) => {
@@ -280,6 +272,13 @@ function QuizGenerator() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const getScoreColor = (percentage) => {
+    if (percentage >= 80) return "#10b981";
+    if (percentage >= 60) return "#f59e0b";
+    return "#ef4444";
+  };
+
+  // Quiz Taking Mode
   if (mode === "quiz" && quizStarted && quiz) {
     const questionsToUse = quiz.questions || [];
     const currentQ = questionsToUse[currentQuestion];
@@ -288,20 +287,59 @@ function QuizGenerator() {
     return (
       <div style={{ minHeight: "100vh", padding: "20px", background: "#f3f7ff" }}>
         <div style={{ maxWidth: "900px", margin: "0 auto" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", padding: "16px 20px", background: "#ffffff", borderRadius: "20px", boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)" }}>
+          {/* Header */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "24px",
+              padding: "16px 20px",
+              background: "#ffffff",
+              borderRadius: "20px",
+              boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+            }}
+          >
             <div>
-              <div style={{ fontSize: "20px", fontWeight: 800, color: "#0f172a" }}>{quiz.title}</div>
-              <div style={{ color: "#64748b", fontSize: "14px" }}>Question {currentQuestion + 1} of {questionsToUse.length}</div>
+              <div style={{ fontSize: "20px", fontWeight: 800, color: "#0f172a" }}>
+                {quiz.title}
+              </div>
+              <div style={{ color: "#64748b", fontSize: "14px" }}>
+                Question {currentQuestion + 1} of {questionsToUse.length}
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "24px", fontWeight: 800, color: timeLeft < 60 ? "#dc2626" : "#0f172a" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "12px",
+                fontSize: "24px",
+                fontWeight: 800,
+                color: timeLeft < 60 ? "#dc2626" : "#0f172a",
+              }}
+            >
               <Clock size={28} />
               {formatTime(timeLeft)}
             </div>
           </div>
 
           {currentQ ? (
-            <div style={{ background: "#ffffff", borderRadius: "20px", padding: "28px", boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)" }}>
-              <div style={{ fontSize: "18px", fontWeight: 700, color: "#0f172a", marginBottom: "20px" }}>
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "20px",
+                padding: "28px",
+                boxShadow: "0 10px 30px rgba(15, 23, 42, 0.08)",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: "18px",
+                  fontWeight: 700,
+                  color: "#0f172a",
+                  marginBottom: "20px",
+                }}
+              >
                 {currentQ.questionText}
               </div>
 
@@ -313,12 +351,14 @@ function QuizGenerator() {
                     style={{
                       padding: "16px 18px",
                       borderRadius: "14px",
-                      border: selectedAnswer === option ? "2px solid #2563eb" : "1px solid #e2e8f0",
+                      border:
+                        selectedAnswer === option ? "2px solid #2563eb" : "1px solid #e2e8f0",
                       background: selectedAnswer === option ? "#eff6ff" : "#f8fafc",
                       color: "#0f172a",
                       fontWeight: 700,
                       cursor: "pointer",
                       textAlign: "left",
+                      transition: "all 0.2s",
                     }}
                   >
                     {String.fromCharCode(65 + idx)}. {option}
@@ -330,7 +370,15 @@ function QuizGenerator() {
                 <button
                   onClick={handlePreviousQuestion}
                   disabled={currentQuestion === 0}
-                  style={{ padding: "12px 20px", borderRadius: "14px", border: "1px solid #cbd5e1", background: "#f8fafc", cursor: "pointer", opacity: currentQuestion === 0 ? 0.5 : 1 }}
+                  style={{
+                    padding: "12px 20px",
+                    borderRadius: "14px",
+                    border: "1px solid #cbd5e1",
+                    background: "#f8fafc",
+                    cursor: "pointer",
+                    opacity: currentQuestion === 0 ? 0.5 : 1,
+                    fontWeight: 700,
+                  }}
                 >
                   ← Previous
                 </button>
@@ -338,14 +386,29 @@ function QuizGenerator() {
                 {currentQuestion === questionsToUse.length - 1 ? (
                   <button
                     onClick={handleSubmitQuiz}
-                    style={{ padding: "12px 24px", borderRadius: "14px", border: "none", background: "#10b981", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+                    style={{
+                      padding: "12px 24px",
+                      borderRadius: "14px",
+                      border: "none",
+                      background: "#10b981",
+                      color: "#fff",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
                   >
                     Submit Quiz
                   </button>
                 ) : (
                   <button
                     onClick={handleNextQuestion}
-                    style={{ padding: "12px 20px", borderRadius: "14px", border: "1px solid #cbd5e1", background: "#f8fafc", cursor: "pointer" }}
+                    style={{
+                      padding: "12px 20px",
+                      borderRadius: "14px",
+                      border: "1px solid #cbd5e1",
+                      background: "#f8fafc",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
                   >
                     Next →
                   </button>
@@ -358,30 +421,66 @@ function QuizGenerator() {
     );
   }
 
+  // Results Mode
   if (mode === "results" && quiz?.results) {
     return (
       <div style={{ minHeight: "100vh", padding: "20px", background: "#f3f7ff" }}>
         <div style={{ maxWidth: "900px", margin: "0 auto", display: "grid", gap: "24px" }}>
-          <div style={{ background: "linear-gradient(135deg, #2563eb, #0ea5e9)", borderRadius: "24px", padding: "32px", color: "#fff", textAlign: "center" }}>
-            <div style={{ fontSize: "48px", fontWeight: 900, marginBottom: "12px" }}>{quiz.percentage}%</div>
+          {/* Score Card */}
+          <div
+            style={{
+              background: `linear-gradient(135deg, ${getScoreColor(quiz.percentage)}, ${
+                getScoreColor(quiz.percentage) === "#10b981" ? "#059669" : "#f97316"
+              })`,
+              borderRadius: "24px",
+              padding: "32px",
+              color: "#fff",
+              textAlign: "center",
+            }}
+          >
+            <div style={{ fontSize: "48px", fontWeight: 900, marginBottom: "12px" }}>
+              {quiz.percentage}%
+            </div>
             <div style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px" }}>
               {quiz.score} out of {quiz.totalQuestions} correct
             </div>
             <div style={{ opacity: 0.9 }}>
-              {quiz.percentage >= 80 ? "Excellent performance! 🎉" : quiz.percentage >= 60 ? "Good job! Keep practicing." : "Keep studying and try again!"}
+              {quiz.percentage >= 80
+                ? "🎉 Excellent performance!"
+                : quiz.percentage >= 60
+                ? "👏 Good job! Keep practicing."
+                : "💪 Keep studying and try again!"}
             </div>
           </div>
 
           {aiAnalysis ? (
-            <div style={{ background: "#f0f9ff", borderRadius: "20px", padding: "24px", border: "2px solid #0ea5e9" }}>
-              <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a", marginBottom: "12px" }}>📊 AI Analysis & Recommendations</div>
+            <div
+              style={{
+                background: "#f0f9ff",
+                borderRadius: "20px",
+                padding: "24px",
+                border: "2px solid #0ea5e9",
+              }}
+            >
+              <div style={{ fontSize: "16px", fontWeight: 700, color: "#0f172a", marginBottom: "12px" }}>
+                📊 AI Analysis & Recommendations
+              </div>
               <div style={{ color: "#475569", lineHeight: 1.8 }}>{aiAnalysis}</div>
             </div>
           ) : null}
 
+          {/* Results List */}
           <div style={{ display: "grid", gap: "16px" }}>
             {quiz.results?.map((result, idx) => (
-              <div key={idx} style={{ background: "#ffffff", borderRadius: "16px", padding: "20px", border: result.isCorrect ? "2px solid #10b981" : "2px solid #ef4444" }}>
+              <div
+                key={idx}
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "16px",
+                  padding: "20px",
+                  border: result.isCorrect ? "2px solid #10b981" : "2px solid #ef4444",
+                }}
+              >
                 <div style={{ display: "flex", gap: "12px", alignItems: "start", marginBottom: "12px" }}>
                   {result.isCorrect ? (
                     <CheckCircle size={24} color="#10b981" style={{ flexShrink: 0 }} />
@@ -389,7 +488,9 @@ function QuizGenerator() {
                     <XCircle size={24} color="#ef4444" style={{ flexShrink: 0 }} />
                   )}
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, color: "#0f172a" }}>{idx + 1}. {result.questionText}</div>
+                    <div style={{ fontWeight: 700, color: "#0f172a" }}>
+                      {idx + 1}. {result.questionText}
+                    </div>
                     <div style={{ color: "#64748b", fontSize: "14px", marginTop: "4px" }}>
                       Your answer: <strong>{result.userAnswer}</strong>
                     </div>
@@ -399,7 +500,16 @@ function QuizGenerator() {
                       </div>
                     ) : null}
                     {result.explanation ? (
-                      <div style={{ color: "#475569", fontSize: "14px", marginTop: "8px", padding: "12px", background: "#f8fafc", borderRadius: "10px" }}>
+                      <div
+                        style={{
+                          color: "#475569",
+                          fontSize: "14px",
+                          marginTop: "8px",
+                          padding: "12px",
+                          background: "#f8fafc",
+                          borderRadius: "10px",
+                        }}
+                      >
                         {result.explanation}
                       </div>
                     ) : null}
@@ -416,49 +526,90 @@ function QuizGenerator() {
               setAnswers({});
               setCurrentQuestion(0);
             }}
-            style={{ padding: "16px 24px", borderRadius: "16px", border: "none", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer" }}
+            style={{
+              padding: "16px 24px",
+              borderRadius: "16px",
+              border: "none",
+              background: "#2563eb",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
           >
-            Back to Generator
+            ← Back to Generator
           </button>
         </div>
       </div>
     );
   }
 
-  // Generator mode
+  // Generator Mode
   return (
     <div style={{ minHeight: "100vh", padding: "30px 24px", background: "#f3f7ff" }}>
       <div style={{ maxWidth: "1200px", margin: "0 auto", display: "grid", gap: "24px" }}>
+        {/* Header */}
         <div>
           <div style={{ color: "#0f172a", fontSize: "32px", fontWeight: 800, marginBottom: "8px" }}>
-            Quiz Generator
+            🧠 AI Quiz Generator
           </div>
           <div style={{ color: "#475569", fontSize: "16px", maxWidth: "780px" }}>
-            Generate AI-powered MCQs from content, or use default sample questions to start practicing.
+            Upload notes, PDFs, images, or paste text to generate AI-powered, conceptual MCQs. Real questions, not placeholders!
           </div>
         </div>
 
-        {!quiz ? (
-          <div style={{ display: "grid", gap: "20px", gridTemplateColumns: "minmax(0, 1fr) 340px" }}>
-            <div style={{ background: "#ffffff", borderRadius: "24px", padding: "24px", boxShadow: "0 20px 50px rgba(15, 23, 42, 0.08)" }}>
+        {loading && (
+          <div
+            style={{
+              background: "#dbeafe",
+              borderRadius: "20px",
+              padding: "20px",
+              border: "2px solid #0ea5e9",
+              display: "flex",
+              gap: "16px",
+              alignItems: "center",
+            }}
+          >
+            <Loader size={32} color="#0ea5e9" style={{ animation: "spin 1s linear infinite" }} />
+            <div>
+              <div style={{ fontWeight: 700, color: "#0c63e4" }}>{loadingStatus}</div>
+              <div style={{ color: "#0284c7", fontSize: "14px", marginTop: "4px" }}>
+                This may take 30-60 seconds. Your quiz is being generated...
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!quiz && !loading ? (
+          <div style={{ display: "grid", gap: "20px", gridTemplateColumns: "minmax(0, 1fr) 360px" }}>
+            {/* Main Form */}
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "24px",
+                padding: "28px",
+                boxShadow: "0 20px 50px rgba(15, 23, 42, 0.08)",
+              }}
+            >
               <form onSubmit={handleGenerateQuiz} style={{ display: "grid", gap: "20px" }}>
+                {/* Title */}
                 <div style={{ display: "grid", gap: "12px" }}>
-                  <label style={{ fontWeight: 700, color: "#0f172a" }}>Quiz Title</label>
+                  <label style={{ fontWeight: 700, color: "#0f172a" }}>📝 Quiz Title *</label>
                   <input
                     value={quizForm.title}
                     onChange={(event) => handleFieldChange("title", event.target.value)}
-                    placeholder="Enter quiz title"
+                    placeholder="e.g. Chapter 5: Photosynthesis"
                     style={{ width: "100%", padding: "14px 16px", borderRadius: "16px", border: "1px solid #cbd5e1" }}
                   />
                 </div>
 
+                {/* Subject & Category */}
                 <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
                   <div style={{ display: "grid", gap: "12px" }}>
                     <label style={{ fontWeight: 700, color: "#0f172a" }}>Subject</label>
                     <input
                       value={quizForm.subject}
                       onChange={(event) => handleFieldChange("subject", event.target.value)}
-                      placeholder="e.g. Computer Science"
+                      placeholder="e.g. Biology"
                       style={{ width: "100%", padding: "14px 16px", borderRadius: "16px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
@@ -467,40 +618,41 @@ function QuizGenerator() {
                     <input
                       value={quizForm.category}
                       onChange={(event) => handleFieldChange("category", event.target.value)}
-                      placeholder="e.g. Past Papers"
+                      placeholder="e.g. MCQs from textbook"
                       style={{ width: "100%", padding: "14px 16px", borderRadius: "16px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gap: "14px", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+                {/* Settings Grid */}
+                <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
                   <div style={{ display: "grid", gap: "8px" }}>
-                    <label style={{ fontWeight: 700, color: "#0f172a" }}>MCQ Count</label>
+                    <label style={{ fontWeight: 700, color: "#0f172a", fontSize: "14px" }}>MCQ Count</label>
                     <input
                       type="number"
                       min={3}
                       max={50}
                       value={quizForm.count}
                       onChange={(event) => handleFieldChange("count", Number(event.target.value))}
-                      style={{ width: "100%", padding: "14px 16px", borderRadius: "16px", border: "1px solid #cbd5e1" }}
+                      style={{ width: "100%", padding: "12px 14px", borderRadius: "14px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
                   <div style={{ display: "grid", gap: "8px" }}>
-                    <label style={{ fontWeight: 700, color: "#0f172a" }}>Time Limit (mins)</label>
+                    <label style={{ fontWeight: 700, color: "#0f172a", fontSize: "14px" }}>Time (mins)</label>
                     <input
                       type="number"
                       min={0}
                       value={quizForm.timeLimit}
                       onChange={(event) => handleFieldChange("timeLimit", Number(event.target.value))}
-                      style={{ width: "100%", padding: "14px 16px", borderRadius: "16px", border: "1px solid #cbd5e1" }}
+                      style={{ width: "100%", padding: "12px 14px", borderRadius: "14px", border: "1px solid #cbd5e1" }}
                     />
                   </div>
                   <div style={{ display: "grid", gap: "8px" }}>
-                    <label style={{ fontWeight: 700, color: "#0f172a" }}>Difficulty</label>
+                    <label style={{ fontWeight: 700, color: "#0f172a", fontSize: "14px" }}>Difficulty</label>
                     <select
                       value={quizForm.difficulty}
                       onChange={(event) => handleFieldChange("difficulty", event.target.value)}
-                      style={{ width: "100%", padding: "14px 16px", borderRadius: "16px", border: "1px solid #cbd5e1" }}
+                      style={{ width: "100%", padding: "12px 14px", borderRadius: "14px", border: "1px solid #cbd5e1" }}
                     >
                       {difficultyOptions.map((option) => (
                         <option key={option.value} value={option.value}>
@@ -511,16 +663,74 @@ function QuizGenerator() {
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gap: "12px", gridTemplateColumns: "1fr 1fr" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: "10px", padding: "14px 16px", borderRadius: "16px", background: "#f8fafc", border: "1px solid #cbd5e1" }}>
+                {/* Language Selection */}
+                <div style={{ display: "grid", gap: "12px" }}>
+                  <label style={{ fontWeight: 700, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <Globe size={18} /> Language
+                  </label>
+                  <div style={{ display: "grid", gap: "8px", gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
+                    {languageOptions.map((lang) => (
+                      <label
+                        key={lang.value}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "10px",
+                          padding: "12px 14px",
+                          borderRadius: "14px",
+                          background:
+                            quizForm.language === lang.value ? "#eff6ff" : "#f8fafc",
+                          border:
+                            quizForm.language === lang.value ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                          cursor: "pointer",
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="language"
+                          value={lang.value}
+                          checked={quizForm.language === lang.value}
+                          onChange={(event) => handleFieldChange("language", event.target.value)}
+                        />
+                        {lang.label}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Options */}
+                <div style={{ display: "grid", gap: "8px", gridTemplateColumns: "1fr 1fr" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "12px 14px",
+                      borderRadius: "14px",
+                      background: "#f8fafc",
+                      border: "1px solid #cbd5e1",
+                      cursor: "pointer",
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={quizForm.randomize}
                       onChange={(event) => handleFieldChange("randomize", event.target.checked)}
                     />
-                    Random Questions
+                    Randomize
                   </label>
-                  <label style={{ display: "flex", alignItems: "center", gap: "10px", padding: "14px 16px", borderRadius: "16px", background: "#f8fafc", border: "1px solid #cbd5e1" }}>
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      padding: "12px 14px",
+                      borderRadius: "14px",
+                      background: "#f8fafc",
+                      border: "1px solid #cbd5e1",
+                      cursor: "pointer",
+                    }}
+                  >
                     <input
                       type="checkbox"
                       checked={quizForm.negativeMarking}
@@ -530,38 +740,70 @@ function QuizGenerator() {
                   </label>
                 </div>
 
+                {/* File Upload */}
                 <div style={{ display: "grid", gap: "12px" }}>
-                  <label style={{ fontWeight: 700, color: "#0f172a" }}>Upload Content (PDF, DOC, Image, etc.)</label>
+                  <label style={{ fontWeight: 700, color: "#0f172a", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <FileText size={18} /> Upload Content
+                  </label>
                   <input
                     type="file"
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.gif,.webp,.txt"
                     onChange={handleFileChange}
                     style={{ width: "100%" }}
                   />
                   {file ? (
-                    <div style={{ color: "#334155", fontSize: "14px" }}>Selected file: {file.name}</div>
+                    <div style={{ color: "#10b981", fontSize: "14px", fontWeight: 700 }}>
+                      ✅ File selected: {file.name}
+                    </div>
                   ) : (
                     <div style={{ color: "#64748b", fontSize: "14px" }}>
-                      Upload notes, assignments, past papers, or images.
+                      📎 PDF, images (with OCR), DOCX, TXT, etc.
                     </div>
                   )}
                 </div>
 
+                {/* Text Area */}
                 <div style={{ display: "grid", gap: "12px" }}>
                   <label style={{ fontWeight: 700, color: "#0f172a" }}>Or Paste Study Content</label>
                   <textarea
                     value={quizForm.text}
                     onChange={(event) => handleFieldChange("text", event.target.value)}
                     rows={8}
-                    placeholder="Paste lesson notes, assignment text, or exam instruction here..."
-                    style={{ width: "100%", padding: "16px", borderRadius: "18px", border: "1px solid #cbd5e1", resize: "vertical" }}
+                    placeholder="Paste lesson notes, past papers, assignment text, or any study material here..."
+                    style={{
+                      width: "100%",
+                      padding: "16px",
+                      borderRadius: "18px",
+                      border: "1px solid #cbd5e1",
+                      resize: "vertical",
+                      fontFamily: "monospace",
+                    }}
                   />
+                  <div style={{ color: "#64748b", fontSize: "13px" }}>
+                    Minimum 50 characters | AI will analyze and create real, conceptual questions
+                  </div>
                 </div>
 
+                {/* Error/Success Messages */}
                 {notice ? (
-                  <div style={{ color: "#b91c1c", fontWeight: 700 }}>{notice}</div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "12px",
+                      alignItems: "start",
+                      padding: "14px",
+                      borderRadius: "14px",
+                      background: noticeType === "error" ? "#fee2e2" : "#dcfce7",
+                      color: noticeType === "error" ? "#991b1b" : "#15803d",
+                      fontWeight: 700,
+                    }}
+                  >
+                    <AlertCircle size={20} style={{ flexShrink: 0, marginTop: "2px" }} />
+                    <div>{notice}</div>
+                  </div>
                 ) : null}
 
+                {/* Submit Button */}
                 <button
                   type="submit"
                   disabled={loading}
@@ -575,126 +817,178 @@ function QuizGenerator() {
                     fontWeight: 800,
                     cursor: "pointer",
                     opacity: loading ? 0.7 : 1,
+                    display: "flex",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: "10px",
+                    transition: "all 0.2s",
                   }}
                 >
-                  {loading ? "Generating..." : "Generate Quiz"}
+                  {loading ? (
+                    <>
+                      <Loader size={20} style={{ animation: "spin 1s linear infinite" }} />
+                      Generating...
+                    </>
+                  ) : (
+                    "✨ Generate AI Quiz"
+                  )}
                 </button>
               </form>
             </div>
 
+            {/* Right Sidebar */}
             <div style={{ display: "grid", gap: "20px" }}>
+              {/* Quick Start Card */}
+              <div
+                style={{
+                  background: "linear-gradient(135deg, #f59e0b, #d97706)",
+                  borderRadius: "20px",
+                  padding: "24px",
+                  color: "#fff",
+                }}
+              >
+                <div style={{ fontSize: "14px", fontWeight: 700, marginBottom: "8px" }}>💡 Quick Tips</div>
+                <ul style={{ fontSize: "13px", lineHeight: 1.8, marginLeft: "16px", opacity: 0.95 }}>
+                  <li>Upload study notes or past papers</li>
+                  <li>Use OCR-ready images</li>
+                  <li>Paste 2-3 paragraphs minimum</li>
+                  <li>Choose difficulty level</li>
+                  <li>Select question count (3-50)</li>
+                </ul>
+              </div>
+
+              {/* Supported Formats */}
+              <div
+                style={{
+                  background: "#f0f9ff",
+                  borderRadius: "20px",
+                  padding: "20px",
+                  border: "2px solid #0ea5e9",
+                }}
+              >
+                <div style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a", marginBottom: "12px" }}>
+                  📂 Supported Formats
+                </div>
+                <div style={{ color: "#0284c7", fontSize: "13px", lineHeight: 1.8 }}>
+                  <div>✓ PDF documents</div>
+                  <div>✓ Images (OCR)</div>
+                  <div>✓ Word (.docx)</div>
+                  <div>✓ Text (.txt)</div>
+                  <div>✓ Pasted text</div>
+                </div>
+              </div>
+
+              {/* Features Badge */}
+              <div
+                style={{
+                  background: "#f3e8ff",
+                  borderRadius: "20px",
+                  padding: "20px",
+                  border: "2px solid #a78bfa",
+                }}
+              >
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#6b21a8", marginBottom: "10px" }}>
+                  ⚡ Features
+                </div>
+                <div style={{ color: "#7e22ce", fontSize: "12px", lineHeight: 1.8 }}>
+                  <div>🧠 AI-powered generation</div>
+                  <div>📊 Real, meaningful questions</div>
+                  <div>🌐 Multi-language support</div>
+                  <div>⚙️ Custom difficulty levels</div>
+                  <div>✅ Quality validation</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Quiz Results/Display Section */}
+        {quiz && !loading && mode === "generator" ? (
+          <div style={{ display: "grid", gap: "20px" }}>
+            {/* Generated Quiz Card */}
+            <div
+              style={{
+                background: "#ffffff",
+                borderRadius: "24px",
+                padding: "28px",
+                boxShadow: "0 20px 50px rgba(15, 23, 42, 0.08)",
+              }}
+            >
+              <div style={{ display: "grid", gap: "16px", marginBottom: "20px" }}>
+                <div>
+                  <div style={{ fontSize: "24px", fontWeight: 800, color: "#0f172a" }}>
+                    {quiz.title}
+                  </div>
+                  <div style={{ color: "#64748b", marginTop: "4px" }}>
+                    {quiz.subject} • {quiz.category} • {quiz.difficulty}
+                  </div>
+                </div>
+                {quiz.metadata?.questionsGenerated ? (
+                  <div style={{ color: "#10b981", fontWeight: 700, fontSize: "14px" }}>
+                    ✅ {quiz.metadata.questionsGenerated} high-quality MCQs generated
+                  </div>
+                ) : null}
+              </div>
+
               <button
-                onClick={handleUseDefaults}
+                onClick={() => handleStartQuiz(quiz)}
                 style={{
                   width: "100%",
-                  padding: "20px",
-                  borderRadius: "20px",
-                  border: "2px solid #2563eb",
-                  background: "#eff6ff",
-                  color: "#2563eb",
-                  fontWeight: 700,
+                  padding: "16px 20px",
+                  borderRadius: "18px",
+                  border: "none",
+                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  color: "#fff",
+                  fontWeight: 800,
                   cursor: "pointer",
                 }}
               >
-                📚 Use Default Sample Quiz
-              </button>
-
-              <div style={{ background: "#ffffff", borderRadius: "24px", padding: "24px", boxShadow: "0 20px 50px rgba(15, 23, 42, 0.08)" }}>
-                <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a", marginBottom: "12px" }}>Saved Quizzes</div>
-                {savedQuizzes.length === 0 ? (
-                  <div style={{ color: "#64748b" }}>No saved quizzes yet.</div>
-                ) : (
-                  <div style={{ display: "grid", gap: "12px" }}>
-                    {savedQuizzes.slice(0, 5).map((saved) => (
-                      <button
-                        key={saved._id}
-                        onClick={() => {
-                          setQuiz(saved);
-                          setAnswers({});
-                        }}
-                        style={{
-                          display: "grid",
-                          textAlign: "left",
-                          width: "100%",
-                          padding: "16px",
-                          borderRadius: "18px",
-                          border: "1px solid #e2e8f0",
-                          background: "#f8fafc",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, color: "#0f172a" }}>{saved.title}</div>
-                        <div style={{ color: "#64748b", fontSize: "13px" }}>
-                          {saved.questions?.length || 0} questions
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div style={{ background: "#ffffff", borderRadius: "24px", padding: "28px", boxShadow: "0 20px 50px rgba(15, 23, 42, 0.08)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start", marginBottom: "24px" }}>
-              <div>
-                <div style={{ fontSize: "24px", fontWeight: 800, color: "#0f172a" }}>{quiz.title}</div>
-                <div style={{ color: "#64748b", fontSize: "14px", marginTop: "6px" }}>
-                  {quiz.subject} · {quiz.category} · {quiz.questions?.length || 0} questions
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setQuiz(null);
-                  setAnswers({});
-                }}
-                style={{ padding: "10px 16px", borderRadius: "12px", border: "1px solid #cbd5e1", background: "#f8fafc", cursor: "pointer" }}
-              >
-                ← Back
+                🚀 Start Quiz Now
               </button>
             </div>
 
+            {/* Start Over */}
             <button
-              onClick={() => handleStartQuiz(quiz)}
+              onClick={() => {
+                setQuiz(null);
+                setQuizForm({
+                  title: "",
+                  subject: "",
+                  category: "",
+                  difficulty: "medium",
+                  language: "english",
+                  count: 8,
+                  timeLimit: 30,
+                  randomize: true,
+                  negativeMarking: false,
+                  text: "",
+                });
+                setFile(null);
+              }}
               style={{
                 width: "100%",
-                padding: "18px 24px",
-                borderRadius: "18px",
-                border: "none",
-                background: "linear-gradient(135deg, #10b981, #059669)",
-                color: "#fff",
-                fontWeight: 800,
-                fontSize: "16px",
+                padding: "14px 20px",
+                borderRadius: "16px",
+                border: "2px solid #2563eb",
+                background: "#ffffff",
+                color: "#2563eb",
+                fontWeight: 700,
                 cursor: "pointer",
-                marginBottom: "24px",
               }}
             >
-              Start Quiz →
+              ← Start Over
             </button>
-
-            <div style={{ display: "grid", gap: "14px" }}>
-              {quiz.questions?.map((question, idx) => (
-                <div key={idx} style={{ padding: "18px", borderRadius: "16px", background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-                  <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: "10px" }}>
-                    {idx + 1}. {question.questionText}
-                  </div>
-                  <div style={{ display: "grid", gap: "6px", marginBottom: "10px" }}>
-                    {question.options?.map((option, optIdx) => (
-                      <div key={optIdx} style={{ color: "#334155", fontSize: "14px" }}>
-                        {String.fromCharCode(65 + optIdx)}) {option}
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ color: "#0f766e", fontWeight: 700, fontSize: "14px" }}>Answer: {question.correctAnswer}</div>
-                </div>
-              ))}
-            </div>
           </div>
-        )}
+        ) : null}
       </div>
+
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }
 
 export default QuizGenerator;
-

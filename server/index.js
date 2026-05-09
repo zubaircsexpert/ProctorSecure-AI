@@ -26,6 +26,18 @@ import SystemCheck from "./models/SystemCheck.js";
 import SystemAccess from "./models/SystemAccess.js";
 import Quiz from "./models/Quiz.js";
 import GeneratedQuestion from "./models/GeneratedQuestion.js";
+import {
+  extractTextFromImage,
+  extractTextFromImageWithLanguage,
+  processPdfAdvanced,
+  normalizeExtractedText,
+  extractConceptsFromText,
+  chunkTextForAI,
+  parseAIMCQResponse,
+  generateFallbackMCQs,
+  buildEnhancedQuizPrompt,
+  enhanceQuizMetadata,
+} from "./utils/quizGenerator.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
@@ -68,17 +80,29 @@ const extractTextFromUploadedFile = async (file) => {
   try {
     if (ext === ".pdf") {
       const dataBuffer = fs.readFileSync(file.path);
-      const data = await pdfParse(dataBuffer);
-      return normalizeText(data.text);
+      const pdfResult = await processPdfAdvanced(pdfParse, dataBuffer);
+      return normalizeExtractedText(pdfResult.text || "");
     }
 
     if (ext === ".docx") {
       const result = await mammoth.extractRawText({ path: file.path });
-      return normalizeText(result.value);
+      return normalizeExtractedText(result.value || "");
     }
 
     if (ext === ".txt") {
-      return normalizeText(fs.readFileSync(file.path, "utf-8"));
+      const text = fs.readFileSync(file.path, "utf-8");
+      return normalizeExtractedText(text);
+    }
+
+    // Image OCR support for PNG, JPG, JPEG, GIF
+    if ([".png", ".jpg", ".jpeg", ".gif", ".webp"].includes(ext)) {
+      try {
+        const ocrResult = await extractTextFromImageWithLanguage(file.path, ["eng", "urd"]);
+        return normalizeExtractedText(ocrResult.text || "");
+      } catch (ocrError) {
+        console.log("OCR EXTRACTION ERROR:", ocrError.message);
+        return "";
+      }
     }
 
     return "";
@@ -347,58 +371,110 @@ const parseAiJson = (rawText) => {
   }
 };
 
-const callOpenAiQuizGenerator = async ({ payloadText, count, difficulty, subject, category, file }) => {
+const callOpenAiQuizGenerator = async ({
+  payloadText,
+  count,
+  difficulty,
+  subject,
+  category,
+  file,
+  language = "english",
+}) => {
   if (!process.env.OPENAI_API_KEY) return null;
 
-  const prompt = `Generate ${count} unique multiple-choice questions from the provided educational content. Use the content to identify key concepts, topics, and exam-style phrasing. Output a JSON object only, using this exact format:\n{\n  \"title\": \"Quiz Title\",\n  \"subject\": \"Subject Name\",\n  \"category\": \"Category\",\n  \"difficulty\": \"${difficulty}\",\n  \"questions\": [\n    {\n      \"questionText\": \"...\",\n      \"options\": [\"A...\", \"B...\", \"C...\", \"D...\"],\n      \"correctAnswer\": \"...\",\n      \"explanation\": \"...\",\n      \"difficultyTag\": \"${difficulty}\",\n      \"topic\": \"...\"\n    }\n  ]\n}\nDo not include any additional prose outside the JSON object. If the content is not enough, generate meaningful conceptual questions relevant to ${subject || "general study"}.`;
+  // Build enhanced prompt with intelligent instructions
+  const prompt = buildEnhancedQuizPrompt(
+    payloadText || "No text provided.",
+    count,
+    difficulty,
+    subject,
+    language
+  );
 
   const content = [
     {
       type: "text",
-      text: `${prompt}\n\nContent:\n${payloadText || "No text provided."}`,
+      text: prompt,
     },
   ];
 
+  // Add image analysis if file is provided
   if (file?.mimetype?.startsWith("image/")) {
-    const imageBase64 = fs.readFileSync(file.path).toString("base64");
-    content.push({
-      type: "image_url",
-      image_url: {
-        url: `data:${file.mimetype};base64,${imageBase64}`,
-      },
-    });
+    try {
+      const imageBase64 = fs.readFileSync(file.path).toString("base64");
+      content.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${file.mimetype};base64,${imageBase64}`,
+        },
+      });
+    } catch (imageError) {
+      console.log("IMAGE ENCODING ERROR:", imageError.message);
+    }
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini",
-      messages: [
-        {
-          role: "system",
-          content:
-            "You are a quiz generation engine. Create exam-style multiple-choice quiz questions with clear options, correct answers, explanations, topic tags, and difficulty levels.",
-        },
-        { role: "user", content },
-      ],
-      temperature: 0.35,
-      max_tokens: 1600,
-    }),
-  });
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_QUIZ_MODEL || "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an expert AI Quiz Generator specializing in creating high-quality, contextual, exam-style multiple-choice questions from educational materials. Generate ONLY realistic questions derived from the provided content. Never use placeholder options like 'Option A' or 'Option B'. Each option must be meaningful, distinct, and plausible.",
+          },
+          {
+            role: "user",
+            content,
+          },
+        ],
+        temperature: 0.35,
+        max_tokens: 2500,
+      }),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.log("OPENAI QUIZ ERROR:", errorText);
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.log("OPENAI QUIZ API ERROR:", errorText);
+      return null;
+    }
+
+    const data = await response.json();
+    const responseText = data.choices?.[0]?.message?.content || "";
+
+    // Parse and validate the AI response
+    const parsedResult = parseAIMCQResponse(responseText);
+
+    if (!parsedResult) {
+      console.log("QUIZ GENERATION FAILED: Invalid response format from AI");
+      return null;
+    }
+
+    // Ensure all options are meaningful (not placeholders)
+    const cleanedQuestions = (parsedResult.questions || [])
+      .filter((q) => {
+        // Remove questions with placeholder options
+        const hasPlaceholders = (q.options || []).some((opt) =>
+          /^option\s+[a-d]$/i.test(String(opt).trim())
+        );
+        return !hasPlaceholders && q.options.length >= 2;
+      })
+      .slice(0, count);
+
+    return {
+      ...parsedResult,
+      questions: cleanedQuestions,
+      validCount: cleanedQuestions.length,
+    };
+  } catch (error) {
+    console.log("OPENAI QUIZ GENERATION ERROR:", error.message);
     return null;
   }
-
-  const data = await response.json();
-  const text = data.choices?.[0]?.message?.content || "";
-  return parseAiJson(text);
 };
 
 const callOpenAiTutor = async ({ question, context, mode, file }) => {
@@ -2173,52 +2249,104 @@ app.post(
 
       const title = normalizeText(req.body.title);
       const subject = normalizeText(req.body.subject) || "General";
-      const category = normalizeText(req.body.category) || "General";
+      const category = normalizeText(req.body.category) || subject;
       const difficulty = normalizeText(req.body.difficulty) || "medium";
+      const language = normalizeText(req.body.language) || "english";
       const timeLimit = Number(req.body.timeLimit) || 0;
       const randomize = String(req.body.randomize) === "true";
-      const negativeMarking = String(req.body.negativeMarking) === "true";
-      const fileText = req.file ? await extractTextFromUploadedFile(req.file) : "";
-      const payloadText = normalizeText(req.body.text) || fileText;
-      const sourceType = req.file ? "file" : "text";
+      const negativeMarking = String(req.body.negativeMarking) === "false" ? false : true;
 
       if (!title) {
         return res.status(400).json({ message: "Quiz title is required." });
       }
 
-      if (!payloadText && !req.file) {
-        return res.status(400).json({ message: "Please provide content text or upload a file." });
+      // Extract text from file with enhanced OCR and PDF support
+      let extractedText = "";
+      let extractionConfidence = 0;
+      let sourceType = "text";
+
+      if (req.file) {
+        sourceType = "file";
+        console.log(`Analyzing ${req.file.originalname}...`);
+        extractedText = await extractTextFromUploadedFile(req.file);
+
+        if (!extractedText) {
+          return res.status(400).json({
+            message:
+              "Could not extract text from the uploaded file. Please ensure the file contains readable text or images.",
+          });
+        }
       }
 
-      const questionCount = Math.max(Number(req.body.count) || 6, 3);
+      // Use provided text or fall back to extracted text
+      const payloadText = normalizeText(req.body.text) || extractedText;
+
+      if (!payloadText || payloadText.length < 50) {
+        return res.status(400).json({
+          message:
+            "Insufficient content provided. Please provide at least 50 characters of educational material.",
+        });
+      }
+
+      // Normalize and clean the extracted text
+      const cleanedText = normalizeExtractedText(payloadText);
+
+      // Extract concepts to inform AI
+      const concepts = extractConceptsFromText(cleanedText);
+
+      // Calculate question count
+      const questionCount = Math.max(Math.min(Number(req.body.count) || 6, 20), 3);
+
+      // Call enhanced AI quiz generator with new prompt
+      console.log(
+        `Generating ${questionCount} ${difficulty} MCQs in ${language}...`
+      );
+
       const generated = await callOpenAiQuizGenerator({
-        payloadText,
+        payloadText: cleanedText,
         count: questionCount,
         difficulty,
         subject,
         category,
+        language,
         file: req.file,
       });
 
-      const fallbackQuestions = (count) => {
-        return Array.from({ length: count }, (_, index) => ({
-          questionText: `Review the content and prepare a conceptual question #${index + 1}.`,
-          options: ["Option A", "Option B", "Option C", "Option D"],
-          correctAnswer: "Option A",
-          explanation: "Review the source material and choose the best answer.",
-          difficultyTag: difficulty,
-          topic: category || "General",
-        }));
-      };
+      // If AI generation fails, throw an error instead of using fallback
+      if (!generated || !generated.questions || generated.questions.length === 0) {
+        return res.status(500).json({
+          message:
+            "AI quiz generation failed. This may be due to: insufficient content, API issues, or text that is not suitable for MCQ generation. Please try again or provide different content.",
+          details: {
+            contentLength: cleanedText.length,
+            conceptsFound: concepts.conceptCount,
+            requestedCount: questionCount,
+          },
+        });
+      }
 
-      const quizPayload = generated || {
-        title,
-        subject,
-        category,
-        difficulty,
-        questions: fallbackQuestions(questionCount),
-      };
+      // Validate generated questions
+      const validatedQuestions = (generated.questions || [])
+        .filter((q) => {
+          return (
+            q.questionText &&
+            q.questionText.length > 10 &&
+            Array.isArray(q.options) &&
+            q.options.length >= 2 &&
+            q.correctAnswer &&
+            q.explanation
+          );
+        })
+        .slice(0, questionCount);
 
+      if (validatedQuestions.length === 0) {
+        return res.status(500).json({
+          message:
+            "Generated questions did not meet quality standards. Please try again with different content.",
+        });
+      }
+
+      // Create quiz document
       const quiz = new Quiz({
         title,
         subject,
@@ -2228,33 +2356,73 @@ app.post(
         randomize,
         negativeMarking,
         sourceType,
-        sourceText: payloadText,
+        sourceText: cleanedText,
         sourceFile: req.file ? toRelativeUploadPath(req.file.path) : "",
         createdBy: user._id,
       });
 
       await quiz.save();
 
+      // Save generated questions with enhanced metadata
       const questionDocs = await GeneratedQuestion.insertMany(
-        (quizPayload.questions || []).map((item) => ({
+        validatedQuestions.map((item, idx) => ({
           quizId: quiz._id,
           questionText: normalizeText(item.questionText || item.question || ""),
-          options: item.options || [],
-          correctAnswer: normalizeText(item.correctAnswer || item.answer || ""),
+          options: (item.options || [])
+            .map((opt) => normalizeText(opt || ""))
+            .filter(Boolean),
+          correctAnswer: normalizeText(
+            item.correctAnswer || item.answer || ""
+          ),
           explanation: normalizeText(item.explanation || ""),
-          difficultyTag: normalizeText(item.difficultyTag || difficulty || "medium"),
-          topic: normalizeText(item.topic || item.topicName || "General"),
+          difficultyTag: normalizeText(
+            item.difficultyTag || difficulty || "medium"
+          ),
+          topic: normalizeText(
+            item.topic || item.topicName || category || "General"
+          ),
+          conceptsInvolved: item.conceptsInvolved || [],
+          order: idx + 1,
         }))
       );
 
       quiz.questions = questionDocs.map((question) => question._id);
       await quiz.save();
 
-      const responseQuiz = await Quiz.findById(quiz._id).populate("questions").lean();
-      res.json({ message: "Quiz generated and saved successfully.", quiz: responseQuiz });
+      // Populate and return the complete quiz
+      const responseQuiz = await Quiz.findById(quiz._id)
+        .populate("questions")
+        .lean();
+
+      // Add metadata about generation
+      const enhancedQuiz = enhanceQuizMetadata(responseQuiz, {
+        sourceType,
+        sourceFile: req.file?.originalname || null,
+        textLength: cleanedText.length,
+        confidence: extractionConfidence,
+      });
+
+      res.json({
+        message: "AI Quiz generated successfully with real, meaningful questions!",
+        quiz: enhancedQuiz,
+        generationStats: {
+          questionsGenerated: validatedQuestions.length,
+          difficulty,
+          language,
+          sourceType,
+          contentAnalysis: {
+            contentLength: cleanedText.length,
+            conceptsIdentified: concepts.conceptCount,
+            topicsCovered: concepts.concepts.slice(0, 5),
+          },
+        },
+      });
     } catch (err) {
       console.log("QUIZ GENERATOR ERROR:", err);
-      res.status(500).json({ message: "Quiz generator failed to create your quiz." });
+      res.status(500).json({
+        message: "Quiz generation encountered an error. Please try again.",
+        error: process.env.NODE_ENV === "development" ? err.message : undefined,
+      });
     }
   }
 );
