@@ -2084,6 +2084,25 @@ app.delete("/api/results/delete/:id", verifyToken, verifyTeacher, async (req, re
   }
 });
 
+app.delete("/api/results/my/:id", verifyToken, verifyApprovedStudent, async (req, res) => {
+  try {
+    const deletedResult = await Result.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.dbUser._id,
+      assessmentType: "quiz",
+    });
+
+    if (!deletedResult) {
+      return res.status(404).json({ message: "Quiz attempt not found." });
+    }
+
+    res.json({ message: "Quiz attempt deleted successfully." });
+  } catch (err) {
+    console.log("STUDENT RESULT DELETE ERROR:", err);
+    res.status(500).json({ message: "Delete failed." });
+  }
+});
+
 app.get("/api/assignments/all", verifyToken, async (req, res) => {
   try {
     const user = await getDbUser(req.user.userId);

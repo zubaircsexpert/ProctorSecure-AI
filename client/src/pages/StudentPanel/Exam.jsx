@@ -4,6 +4,7 @@ import Timer from "../../components/Timer";
 import Proctoring from "../../components/Proctoring";
 import WarningModal from "../../components/WarningModal";
 import { getAuthUser } from "../../utils/authSession";
+import { Trash2 } from "lucide-react";
 
 const ACTIVE_SESSION_KEY = "proctor-ai-active-exam";
 
@@ -102,6 +103,12 @@ const extractList = (payload, keys = []) => {
 
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 const round = (value) => Number(value.toFixed(2));
+const formatDateTime = (value, fallback = "Recently") => {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return date.toLocaleString();
+};
 
 const computeTrustFactor = (score) => {
   if (score >= 65) return "Critical";
@@ -132,6 +139,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
   const [warningDisplayCount, setWarningDisplayCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [deletingResultId, setDeletingResultId] = useState("");
   const [telemetry, setTelemetry] = useState({
     cameraReady: false,
     microphoneReady: false,
@@ -480,6 +488,22 @@ const Exam = ({ assessmentFilter = "exam" }) => {
     localStorage.removeItem(ACTIVE_SESSION_KEY);
   };
 
+  const deleteQuizAttempt = async (resultId) => {
+    if (!resultId || !window.confirm("Delete this quiz attempt?")) {
+      return;
+    }
+
+    try {
+      setDeletingResultId(resultId);
+      await API.delete(`/api/results/my/${resultId}`);
+      setStudentResults((prev) => prev.filter((result) => result._id !== resultId));
+    } catch (err) {
+      window.alert(err.response?.data?.message || "Quiz attempt delete failed.");
+    } finally {
+      setDeletingResultId("");
+    }
+  };
+
   const startExam = async (exam) => {
     if (!exam?._id) {
       setErrorMessage("Invalid exam selected.");
@@ -779,13 +803,29 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             ) : (
               <div style={styles.examGrid}>
                 {studentResults.map((result) => (
-                  <div key={result._id || `${result.examId}-${result.createdAt}`} style={styles.metricCard}>
-                    <span>{result.testName || "Quiz"}</span>
+                  <div key={result._id || `${result.examId}-${result.createdAt}`} style={styles.quizAttemptCard}>
+                    <div style={styles.quizAttemptTop}>
+                      <span>{result.testName || "Quiz"}</span>
+                      {result._id ? (
+                        <button
+                          type="button"
+                          onClick={() => deleteQuizAttempt(result._id)}
+                          disabled={deletingResultId === result._id}
+                          style={styles.deleteIconButton}
+                          title="Delete quiz attempt"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      ) : null}
+                    </div>
                     <strong>
                       {result.score || 0}/{result.total || 0}
                     </strong>
                     <div style={{ color: "#64748b" }}>
                       {result.percentage || 0}% | {result.status || "Submitted"}
+                    </div>
+                    <div style={styles.attemptTime}>
+                      Attempted: {formatDateTime(result.createdAt)}
                     </div>
                   </div>
                 ))}
@@ -1405,6 +1445,40 @@ const styles = {
     display: "grid",
     gap: "10px",
     minWidth: 0,
+  },
+  quizAttemptCard: {
+    padding: "18px 18px",
+    borderRadius: "18px",
+    background: "#f8fbff",
+    border: "1px solid rgba(148,163,184,0.16)",
+    display: "grid",
+    gap: "10px",
+    minWidth: 0,
+  },
+  quizAttemptTop: {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: "10px",
+    color: "#0f172a",
+  },
+  attemptTime: {
+    color: "#475569",
+    fontSize: "13px",
+    lineHeight: 1.5,
+    paddingTop: "2px",
+  },
+  deleteIconButton: {
+    width: "36px",
+    height: "36px",
+    borderRadius: "12px",
+    border: "none",
+    background: "#fee2e2",
+    color: "#b91c1c",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    flexShrink: 0,
   },
   timerCard: {
     padding: "14px 16px",
