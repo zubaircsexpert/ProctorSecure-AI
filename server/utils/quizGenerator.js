@@ -221,6 +221,16 @@ const buildDistractors = (correctAnswer, pool, count = 3) => {
     .slice(0, count);
 };
 
+const dedupeFacts = (facts) =>
+  facts.filter(
+    (fact, idx, arr) =>
+      arr.findIndex(
+        (item) =>
+          item.questionText.toLowerCase() === fact.questionText.toLowerCase() &&
+          item.correctAnswer.toLowerCase() === fact.correctAnswer.toLowerCase()
+      ) === idx
+  );
+
 const addFact = (facts, seen, questionText, correctAnswer, topic, sourceType = "fact") => {
   const question = normalizeQuestion(questionText);
   const answer = normalizeOption(correctAnswer);
@@ -455,16 +465,24 @@ export const validateMCQOptions = (options) => {
 export const parseAIMCQResponse = (rawResponse) => {
   try {
     const trimmed = String(rawResponse || "").trim();
-    const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+    const jsonMatch = trimmed.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
 
     if (!jsonMatch) return null;
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    const parsedRaw = JSON.parse(jsonMatch[0]);
+    const parsed = Array.isArray(parsedRaw) ? { questions: parsedRaw } : parsedRaw;
 
     if (!parsed.questions || !Array.isArray(parsed.questions)) return null;
 
     // Validate each question
-    const validQuestions = parsed.questions.filter((q) => {
+    const normalizedQuestions = parsed.questions.map((q) => ({
+      ...q,
+      questionText: q.questionText || q.question || q.prompt || "",
+      correctAnswer: q.correctAnswer || q.answer || q.correct_option || "",
+      options: Array.isArray(q.options) ? q.options : [q.optionA, q.optionB, q.optionC, q.optionD].filter(Boolean),
+    }));
+
+    const validQuestions = normalizedQuestions.filter((q) => {
       return (
         q.questionText &&
         q.options &&
@@ -478,7 +496,7 @@ export const parseAIMCQResponse = (rawResponse) => {
       ...parsed,
       questions: validQuestions,
       validCount: validQuestions.length,
-      originalCount: parsed.questions.length,
+      originalCount: normalizedQuestions.length,
     };
   } catch (error) {
     console.error("MCQ Parse Error:", error.message);
@@ -530,14 +548,32 @@ export const sanitizeCompetitiveMCQ = (question, difficulty = "medium", subject 
  * Generate fallback competitive-exam MCQs from extracted facts.
  */
 export const generateFallbackMCQs = (text, count = 5, difficulty = "medium", subject = "General") => {
-  const facts = extractExamFacts(text, subject);
+  const seed = Date.now() + Math.floor(Math.random() * 10000);
+  const facts = dedupeFacts(extractExamFacts(text, subject));
+  const keywords = extractKeywordPhrases(text, subject);
+  let keywordIndex = 0;
+  while (facts.length < count * 2 && keywordIndex < keywords.length) {
+    const keyword = keywords[keywordIndex];
+    const answer = keywords.find((item, idx) => idx !== keywordIndex && item.toLowerCase() !== keyword.toLowerCase());
+    if (answer) {
+      facts.push({
+        questionText: `Which term is linked with ${keyword}?`,
+        correctAnswer: normalizeOption(answer),
+        topic: normalizeOption(keyword),
+        sourceType: "keyword",
+      });
+    }
+    keywordIndex += 1;
+  }
+
   const answerPool = facts.map((fact) => fact.correctAnswer);
+  const orderedFacts = shuffleBySeed(facts, seed);
   const questions = [];
 
-  for (let i = 0; i < facts.length && questions.length < count; i += 1) {
-    const fact = facts[i];
+  for (let i = 0; i < orderedFacts.length && questions.length < count; i += 1) {
+    const fact = orderedFacts[i];
     const distractors = buildDistractors(fact.correctAnswer, answerPool, 3);
-    const options = shuffleBySeed([fact.correctAnswer, ...distractors].slice(0, 4), i);
+    const options = shuffleBySeed([fact.correctAnswer, ...distractors].slice(0, 4), seed + i);
 
     const sanitized = sanitizeCompetitiveMCQ(
       {
@@ -554,7 +590,12 @@ export const generateFallbackMCQs = (text, count = 5, difficulty = "medium", sub
       answerPool
     );
 
-    if (sanitized) questions.push(sanitized);
+    if (
+      sanitized &&
+      !questions.some((item) => item.questionText.toLowerCase() === sanitized.questionText.toLowerCase())
+    ) {
+      questions.push(sanitized);
+    }
   }
 
   return questions;
@@ -580,6 +621,8 @@ export const buildEnhancedQuizPrompt = (
     medium:
       "Include conceptual understanding, application, and analysis. Require integration of ideas. Mix direct recall with applied thinking.",
     hard: "Focus on synthesis, evaluation, critical analysis, and complex reasoning. Include multi-step problem solving and comparison of concepts.",
+    mixed:
+      "Balance easy, medium, and hard questions. Include direct recall, conceptual, analytical, application-based, and tricky competitive-exam patterns.",
   };
 
   const prompt = `You are an expert PPSC/FPSC/entry-test MCQ generator. Generate EXACTLY ${count} concise competitive-exam questions from the provided educational content.

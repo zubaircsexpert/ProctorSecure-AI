@@ -473,27 +473,18 @@ const callOpenAiQuizGenerator = async ({
 }) => {
   if (!process.env.OPENAI_API_KEY) return null;
 
-  // Build enhanced prompt with intelligent instructions
-  const prompt = buildEnhancedQuizPrompt(
-    payloadText || "No text provided.",
-    count,
-    difficulty,
-    subject,
-    language
-  );
+  const textChunks = chunkTextForAI(payloadText || "No text provided.", 6500).slice(0, 24);
+  const orderedChunks = textChunks.length
+    ? [...textChunks].sort(() => Math.random() - 0.5)
+    : ["No text provided."];
+  const allQuestions = [];
+  const seenQuestions = new Set();
+  const imageContent = [];
 
-  const content = [
-    {
-      type: "text",
-      text: prompt,
-    },
-  ];
-
-  // Add image analysis if file is provided
   if (file?.mimetype?.startsWith("image/")) {
     try {
       const imageBase64 = fs.readFileSync(file.path).toString("base64");
-      content.push({
+      imageContent.push({
         type: "image_url",
         image_url: {
           url: `data:${file.mimetype};base64,${imageBase64}`,
@@ -504,7 +495,29 @@ const callOpenAiQuizGenerator = async ({
     }
   }
 
-  try {
+  const requestChunk = async (chunkText, targetCount, chunkIndex) => {
+    const prompt = `${buildEnhancedQuizPrompt(
+      chunkText,
+      targetCount,
+      difficulty,
+      subject,
+      language
+    )}
+
+RANDOMIZATION SEED: ${Date.now()}-${Math.random()}-${chunkIndex}
+Already generated question stems to avoid:
+${[...seenQuestions].slice(-40).join("\n") || "None"}
+
+Generate fresh MCQs only from this chunk. Avoid repeating any listed question.`;
+
+    const content = [
+      {
+        type: "text",
+        text: prompt,
+      },
+      ...imageContent,
+    ];
+
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -517,50 +530,84 @@ const callOpenAiQuizGenerator = async ({
           {
             role: "system",
             content:
-              "You are an expert PPSC/FPSC competitive-exam MCQ generator. Generate only short, one-line, fact-based questions from the provided content. Never mention uploaded material, source, passage, or document. Each question must have exactly 4 short realistic options and one correct answer.",
+              "You are an expert PPSC/FPSC competitive-exam MCQ generator. Generate only short, one-line, grounded questions from the provided content. Use direct, conceptual, analytical, application-based, and tricky exam patterns. Never mention uploaded material, source, passage, or document. Each question must have exactly 4 short realistic options and one correct answer.",
           },
           {
             role: "user",
             content,
           },
         ],
-        temperature: 0.35,
-        max_tokens: 2500,
+        temperature: 0.72,
+        presence_penalty: 0.45,
+        frequency_penalty: 0.35,
+        max_tokens: Math.min(12000, Math.max(2500, targetCount * 420)),
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
       console.log("OPENAI QUIZ API ERROR:", errorText);
-      return null;
+      return [];
     }
 
     const data = await response.json();
     const responseText = data.choices?.[0]?.message?.content || "";
-
-    // Parse and validate the AI response
     const parsedResult = parseAIMCQResponse(responseText);
 
     if (!parsedResult) {
       console.log("QUIZ GENERATION FAILED: Invalid response format from AI");
-      return null;
+      return [];
     }
 
-    // Ensure all options are meaningful (not placeholders)
-    const cleanedQuestions = (parsedResult.questions || [])
+    return (parsedResult.questions || [])
       .filter((q) => {
-        // Remove questions with placeholder options
         const hasPlaceholders = (q.options || []).some((opt) =>
           /^option\s+[a-d]$/i.test(String(opt).trim())
         );
         return !hasPlaceholders && q.options.length >= 2;
-      })
-      .slice(0, count);
+      });
+  };
 
+  try {
+    for (let index = 0; index < orderedChunks.length && allQuestions.length < count; index += 1) {
+      const remaining = count - allQuestions.length;
+      const remainingChunks = orderedChunks.length - index;
+      const targetForChunk = Math.min(15, Math.max(4, Math.ceil(remaining / remainingChunks) + 3));
+      const chunkQuestions = await requestChunk(orderedChunks[index], targetForChunk, index);
+
+      chunkQuestions.forEach((question) => {
+        const key = normalizeText(question.questionText || question.question || "").toLowerCase();
+        if (key && !seenQuestions.has(key) && allQuestions.length < count) {
+          seenQuestions.add(key);
+          allQuestions.push(question);
+        }
+      });
+    }
+
+    if (allQuestions.length < count && orderedChunks.length) {
+      const retryQuestions = await requestChunk(
+        orderedChunks.join("\n\n").slice(0, 12000),
+        Math.min(20, count - allQuestions.length + 6),
+        999
+      );
+      retryQuestions.forEach((question) => {
+        const key = normalizeText(question.questionText || question.question || "").toLowerCase();
+        if (key && !seenQuestions.has(key) && allQuestions.length < count) {
+          seenQuestions.add(key);
+          allQuestions.push(question);
+        }
+      });
+    }
+
+    if (!allQuestions.length) return null;
     return {
-      ...parsedResult,
-      questions: cleanedQuestions,
-      validCount: cleanedQuestions.length,
+      title: `Quiz on ${subject}`,
+      subject,
+      category,
+      difficulty,
+      language,
+      questions: allQuestions,
+      validCount: allQuestions.length,
     };
   } catch (error) {
     console.log("OPENAI QUIZ GENERATION ERROR:", error.message);
@@ -2645,8 +2692,8 @@ app.post(
       // Extract concepts to inform AI
       const concepts = extractConceptsFromText(cleanedText);
 
-      // Calculate question count
-      const questionCount = Math.max(Math.min(Number(req.body.count) || 6, 20), 3);
+      // Calculate question count. Keep 100 as the production ceiling to avoid runaway jobs.
+      const questionCount = Math.max(Math.min(Number(req.body.count) || 6, 100), 3);
 
       // Call enhanced AI quiz generator with new prompt
       console.log(
@@ -2695,7 +2742,7 @@ app.post(
       }
 
       // Validate and compact generated questions into PPSC/FPSC-style MCQs.
-      const validatedQuestions = (generated.questions || [])
+      let validatedQuestions = (generated.questions || [])
         .map((q) =>
           sanitizeCompetitiveMCQ(
             q,
@@ -2707,10 +2754,42 @@ app.post(
         .filter(Boolean)
         .slice(0, questionCount);
 
+      if (validatedQuestions.length < questionCount && cleanedText.length >= 50) {
+        const existingStems = new Set(
+          validatedQuestions.map((item) => normalizeText(item.questionText).toLowerCase())
+        );
+        const fallbackPool = generateFallbackMCQs(
+          cleanedText,
+          questionCount * 2,
+          difficulty,
+          subject
+        );
+
+        fallbackPool.forEach((item) => {
+          const key = normalizeText(item.questionText).toLowerCase();
+          if (key && !existingStems.has(key) && validatedQuestions.length < questionCount) {
+            existingStems.add(key);
+            validatedQuestions.push(item);
+          }
+        });
+      }
+
       if (validatedQuestions.length === 0) {
         return res.status(500).json({
           message:
             "Generated questions did not meet quality standards. Please try again with different content.",
+        });
+      }
+
+      if (validatedQuestions.length < questionCount) {
+        return res.status(422).json({
+          message: `Only ${validatedQuestions.length} quality MCQs could be generated from the uploaded content. Please upload more readable study material or reduce the requested MCQ count.`,
+          details: {
+            generatedCount: validatedQuestions.length,
+            requestedCount: questionCount,
+            contentLength: cleanedText.length,
+            conceptsFound: concepts.conceptCount,
+          },
         });
       }
 

@@ -3,6 +3,7 @@ import { Clock, CheckCircle, XCircle, Loader, AlertCircle, FileText, Globe, Tras
 import API from "../../services/api";
 
 const difficultyOptions = [
+  { value: "mixed", label: "Mixed - PPSC/FPSC balanced" },
   { value: "easy", label: "Easy - Basic definitions" },
   { value: "medium", label: "Medium - Application & analysis" },
   { value: "hard", label: "Hard - Synthesis & evaluation" },
@@ -294,6 +295,44 @@ function QuizGenerator() {
 
     setQuizStarted(false);
     setMode("results");
+  };
+
+  const buildExportText = () => {
+    const questions = quiz?.questions || [];
+    return `${quiz?.title || "AI Quiz"}\n${quiz?.subject || "General"} | ${quiz?.difficulty || "mixed"}\n\n${questions
+      .map(
+        (question, index) =>
+          `${index + 1}. ${question.questionText}\nA) ${question.options?.[0] || ""}\nB) ${
+            question.options?.[1] || ""
+          }\nC) ${question.options?.[2] || ""}\nD) ${question.options?.[3] || ""}\nAnswer: ${
+            question.correctAnswer
+          }\nExplanation: ${question.explanation || ""}`
+      )
+      .join("\n\n")}`;
+  };
+
+  const exportQuiz = (format) => {
+    if (!quiz?.questions?.length) return;
+    const safeTitle = (quiz.title || "ai-quiz").replace(/[^a-z0-9-]+/gi, "-").toLowerCase();
+    if (format === "json") {
+      downloadBlob(
+        new Blob([JSON.stringify(quiz.questions, null, 2)], { type: "application/json" }),
+        `${safeTitle}.json`
+      );
+      return;
+    }
+
+    if (format === "doc") {
+      const html = `<html><head><meta charset="utf-8"></head><body><pre style="font-family:Arial;white-space:pre-wrap">${buildExportText()}</pre></body></html>`;
+      downloadBlob(new Blob([html], { type: "application/msword" }), `${safeTitle}.doc`);
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+    printWindow.document.write(`<html><head><title>${quiz.title}</title></head><body><pre style="font-family:Arial;white-space:pre-wrap">${buildExportText()}</pre></body></html>`);
+    printWindow.document.close();
+    printWindow.print();
   };
 
   const formatTime = (seconds) => {
@@ -661,7 +700,7 @@ function QuizGenerator() {
                     <input
                       type="number"
                       min={3}
-                      max={50}
+                      max={100}
                       value={quizForm.count}
                       onChange={(event) => handleFieldChange("count", Number(event.target.value))}
                       style={{ width: "100%", padding: "12px 14px", borderRadius: "14px", border: "1px solid #cbd5e1" }}
@@ -906,7 +945,7 @@ function QuizGenerator() {
                   <li>Use OCR-ready images</li>
                   <li>Paste 2-3 paragraphs minimum</li>
                   <li>Choose difficulty level</li>
-                  <li>Select question count (3-50)</li>
+                  <li>Select question count (3-100)</li>
                 </ul>
               </div>
 
@@ -1078,6 +1117,18 @@ function QuizGenerator() {
                 🚀 Start Quiz Now
               </button>
             </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px", marginTop: "12px" }}>
+                <button type="button" onClick={() => exportQuiz("pdf")} style={{ padding: "12px 10px", borderRadius: "14px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", fontWeight: 800, cursor: "pointer" }}>
+                  Export PDF
+                </button>
+                <button type="button" onClick={() => exportQuiz("doc")} style={{ padding: "12px 10px", borderRadius: "14px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", fontWeight: 800, cursor: "pointer" }}>
+                  Export DOC
+                </button>
+                <button type="button" onClick={() => exportQuiz("json")} style={{ padding: "12px 10px", borderRadius: "14px", border: "1px solid #cbd5e1", background: "#ffffff", color: "#0f172a", fontWeight: 800, cursor: "pointer" }}>
+                  Export JSON
+                </button>
+              </div>
 
             {/* Start Over */}
             <button
