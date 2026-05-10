@@ -3531,21 +3531,54 @@ app.get("/api/exam-ai", verifyToken, async (req, res) => {
     const user = await getDbUser(req.user.userId);
     if (!user) return res.status(404).json({ message: "User not found." });
 
-    const query =
-      user.role === "teacher"
-        ? { createdBy: user._id }
-        : user.role === "student"
-        ? {
-            isPublished: true,
-            status: "published",
-            $or: [
-              { showAllClassroomStudents: true, classroom: user.classroomId || null },
-              { allowedStudents: user._id },
-            ],
-          }
-        : {};
+    let query = {};
+    let exams = [];
 
-    const exams = await ExamAI.find(query).sort({ createdAt: -1 }).populate("questions").lean();
+    if (user.role === "teacher") {
+      // Teachers see only their own exams
+      query = { createdBy: user._id };
+    } else if (user.role === "student") {
+      // Students see only published, active exams
+      const now = new Date();
+      
+      query = {
+        isPublished: true,
+        isActive: true,
+        status: { $in: ["published", "active"] },
+        blockedStudents: { $ne: user._id }, // Not in blocked list
+        
+        $or: [
+          // Assigned to their classroom
+          {
+            showAllClassroomStudents: true,
+            classroom: user.classroomId || null,
+          },
+          // Explicitly allowed
+          { allowedStudents: user._id },
+        ],
+      };
+
+      // Time window check will be done in application logic
+    } else if (user.role === "admin" || user.role === "staff") {
+      // Admin/staff see all exams
+      query = {};
+    }
+
+    exams = await ExamAI.find(query)
+      .sort({ createdAt: -1 })
+      .populate("questions")
+      .lean();
+
+    // Additional filtering for students based on time windows
+    if (user.role === "student") {
+      const now = new Date();
+      exams = exams.filter((exam) => {
+        const isWithinTime = (!exam.startTime || now >= exam.startTime) && 
+                            (!exam.endTime || now <= exam.endTime);
+        return isWithinTime;
+      });
+    }
+
     res.json(exams.map(buildExamAIPayload));
   } catch (err) {
     console.log("EXAM AI LIST ERROR:", err);
@@ -3633,6 +3666,236 @@ app.delete("/api/exam-ai/:id", verifyToken, verifyTeacher, async (req, res) => {
   } catch (err) {
     console.log("EXAM AI DELETE ERROR:", err);
     res.status(500).json({ message: "Failed to delete Exam AI." });
+  }
+});
+
+// =============== NEW EXAM MANAGEMENT APIs ===============
+
+// UPDATE EXAM (edit title, description, settings)
+app.put("/api/exam-ai/:id", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    // Update allowed fields
+    if (req.body.title) exam.title = normalizeText(req.body.title);
+    if (req.body.description !== undefined) exam.description = normalizeText(req.body.description);
+    if (req.body.duration) exam.duration = Number(req.body.duration);
+    if (req.body.passingMarks) exam.passingMarks = Number(req.body.passingMarks);
+    if (req.body.securitySettings) exam.securitySettings = req.body.securitySettings;
+    if (req.body.aiMonitoring) exam.aiMonitoring = req.body.aiMonitoring;
+    if (req.body.showResults !== undefined) exam.showResults = Boolean(req.body.showResults);
+    if (req.body.showCorrectAnswers !== undefined) exam.showCorrectAnswers = Boolean(req.body.showCorrectAnswers);
+    if (req.body.maxAttempts !== undefined) exam.maxAttempts = req.body.maxAttempts ? Number(req.body.maxAttempts) : null;
+
+    exam.updatedAt = new Date();
+    await exam.save();
+
+    const updated = await ExamAI.findById(exam._id).populate("questions").lean();
+    res.json({ message: "Exam updated successfully.", exam: buildExamAIPayload(updated) });
+  } catch (err) {
+    console.log("EXAM AI UPDATE ERROR:", err);
+    res.status(500).json({ message: "Failed to update exam." });
+  }
+});
+
+// PUBLISH EXAM (make visible to students)
+app.put("/api/exam-ai/:id/publish", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    exam.isPublished = true;
+    exam.isActive = true;
+    exam.status = "published";
+    exam.startTime = req.body.startTime ? new Date(req.body.startTime) : new Date();
+    exam.endTime = req.body.endTime ? new Date(req.body.endTime) : null;
+    exam.updatedAt = new Date();
+    await exam.save();
+
+    const updated = await ExamAI.findById(exam._id).populate("questions").lean();
+    res.json({ message: "Exam published successfully.", exam: buildExamAIPayload(updated) });
+  } catch (err) {
+    console.log("EXAM AI PUBLISH ERROR:", err);
+    res.status(500).json({ message: "Failed to publish exam." });
+  }
+});
+
+// STOP EXAM (disable student access)
+app.put("/api/exam-ai/:id/stop", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    exam.isActive = false;
+    exam.status = "stopped";
+    exam.stoppedAt = new Date();
+    exam.stoppedBy = req.user.userId;
+    exam.updatedAt = new Date();
+    await exam.save();
+
+    const updated = await ExamAI.findById(exam._id).populate("questions").lean();
+    res.json({ message: "Exam stopped successfully.", exam: buildExamAIPayload(updated) });
+  } catch (err) {
+    console.log("EXAM AI STOP ERROR:", err);
+    res.status(500).json({ message: "Failed to stop exam." });
+  }
+});
+
+// RESUME EXAM (re-enable access)
+app.put("/api/exam-ai/:id/resume", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    exam.isActive = true;
+    exam.status = "published";
+    exam.stoppedAt = null;
+    exam.stoppedBy = null;
+    exam.updatedAt = new Date();
+    await exam.save();
+
+    const updated = await ExamAI.findById(exam._id).populate("questions").lean();
+    res.json({ message: "Exam resumed successfully.", exam: buildExamAIPayload(updated) });
+  } catch (err) {
+    console.log("EXAM AI RESUME ERROR:", err);
+    res.status(500).json({ message: "Failed to resume exam." });
+  }
+});
+
+// ALLOW STUDENT ACCESS
+app.put("/api/exam-ai/:id/allow/:studentId", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    // Remove from blocked list if present
+    exam.blockedStudents = (exam.blockedStudents || []).filter((id) => id.toString() !== req.params.studentId);
+    
+    // Add to allowed list if not present
+    if (!exam.allowedStudents.some((id) => id.toString() === req.params.studentId)) {
+      exam.allowedStudents.push(req.params.studentId);
+    }
+
+    // Log the action
+    if (!exam.accessControlChanges) exam.accessControlChanges = [];
+    exam.accessControlChanges.push({
+      action: "allowed",
+      studentId: req.params.studentId,
+      changedBy: req.user.userId,
+      timestamp: new Date(),
+    });
+
+    exam.updatedAt = new Date();
+    await exam.save();
+
+    res.json({ message: "Student access allowed." });
+  } catch (err) {
+    console.log("EXAM AI ALLOW ERROR:", err);
+    res.status(500).json({ message: "Failed to allow access." });
+  }
+});
+
+// BLOCK STUDENT ACCESS
+app.put("/api/exam-ai/:id/block/:studentId", verifyToken, verifyTeacher, async (req, res) => {
+  try {
+    const exam = await ExamAI.findOne({ _id: req.params.id, createdBy: req.user.userId });
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    // Remove from allowed list if present
+    exam.allowedStudents = (exam.allowedStudents || []).filter((id) => id.toString() !== req.params.studentId);
+    
+    // Add to blocked list if not present
+    if (!exam.blockedStudents.some((id) => id.toString() === req.params.studentId)) {
+      exam.blockedStudents.push(req.params.studentId);
+    }
+
+    // Log the action
+    if (!exam.accessControlChanges) exam.accessControlChanges = [];
+    exam.accessControlChanges.push({
+      action: "blocked",
+      studentId: req.params.studentId,
+      changedBy: req.user.userId,
+      timestamp: new Date(),
+    });
+
+    exam.updatedAt = new Date();
+    await exam.save();
+
+    res.json({ message: "Student access blocked." });
+  } catch (err) {
+    console.log("EXAM AI BLOCK ERROR:", err);
+    res.status(500).json({ message: "Failed to block access." });
+  }
+});
+
+// GET STUDENT ACCESS STATUS
+app.get("/api/exam-ai/:id/access/:studentId", verifyToken, async (req, res) => {
+  try {
+    const exam = await ExamAI.findById(req.params.id);
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    const isBlocked = (exam.blockedStudents || []).some((id) => id.toString() === req.params.studentId);
+    const isAllowed = (exam.allowedStudents || []).some((id) => id.toString() === req.params.studentId);
+    const now = new Date();
+    const isWithinTimeWindow = (!exam.startTime || now >= exam.startTime) && (!exam.endTime || now <= exam.endTime);
+    const canAccess = exam.isActive && exam.isPublished && !isBlocked && isWithinTimeWindow;
+
+    res.json({
+      canAccess,
+      isBlocked,
+      isAllowed,
+      isPublished: exam.isPublished,
+      isActive: exam.isActive,
+      isWithinTimeWindow,
+      reason: !canAccess
+        ? isBlocked
+          ? "You are blocked from accessing this exam."
+          : !exam.isActive
+          ? "Exam is currently stopped."
+          : !exam.isPublished
+          ? "Exam is not published yet."
+          : !isWithinTimeWindow
+          ? "Exam is outside the available time window."
+          : "Unknown error."
+        : "Access granted",
+    });
+  } catch (err) {
+    console.log("EXAM AI ACCESS CHECK ERROR:", err);
+    res.status(500).json({ message: "Failed to check access." });
+  }
+});
+
+// GET EXAM FULL DETAILS (teacher view)
+app.get("/api/exam-ai/:id/details", verifyToken, async (req, res) => {
+  try {
+    const exam = await ExamAI.findById(req.params.id)
+      .populate("createdBy", "name email role")
+      .populate("allowedStudents", "name email")
+      .populate("blockedStudents", "name email")
+      .populate("questions")
+      .lean();
+
+    if (!exam) return res.status(404).json({ message: "Exam not found." });
+
+    // Only teacher can see all details
+    if (exam.createdBy._id.toString() !== req.user.userId && req.user.role !== "admin") {
+      return res.status(403).json({ message: "Access denied." });
+    }
+
+    // Get attempt statistics
+    const attempts = await ExamAIResult.find({ examId: exam._id })
+      .select("studentId studentName score percentage integrityStatus createdAt")
+      .lean();
+
+    res.json({
+      ...exam,
+      attempts: attempts || [],
+      attemptCount: attempts?.length || 0,
+    });
+  } catch (err) {
+    console.log("EXAM AI DETAILS ERROR:", err);
+    res.status(500).json({ message: "Failed to fetch exam details." });
   }
 });
 

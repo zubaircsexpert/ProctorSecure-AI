@@ -56,11 +56,85 @@ const examAISchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  isActive: {
+    type: Boolean,
+    default: false, // Can be published but inactive
+  },
   status: {
     type: String,
-    enum: ["draft", "published", "archived"],
+    enum: ["draft", "published", "active", "upcoming", "completed", "expired", "stopped", "disabled", "archived"],
     default: "draft",
   },
+
+  // =============== TEACHER CONTROL FIELDS ===============
+  
+  // Access Management
+  blockedStudents: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+  ],
+  maxAttempts: {
+    type: Number,
+    default: null, // null = unlimited
+    min: 1,
+  },
+  allowedBatches: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Batch",
+    },
+  ],
+  
+  // Timing Control
+  startTime: {
+    type: Date,
+    default: null,
+  },
+  endTime: {
+    type: Date,
+    default: null,
+  },
+  
+  // Visibility & Availability
+  isVisible: {
+    type: Boolean,
+    default: true,
+  },
+  showResults: {
+    type: Boolean,
+    default: true,
+  },
+  showCorrectAnswers: {
+    type: Boolean,
+    default: true,
+  },
+  
+  // Stop/Resume Control
+  stoppedAt: {
+    type: Date,
+    default: null,
+  },
+  stoppedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+  
+  // Access Control Logs
+  accessControlChanges: [
+    {
+      action: String, // "allowed", "blocked", "stop", "resume"
+      studentId: mongoose.Schema.Types.ObjectId,
+      changedBy: mongoose.Schema.Types.ObjectId,
+      timestamp: {
+        type: Date,
+        default: Date.now,
+      },
+    },
+  ],
+  
+  // =============== EXAM SETTINGS ===============
   
   // Security & Proctoring Settings
   securitySettings: {
