@@ -32,6 +32,11 @@ import ExamAI from "./models/ExamAI.js";
 import ExamAIResult from "./models/ExamAIResult.js";
 import ExamViolation from "./models/ExamViolation.js";
 import AIReport from "./models/AIReport.js";
+import MCQBank from "./models/MCQBank.js";
+import QuizTemplate from "./models/QuizTemplate.js";
+import QuizSession from "./models/QuizSession.js";
+import CheatDetection from "./models/CheatDetection.js";
+import QuizAnalytics from "./models/QuizAnalytics.js";
 import {
   extractTextFromImage,
   extractTextFromImageWithLanguage,
@@ -45,6 +50,8 @@ import {
   buildEnhancedQuizPrompt,
   enhanceQuizMetadata,
 } from "./utils/quizGenerator.js";
+import quizRoutes from "./routes/quizRoutes.js";
+import quizAssemblyRoutes from "./routes/quizAssemblyRoutes.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
@@ -4018,6 +4025,10 @@ app.get("/api/exam-ai/reports/all", verifyToken, verifyStaff, async (req, res) =
     res.status(500).json({ message: "Failed to load AI reports." });
   }
 });
+
+// Mount quiz routes
+app.use("/api/quiz", quizRoutes);
+app.use("/api/quiz-assembly", quizAssemblyRoutes);
 
 const startServer = async () => {
   try {
