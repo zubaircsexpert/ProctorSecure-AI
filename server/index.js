@@ -29,6 +29,7 @@ import SystemAccess from "./models/SystemAccess.js";
 import Quiz from "./models/Quiz.js";
 import GeneratedQuestion from "./models/GeneratedQuestion.js";
 import ExamAI from "./models/ExamAI.js";
+import Assessment from "./models/Assessment.js";
 import ExamAIResult from "./models/ExamAIResult.js";
 import ExamViolation from "./models/ExamViolation.js";
 import AIReport from "./models/AIReport.js";
@@ -2640,6 +2641,13 @@ app.post(
   tutorUpload.single("file"),
   async (req, res) => {
     try {
+      // Check if OpenAI API key is configured before processing
+      if (!process.env.OPENAI_API_KEY) {
+        return res.status(503).json({ 
+          message: "Quiz generation service is currently unavailable. OpenAI API key is not configured on the server." 
+        });
+      }
+
       const user = await getDbUser(req.user.userId);
       if (!user) {
         return res.status(404).json({ message: "User not found." });
