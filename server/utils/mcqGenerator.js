@@ -3,9 +3,22 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "",
-});
+// Lazy initialization of OpenAI client
+let openai = null;
+
+const getOpenAIClient = () => {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OpenAI API key not configured. Please set OPENAI_API_KEY environment variable.");
+  }
+  
+  if (!openai) {
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  
+  return openai;
+};
 
 /**
  * Generate MCQs using OpenAI API
@@ -34,6 +47,8 @@ export const generateMCQsWithAI = async (extractedText, options = {}) => {
   }
 
   try {
+    const client = getOpenAIClient();
+    
     // Chunk text if too long (GPT has token limits)
     const maxChunkLength = 3000;
     const textChunks = chunkText(extractedText, maxChunkLength);
@@ -52,7 +67,7 @@ export const generateMCQsWithAI = async (extractedText, options = {}) => {
         topic,
       });
 
-      const response = await openai.chat.completions.create({
+      const response = await client.chat.completions.create({
         model: "gpt-4-turbo",
         messages: [
           {
