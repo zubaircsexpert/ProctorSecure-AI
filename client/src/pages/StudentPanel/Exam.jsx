@@ -158,11 +158,10 @@ const Exam = ({ assessmentFilter = "exam" }) => {
 
   const isPhone = viewportWidth < 768;
   const isCompactLayout = viewportWidth < 1120;
-  const isQuizMode = assessmentFilter === "quiz";
-  const assessmentLabel = isQuizMode ? "Quiz" : "AI Exam";
-  const assessmentLabelLower = isQuizMode ? "quiz" : "exam";
+  const isQuizMode = false; // Quiz mode disabled - unified exam system only
+  const assessmentLabel = "Professional Exam";
+  const assessmentLabelLower = "exam";
   const shouldEnforceFullscreen =
-    !isQuizMode &&
     viewportWidth >= 1024 &&
     typeof document !== "undefined" &&
     document.fullscreenEnabled;
@@ -184,8 +183,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
 
       const res = await API.get("/api/exams/all");
       const examList = extractList(res.data, ["exams", "data"]).filter((exam) => {
-        const type = exam.assessmentType || "exam";
-        return exam.status !== "closed" && (isQuizMode ? type === "quiz" : type !== "quiz");
+        return exam.status !== "closed"; // Show all exams, no quiz/exam type filtering
       });
 
       setExams(examList);

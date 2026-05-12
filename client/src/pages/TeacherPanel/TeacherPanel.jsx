@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BellRing,
   BookOpenCheck,
@@ -30,8 +30,7 @@ const tabs = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
   { id: "classrooms", label: "Classrooms", icon: GraduationCap },
   { id: "approvals", label: "Approvals", icon: UserCheck },
-  { id: "exams", label: "Exams", icon: CalendarClock },
-  { id: "quizzes", label: "Quizzes", icon: BrainCircuit },
+  { id: "exams", label: "Professional Exams", icon: ShieldCheck },
   { id: "assignments", label: "Assignments", icon: FileStack },
   { id: "studyVault", label: "Study Vault", icon: FileStack },
   { id: "announcements", label: "Announcements", icon: BellRing },
@@ -55,7 +54,7 @@ const initialExamForm = {
   course: "",
   title: "",
   syllabus: "",
-  duration: "",
+  duration: "60",
   examKey: "",
   assessmentType: "exam",
   responseMode: "mcq",
@@ -66,6 +65,13 @@ const initialExamForm = {
   requiresScreenShare: true,
   startTime: "",
   endTime: "",
+  // Cheating detection enabled by default
+  enableCheatDetection: true,
+  detectTabSwitch: true,
+  detectCopyPaste: true,
+  detectScreenShare: true,
+  detectDeviceChange: true,
+  allowedViolations: 3,
 };
 
 const initialQuestionForm = {
@@ -76,18 +82,6 @@ const initialQuestionForm = {
   optionC: "",
   optionD: "",
   correctAnswer: "",
-};
-
-const initialQuizForm = {
-  classroomId: "",
-  course: "",
-  title: "",
-  duration: "10",
-  examKey: "",
-  instructions: "",
-  submissionPrompt: "",
-  startTime: "",
-  endTime: "",
 };
 
 const initialAssignmentForm = {
@@ -159,8 +153,6 @@ function TeacherPanel() {
   const [classroomForm, setClassroomForm] = useState(initialClassroomForm);
   const [examForm, setExamForm] = useState(initialExamForm);
   const [questionForm, setQuestionForm] = useState(initialQuestionForm);
-  const [quizForm, setQuizForm] = useState(initialQuizForm);
-  const [quizQuestionForm, setQuizQuestionForm] = useState(initialQuestionForm);
   const [assignmentForm, setAssignmentForm] = useState(initialAssignmentForm);
   const [assignmentFile, setAssignmentFile] = useState(null);
   const [notificationForm, setNotificationForm] = useState(initialNotificationForm);
@@ -173,35 +165,17 @@ function TeacherPanel() {
     [classrooms]
   );
 
-  const mcqExamOptions = useMemo(
+  const examOptions = useMemo(
     () =>
-      exams
-        .filter((exam) => (exam.responseMode || "mcq") === "mcq")
-        .map((exam) => ({
-          value: exam._id,
-          label: `${exam.title} | ${exam.classroomName}`,
-        })),
+      exams.map((exam) => ({
+        value: exam._id,
+        label: `${exam.title} | ${exam.classroomName}`,
+      })),
     [exams]
   );
 
-  const quizOptions = useMemo(
-    () =>
-      exams
-        .filter((exam) => (exam.assessmentType || "exam") === "quiz")
-        .map((quiz) => ({
-          value: quiz._id,
-          label: `${quiz.title} | ${quiz.classroomName}`,
-        })),
-    [exams]
-  );
-
-  const quizResults = useMemo(
-    () => results.filter((result) => (result.assessmentType || "exam") === "quiz"),
-    [results]
-  );
-
-  const examResults = useMemo(
-    () => results.filter((result) => (result.assessmentType || "exam") !== "quiz"),
+  const allResults = useMemo(
+    () => results,
     [results]
   );
 
@@ -303,21 +277,11 @@ function TeacherPanel() {
     setQuestionForm((prev) => ({
       ...prev,
       examId:
-        mcqExamOptions.find((option) => option.value === prev.examId)?.value ||
-        mcqExamOptions[0]?.value ||
+        examOptions.find((option) => option.value === prev.examId)?.value ||
+        examOptions[0]?.value ||
         "",
     }));
-  }, [mcqExamOptions]);
-
-  useEffect(() => {
-    setQuizQuestionForm((prev) => ({
-      ...prev,
-      examId:
-        quizOptions.find((option) => option.value === prev.examId)?.value ||
-        quizOptions[0]?.value ||
-        "",
-    }));
-  }, [quizOptions]);
+  }, [examOptions]);
 
   const loadWorkspace = useCallback(async (silent = false) => {
     if (!silent) {
@@ -648,76 +612,6 @@ function TeacherPanel() {
       setNotice({
         type: "error",
         text: error.response?.data?.message || "Failed to delete MCQ.",
-      });
-    } finally {
-      setBusyKey("");
-    }
-  };
-
-  const handleQuizSubmit = async (event) => {
-    event.preventDefault();
-    setBusyKey("save-quiz");
-    setNotice(emptyNotice);
-
-    const payload = {
-      ...quizForm,
-      duration: Number(quizForm.duration),
-      assessmentType: "quiz",
-      responseMode: "mcq",
-      requiresCamera: false,
-      requiresMicrophone: false,
-      requiresScreenShare: false,
-      syllabus: quizForm.instructions,
-      startTime: quizForm.startTime ? new Date(quizForm.startTime).toISOString() : null,
-      endTime: quizForm.endTime ? new Date(quizForm.endTime).toISOString() : null,
-    };
-
-    try {
-      await API.post("/api/exams/add", payload);
-      setQuizForm((prev) => ({
-        ...initialQuizForm,
-        classroomId: prev.classroomId || classrooms[0]?.id || "",
-      }));
-      await loadWorkspace(true);
-      setNotice({ type: "success", text: "Quiz created successfully." });
-    } catch (error) {
-      setNotice({
-        type: "error",
-        text: error.response?.data?.message || "Failed to create quiz.",
-      });
-    } finally {
-      setBusyKey("");
-    }
-  };
-
-  const handleQuizQuestionSubmit = async (event) => {
-    event.preventDefault();
-    setBusyKey("add-quiz-question");
-    setNotice(emptyNotice);
-
-    try {
-      await API.post("/api/questions/add", {
-        examId: quizQuestionForm.examId,
-        questionText: quizQuestionForm.questionText,
-        options: [
-          quizQuestionForm.optionA,
-          quizQuestionForm.optionB,
-          quizQuestionForm.optionC,
-          quizQuestionForm.optionD,
-        ],
-        correctAnswer: quizQuestionForm.correctAnswer,
-      });
-
-      setQuizQuestionForm((prev) => ({
-        ...initialQuestionForm,
-        examId: prev.examId,
-      }));
-      await loadWorkspace(true);
-      setNotice({ type: "success", text: "Quiz MCQ added successfully." });
-    } catch (error) {
-      setNotice({
-        type: "error",
-        text: error.response?.data?.message || "Failed to add quiz MCQ.",
       });
     } finally {
       setBusyKey("");
@@ -1414,6 +1308,78 @@ function TeacherPanel() {
                     Require screen share
                   </label>
                 </div>
+
+                <div style={{ ...styles.sectionDivider, marginTop: "20px", paddingTop: "20px" }}>
+                  <div style={{ fontSize: "14px", fontWeight: "600", color: "#1e293b", marginBottom: "14px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <ShieldCheck size={16} style={{ color: "#dc2626" }} />
+                    Cheating Detection & Security
+                  </div>
+                  <label style={styles.toggleField}>
+                    <input
+                      type="checkbox"
+                      checked={examForm.enableCheatDetection}
+                      onChange={(event) =>
+                        setExamForm((prev) => ({ ...prev, enableCheatDetection: event.target.checked }))
+                      }
+                    />
+                    Enable Cheating Detection (Recommended)
+                  </label>
+                  {examForm.enableCheatDetection && (
+                    <>
+                      <label style={styles.toggleField}>
+                        <input
+                          type="checkbox"
+                          checked={examForm.detectTabSwitch}
+                          onChange={(event) =>
+                            setExamForm((prev) => ({ ...prev, detectTabSwitch: event.target.checked }))
+                          }
+                        />
+                        Detect tab switching
+                      </label>
+                      <label style={styles.toggleField}>
+                        <input
+                          type="checkbox"
+                          checked={examForm.detectCopyPaste}
+                          onChange={(event) =>
+                            setExamForm((prev) => ({ ...prev, detectCopyPaste: event.target.checked }))
+                          }
+                        />
+                        Detect copy/paste attempts
+                      </label>
+                      <label style={styles.toggleField}>
+                        <input
+                          type="checkbox"
+                          checked={examForm.detectScreenShare}
+                          onChange={(event) =>
+                            setExamForm((prev) => ({ ...prev, detectScreenShare: event.target.checked }))
+                          }
+                        />
+                        Detect screen sharing/recording
+                      </label>
+                      <label style={styles.toggleField}>
+                        <input
+                          type="checkbox"
+                          checked={examForm.detectDeviceChange}
+                          onChange={(event) =>
+                            setExamForm((prev) => ({ ...prev, detectDeviceChange: event.target.checked }))
+                          }
+                        />
+                        Detect device changes (phones, external monitors)
+                      </label>
+                      <Field
+                        label="Allowed Violations Before Action"
+                        type="number"
+                        min="1"
+                        max="10"
+                        value={examForm.allowedViolations}
+                        onChange={(value) =>
+                          setExamForm((prev) => ({ ...prev, allowedViolations: parseInt(value) || 3 }))
+                        }
+                        style={{ marginTop: "12px" }}
+                      />
+                    </>
+                  )}
+                </div>
               </div>
 
               <div style={styles.actionRow}>
@@ -1632,295 +1598,6 @@ function TeacherPanel() {
         </div>
       )}
 
-      {activeTab === "quizzes" && (
-        <div style={styles.sectionStack}>
-          <section style={styles.gridTwo}>
-            <form onSubmit={handleQuizSubmit} style={styles.card}>
-              <SectionHeader
-                kicker="Quiz Add"
-                title="Create simple MCQ quiz"
-                icon={<BrainCircuit size={18} />}
-                iconTone={["#e0f2fe", "#0369a1"]}
-              />
-
-              <div style={styles.formGrid}>
-                <SelectField
-                  label="Classroom"
-                  value={quizForm.classroomId}
-                  onChange={(value) => setQuizForm((prev) => ({ ...prev, classroomId: value }))}
-                  options={classOptions}
-                />
-                <Field
-                  label="Course"
-                  value={quizForm.course}
-                  onChange={(value) => setQuizForm((prev) => ({ ...prev, course: value }))}
-                  placeholder="Computer Science"
-                />
-                <Field
-                  label="Quiz Title"
-                  value={quizForm.title}
-                  onChange={(value) => setQuizForm((prev) => ({ ...prev, title: value }))}
-                  placeholder="Quiz 1"
-                />
-                <Field
-                  label="Time (minutes)"
-                  type="number"
-                  value={quizForm.duration}
-                  onChange={(value) => setQuizForm((prev) => ({ ...prev, duration: value }))}
-                  placeholder="10"
-                />
-                <Field
-                  label="Quiz Key"
-                  value={quizForm.examKey}
-                  onChange={(value) => setQuizForm((prev) => ({ ...prev, examKey: value }))}
-                  placeholder="Optional"
-                />
-                <Field
-                  label="Start Time"
-                  type="datetime-local"
-                  value={quizForm.startTime}
-                  onChange={(value) => setQuizForm((prev) => ({ ...prev, startTime: value }))}
-                />
-                <Field
-                  label="End Time"
-                  type="datetime-local"
-                  value={quizForm.endTime}
-                  onChange={(value) => setQuizForm((prev) => ({ ...prev, endTime: value }))}
-                />
-                <TextAreaField
-                  label="Quiz Note"
-                  value={quizForm.submissionPrompt}
-                  onChange={(value) =>
-                    setQuizForm((prev) => ({ ...prev, submissionPrompt: value }))
-                  }
-                  placeholder="Short note shown to students"
-                  full
-                />
-              </div>
-
-              <button type="submit" style={styles.primaryButton} disabled={busyKey === "save-quiz"}>
-                <Play size={16} />
-                {busyKey === "save-quiz" ? "Saving..." : "Create Quiz"}
-              </button>
-            </form>
-
-            <form onSubmit={handleQuizQuestionSubmit} style={styles.card}>
-              <SectionHeader
-                kicker="Quiz MCQs"
-                title="Add four-option questions"
-                icon={<ClipboardCheck size={18} />}
-                iconTone={["#ecfccb", "#3f6212"]}
-              />
-
-              {quizOptions.length === 0 ? (
-                <EmptyState text="Create a quiz first, then add MCQs here." compact />
-              ) : (
-                <>
-                  <div style={styles.formGrid}>
-                    <SelectField
-                      label="Quiz"
-                      value={quizQuestionForm.examId}
-                      onChange={(value) =>
-                        setQuizQuestionForm((prev) => ({ ...prev, examId: value }))
-                      }
-                      options={quizOptions}
-                      full
-                    />
-                    <TextAreaField
-                      label="Question"
-                      value={quizQuestionForm.questionText}
-                      onChange={(value) =>
-                        setQuizQuestionForm((prev) => ({ ...prev, questionText: value }))
-                      }
-                      placeholder="Write quiz question"
-                      full
-                    />
-                    {["A", "B", "C", "D"].map((label) => (
-                      <Field
-                        key={label}
-                        label={`Option ${label}`}
-                        value={quizQuestionForm[`option${label}`]}
-                        onChange={(value) =>
-                          setQuizQuestionForm((prev) => ({ ...prev, [`option${label}`]: value }))
-                        }
-                        placeholder={`Option ${label}`}
-                      />
-                    ))}
-                    <Field
-                      label="Correct Answer"
-                      value={quizQuestionForm.correctAnswer}
-                      onChange={(value) =>
-                        setQuizQuestionForm((prev) => ({ ...prev, correctAnswer: value }))
-                      }
-                      placeholder="Exact option text"
-                      full
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    style={styles.successButton}
-                    disabled={busyKey === "add-quiz-question"}
-                  >
-                    <Check size={16} />
-                    {busyKey === "add-quiz-question" ? "Adding..." : "Add Quiz MCQ"}
-                  </button>
-                </>
-              )}
-            </form>
-          </section>
-
-          <section style={styles.gridTwo}>
-            <div style={styles.card}>
-              <SectionHeader
-                kicker="Quiz Access"
-                title="Start, stop, and review quizzes"
-                icon={<Play size={18} />}
-                iconTone={["#dbeafe", "#1d4ed8"]}
-              />
-
-              {quizOptions.length === 0 ? (
-                <EmptyState text="No quiz has been created yet." />
-              ) : (
-                <div style={styles.cardGrid}>
-                  {exams
-                    .filter((exam) => (exam.assessmentType || "exam") === "quiz")
-                    .map((quiz) => (
-                      <div key={quiz._id} style={styles.examCard}>
-                        <div style={styles.examTop}>
-                          <div>
-                            <span style={styles.statusBadge(quiz.status)}>{quiz.status}</span>
-                            <div style={styles.timelineTitle}>{quiz.title}</div>
-                            <div style={styles.timelineText}>
-                              {quiz.course} | {quiz.classroomName}
-                            </div>
-                          </div>
-                          <div style={styles.countBadge}>
-                            {questionsByExam[String(quiz._id)]?.length || 0} MCQs
-                          </div>
-                        </div>
-                        <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
-                          <InfoPill label="Time" value={`${quiz.duration} min`} />
-                          <InfoPill
-                            label="Result Count"
-                            value={
-                              quizResults.filter((result) => String(result.examId) === String(quiz._id))
-                                .length
-                            }
-                          />
-                        </div>
-                        <div style={styles.actionRow}>
-                          <button
-                            type="button"
-                            style={styles.successButton}
-                            onClick={() =>
-                              updateExamState(
-                                quiz._id,
-                                { status: "live", accessGranted: true },
-                                "Quiz access started."
-                              )
-                            }
-                          >
-                            <Play size={16} />
-                            Start Access
-                          </button>
-                          <button
-                            type="button"
-                            style={styles.warningButton}
-                            onClick={() =>
-                              updateExamState(
-                                quiz._id,
-                                { status: "scheduled", accessGranted: false },
-                                "Quiz access paused."
-                              )
-                            }
-                          >
-                            <Square size={16} />
-                            Pause
-                          </button>
-                          <button
-                            type="button"
-                            style={styles.dangerButton}
-                            onClick={() =>
-                              updateExamState(
-                                quiz._id,
-                                { status: "closed", accessGranted: false },
-                                "Quiz closed."
-                              )
-                            }
-                          >
-                            <XCircle size={16} />
-                            Close
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
-
-            <div style={styles.card}>
-              <SectionHeader
-                kicker="Quiz Results"
-                title="Student quiz outcomes"
-                icon={<ClipboardCheck size={18} />}
-                iconTone={["#fef3c7", "#b45309"]}
-              />
-
-              {quizResults.length === 0 ? (
-                <EmptyState text="No student quiz result exists yet." />
-              ) : (
-                <div style={styles.cardGrid}>
-                  {quizResults.map((result) => (
-                    <div key={result._id} style={styles.resultCard}>
-                      <div style={styles.examTop}>
-                        <div>
-                          <div style={styles.timelineTitle}>{result.studentName || "Student"}</div>
-                          <div style={styles.timelineText}>
-                            {result.testName || "Quiz"} | {result.classroomName || "Classroom"}
-                          </div>
-                          <div style={styles.timelineText}>
-                            Attempted {formatDateTime(result.createdAt, "Recently")}
-                          </div>
-                        </div>
-                        <span style={styles.statusBadge(result.status || "PASSED")}>
-                          {result.status || "Submitted"}
-                        </span>
-                      </div>
-                      <div style={styles.metricGrid}>
-                        <InfoPill label="Score" value={`${result.score || 0}/${result.total || 0}`} />
-                        <InfoPill label="Percentage" value={`${result.percentage || 0}%`} />
-                      </div>
-                      {Array.isArray(result.answerSheet) && result.answerSheet.length > 0 ? (
-                        <div style={styles.feedbackPanel}>
-                          <strong style={{ color: "#0f172a" }}>Answer review</strong>
-                          <div style={{ display: "grid", gap: "10px", marginTop: "8px" }}>
-                            {result.answerSheet.slice(0, 6).map((answer, index) => (
-                              <div key={`${result._id}-answer-${index}`} style={styles.answerReviewRow(answer.isCorrect)}>
-                                <div>
-                                  <div style={{ color: "#0f172a", fontWeight: 800 }}>
-                                    Q{index + 1}. {answer.questionText || "Question"}
-                                  </div>
-                                  <div style={{ color: "#475569", marginTop: "4px" }}>
-                                    Selected: {answer.selectedAnswer || "Not answered"} | Correct:{" "}
-                                    {answer.correctAnswer || "N/A"}
-                                  </div>
-                                </div>
-                                <span style={styles.statusBadge(answer.isCorrect ? "PASSED" : "FAILED")}>
-                                  {answer.isCorrect ? "Correct" : "Wrong"}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </section>
-        </div>
-      )}
 
       {activeTab === "assignments" && (
         <div style={styles.sectionStack}>
