@@ -68,7 +68,6 @@ function Dashboard() {
     () =>
       [...exams]
         .filter((exam) => exam.status !== "closed")
-        .filter((exam) => (exam.assessmentType || "exam") !== "quiz")
         .sort((left, right) => {
           const leftTime = left.startTime ? new Date(left.startTime).getTime() : Infinity;
           const rightTime = right.startTime ? new Date(right.startTime).getTime() : Infinity;
@@ -133,14 +132,14 @@ function Dashboard() {
     {
       to: "/exam",
       icon: Shield,
-      title: "AI Exam",
+      title: "Professional Exam",
       text: "Open teacher-approved secure exams with live camera, focus, copy/paste, and movement checks.",
     },
     {
       to: "/ai-tutor",
       icon: BrainCircuit,
       title: "AI Tutor",
-      text: "Ask for assignment help, quiz preparation, exam guidance, and study fixes.",
+      text: "Ask for assignment help, exam preparation, study guidance, and exam fixes.",
     },
     {
       to: "/study-vault",

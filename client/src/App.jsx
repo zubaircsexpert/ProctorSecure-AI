@@ -19,7 +19,6 @@ const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const Schedule = lazy(() => import("./pages/Schedule"));
 const AssignmentList = lazy(() => import("./pages/StudentPanel/AssignmentList"));
 const AiTutor = lazy(() => import("./pages/StudentPanel/AiTutor"));
-const QuizGenerator = lazy(() => import("./pages/StudentPanel/QuizGenerator"));
 const Dashboard = lazy(() => import("./pages/StudentPanel/Dashboard"));
 const Exam = lazy(() => import("./pages/StudentPanel/Exam"));
 const ExamAI = lazy(() => import("./pages/ExamAI"));
@@ -230,28 +229,6 @@ function App() {
             <ProtectedRoute>
               <PageShell top={0}>
                 <ExamAI />
-              </PageShell>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/quiz"
-          element={
-            <ProtectedRoute allowedRole="student">
-              <PageShell>
-                <Exam assessmentFilter="quiz" />
-              </PageShell>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
-          path="/quiz-generator"
-          element={
-            <ProtectedRoute>
-              <PageShell>
-                <QuizGenerator />
               </PageShell>
             </ProtectedRoute>
           }

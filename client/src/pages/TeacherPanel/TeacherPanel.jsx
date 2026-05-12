@@ -202,7 +202,7 @@ function TeacherPanel() {
   );
 
   const dashboardMetrics = useMemo(() => {
-    const aiExams = exams.filter((exam) => (exam.assessmentType || "exam") !== "quiz");
+    const aiExams = exams;
     const liveExams = aiExams.filter((exam) => exam.status === "live").length;
     const scheduledExams = aiExams.filter((exam) => exam.status === "scheduled").length;
     const submissionsToReview = assignments.reduce(
@@ -1190,9 +1190,8 @@ function TeacherPanel() {
                   value={examForm.assessmentType}
                   onChange={(value) => setExamForm((prev) => ({ ...prev, assessmentType: value }))}
                   options={[
-                    { value: "exam", label: "Exam" },
-                    { value: "quiz", label: "Quiz" },
-                    { value: "test", label: "Test" },
+                    { value: "exam", label: "Professional Exam" },
+                    { value: "test", label: "Assessment Test" },
                   ]}
                 />
                 <SelectField

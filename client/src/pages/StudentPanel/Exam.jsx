@@ -655,7 +655,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
         document.exitFullscreen().catch(() => {});
       }
 
-      window.location.href = isQuizMode ? "/quiz" : "/results";
+      window.location.href = "/results";
     } catch (err) {
       console.error("Submission error:", err);
       localStorage.setItem(
@@ -672,7 +672,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
           warnings: warningCounts.total,
         })
       );
-      window.location.href = isQuizMode ? "/quiz" : "/results";
+      window.location.href = "/results";
     } finally {
       setSubmitting(false);
     }
