@@ -211,7 +211,7 @@ function TeacherPanel() {
         (assignment.submissions || []).filter((submission) => submission.status !== "Checked").length,
       0
     );
-    const flaggedResults = examResults.filter(
+    const flaggedResults = allResults.filter(
       (result) => Number(result.suspiciousScore || result.cheatingPercent || 0) >= 35
     ).length;
 
@@ -225,7 +225,7 @@ function TeacherPanel() {
       flaggedResults,
       notifications: notifications.length,
     };
-  }, [approvalQueue.length, assignments, classrooms.length, examResults, exams, notifications.length, roster.length]);
+  }, [approvalQueue.length, assignments, classrooms.length, allResults, exams, notifications.length, roster.length]);
 
   const aiCoach = useMemo(() => {
     const nextExam = [...exams]
@@ -1993,11 +1993,11 @@ function TeacherPanel() {
             iconTone={["#dbeafe", "#1d4ed8"]}
           />
 
-          {examResults.length === 0 ? (
+          {allResults.length === 0 ? (
             <EmptyState text="No AI exam result exists yet." />
           ) : (
             <div style={styles.cardGrid}>
-              {examResults.map((result) => (
+              {allResults.map((result) => (
                 <div key={result._id} style={styles.resultCard}>
                   <div style={styles.examTop}>
                     <div>
