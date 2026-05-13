@@ -96,6 +96,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   const animationFrameRef = useRef(null);
   const processingRef = useRef(false);
   const soundIntervalRef = useRef(null);
+  const requestTimeoutRef = useRef(null);
   const audioContextRef = useRef(null);
   const baselineRef = useRef(null);
   const missingFramesRef = useRef(0);
@@ -123,6 +124,8 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   const [audioState, setAudioState] = useState("Calibrating room");
   const [trackingScore, setTrackingScore] = useState(0);
   const [trackingMode, setTrackingMode] = useState("Hybrid AI");
+  const [cameraStartKey, setCameraStartKey] = useState(0);
+  const [cameraNeedsAction, setCameraNeedsAction] = useState(false);
 
   const emitTelemetry = useCallback(
     (payload) => {
@@ -187,6 +190,14 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
     },
     [addWarning, speakAlert]
   );
+
+  const restartCamera = useCallback(() => {
+    setCameraNeedsAction(false);
+    setCameraState("Requesting camera");
+    setPresenceLabel("Aligning face");
+    setFramingLabel("Allow camera access, then keep your face inside the live frame.");
+    setCameraStartKey((value) => value + 1);
+  }, []);
 
   const renderGuide = useCallback((box, label) => {
     const canvas = canvasRef.current;
@@ -765,7 +776,15 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
     const boot = async () => {
       try {
         setCameraState("Requesting camera");
+        setCameraNeedsAction(false);
         emitTelemetry({ cameraReady: false, cameraState: "Requesting camera" });
+
+        clearTimeout(requestTimeoutRef.current);
+        requestTimeoutRef.current = window.setTimeout(() => {
+          setCameraNeedsAction(true);
+          setCameraState("Start camera");
+          setFramingLabel("Click Start Camera and allow browser camera permission.");
+        }, 4500);
 
         const videoConstraints = {
           facingMode: "user",
@@ -813,6 +832,8 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
         audioStreamRef.current = nextAudioStream;
 
         await attachVideoStream(nextVideoStream);
+        clearTimeout(requestTimeoutRef.current);
+        setCameraNeedsAction(false);
 
         baselineRef.current = null;
         missingFramesRef.current = 0;
@@ -865,7 +886,10 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
         }
       } catch (error) {
         console.error("Camera error:", error);
+        clearTimeout(requestTimeoutRef.current);
         setCameraState("Camera blocked");
+        setCameraNeedsAction(true);
+        setFramingLabel("Camera is blocked. Allow camera permission from the browser icon, then retry.");
         emitTelemetry({
           cameraReady: false,
           microphoneReady: false,
@@ -883,6 +907,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
       active = false;
       const canvas = ownedCanvas;
       window.cancelAnimationFrame(animationFrameRef.current);
+      clearTimeout(requestTimeoutRef.current);
       clearInterval(soundIntervalRef.current);
 
       if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -917,6 +942,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   }, [
     addWarning,
     compact,
+    cameraStartKey,
     emitTelemetry,
     loadFallbackModels,
     startAudioDetection,
@@ -998,6 +1024,63 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
               transform: "scaleX(-1)",
             }}
           />
+
+          {cameraNeedsAction ? (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "grid",
+                placeItems: "center",
+                padding: "18px",
+                borderRadius: compact ? "16px" : "18px",
+                background:
+                  "linear-gradient(180deg, rgba(2,6,23,0.72), rgba(2,6,23,0.9))",
+                color: "#e2e8f0",
+                textAlign: "center",
+                zIndex: 3,
+              }}
+            >
+              <div style={{ display: "grid", gap: "10px", justifyItems: "center" }}>
+                <div
+                  style={{
+                    width: compact ? "76px" : "96px",
+                    height: compact ? "76px" : "96px",
+                    borderRadius: "999px",
+                    display: "grid",
+                    placeItems: "center",
+                    background: "rgba(37, 99, 235, 0.18)",
+                    border: "1px solid rgba(147, 197, 253, 0.35)",
+                    fontSize: compact ? "32px" : "42px",
+                    fontWeight: 900,
+                  }}
+                >
+                  :)
+                </div>
+                <strong style={{ fontSize: compact ? "15px" : "17px" }}>
+                  Live face camera is waiting
+                </strong>
+                <span style={{ color: "#cbd5e1", fontSize: "12px", lineHeight: 1.5 }}>
+                  Allow camera permission so your real face appears here during the exam.
+                </span>
+                <button
+                  type="button"
+                  onClick={restartCamera}
+                  style={{
+                    border: "none",
+                    borderRadius: "999px",
+                    padding: "10px 16px",
+                    background: "linear-gradient(135deg, #2563eb, #06b6d4)",
+                    color: "#fff",
+                    fontWeight: 900,
+                    cursor: "pointer",
+                  }}
+                >
+                  Start Camera
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <canvas
             ref={canvasRef}
