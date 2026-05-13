@@ -280,6 +280,30 @@ const buildClassroomPayload = (classroom) => ({
   teacherName: classroom.teacherName || "",
 });
 
+const buildStudentClassroomScope = async (user) => {
+  if (!user || user.role !== "student") return {};
+
+  const or = [];
+  if (user.classroomId) {
+    or.push({ classroomId: user.classroomId });
+  }
+
+  const classroomName = normalizeText(user.classroomName);
+  if (classroomName) {
+    or.push({ classroomName });
+  }
+
+  if (user.teacherId) {
+    const teacherClassrooms = await Classroom.find({ teacherId: user.teacherId }).select("_id").lean();
+    const classroomIds = teacherClassrooms.map((classroom) => classroom._id);
+    if (classroomIds.length) {
+      or.push({ classroomId: { $in: classroomIds } });
+    }
+  }
+
+  return or.length ? { $or: or } : { classroomId: user.classroomId || null };
+};
+
 const buildUserPayload = (user, managedClassrooms = []) => ({
   id: user._id,
   name: user.name,
@@ -317,19 +341,17 @@ const buildStudentQuestionPayload = (question) => {
 
 const buildStudyResourcePayload = (resource) => {
   const payload = resource.toObject ? resource.toObject() : { ...resource };
-  const localFilePath = payload.fileUrl ? path.join(uploadsDir, payload.fileUrl) : "";
+  const localFilePath = payload.fileUrl ? resolveUploadPath(payload.fileUrl) : "";
   const localFileAvailable =
-    Boolean(localFilePath) && localFilePath.startsWith(uploadsDir) && fs.existsSync(localFilePath);
+    Boolean(localFilePath) && fs.existsSync(localFilePath);
   const databaseFileAvailable = Boolean(payload.fileData && payload.fileMimeType);
 
   return {
     ...payload,
     fileData: undefined,
     fileAvailable: localFileAvailable || databaseFileAvailable,
-    downloadUrl: databaseFileAvailable
+    downloadUrl: databaseFileAvailable || localFileAvailable
       ? `/api/study-vault/file/${payload._id}`
-      : localFileAvailable
-      ? `/uploads/${String(payload.fileUrl).replace(/^\/+/, "")}`
       : "",
   };
 };
@@ -482,9 +504,7 @@ const callOpenAiQuizGenerator = async ({
   if (!process.env.OPENAI_API_KEY) return null;
 
   const textChunks = chunkTextForAI(payloadText || "No text provided.", 6500).slice(0, 24);
-  const orderedChunks = textChunks.length
-    ? [...textChunks].sort(() => Math.random() - 0.5)
-    : ["No text provided."];
+  const orderedChunks = textChunks.length ? textChunks : ["No text provided."];
   const allQuestions = [];
   const seenQuestions = new Set();
   const imageContent = [];
@@ -2194,9 +2214,7 @@ app.get("/api/assignments/all", verifyToken, async (req, res) => {
       return res.json(payload);
     }
 
-    const assignments = await Assignment.find({
-      classroomId: user.classroomId || null,
-    }).sort({ createdAt: -1 });
+    const assignments = await Assignment.find(await buildStudentClassroomScope(user)).sort({ createdAt: -1 });
     const assignmentIds = assignments.map((assignment) => assignment._id);
     const submissions = await Submission.find({
       assignmentId: { $in: assignmentIds },
@@ -2248,10 +2266,14 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
         return res.status(404).json({ message: "Assignment not found." });
       }
 
+      const studentScope = user.role === "student" ? await buildStudentClassroomScope(user) : null;
+      const studentCanAccess = user.role === "student"
+        ? Boolean(await Assignment.exists({ _id: assignment._id, ...studentScope }))
+        : false;
       const canAccess =
         user.role === "admin" ||
         (user.role === "teacher" && String(assignment.teacherId) === String(user._id)) ||
-        (user.role === "student" && String(assignment.classroomId || "") === String(user.classroomId || ""));
+        studentCanAccess;
 
       if (!canAccess) {
         return res.status(403).json({ message: "You cannot access this assignment file." });
@@ -2641,13 +2663,6 @@ app.post(
   tutorUpload.single("file"),
   async (req, res) => {
     try {
-      // Check if OpenAI API key is configured before processing
-      if (!process.env.OPENAI_API_KEY) {
-        return res.status(503).json({ 
-          message: "Quiz generation service is currently unavailable. OpenAI API key is not configured on the server." 
-        });
-      }
-
       const user = await getDbUser(req.user.userId);
       if (!user) {
         return res.status(404).json({ message: "User not found." });
@@ -2942,7 +2957,7 @@ app.get("/api/study-vault", verifyToken, async (req, res) => {
     if (user.role === "teacher") {
       query = { teacherId: user._id };
     } else if (user.role === "student") {
-      query = { classroomId: user.classroomId || null };
+      query = await buildStudentClassroomScope(user);
     }
 
     const resources = await StudyResource.find(query).sort({ createdAt: -1 }).lean();
@@ -2964,8 +2979,9 @@ app.get("/api/study-vault/file/:id", verifyToken, async (req, res) => {
 
     const isAdmin = user.role === "admin";
     const isTeacher = user.role === "teacher" && String(resource.teacherId || "") === String(user._id);
+    const studentScope = user.role === "student" ? await buildStudentClassroomScope(user) : null;
     const isStudent =
-      user.role === "student" && String(resource.classroomId || "") === String(user.classroomId || "");
+      user.role === "student" && Boolean(await StudyResource.exists({ _id: resource._id, ...studentScope }));
 
     if (!isAdmin && !isTeacher && !isStudent) {
       return res.status(403).send("You do not have access to this study resource.");
@@ -2982,8 +2998,8 @@ app.get("/api/study-vault/file/:id", verifyToken, async (req, res) => {
     }
 
     if (resource.fileUrl) {
-      const absolutePath = path.join(uploadsDir, resource.fileUrl);
-      if (absolutePath.startsWith(uploadsDir) && fs.existsSync(absolutePath)) {
+      const absolutePath = resolveUploadPath(resource.fileUrl);
+      if (absolutePath && fs.existsSync(absolutePath)) {
         return res.sendFile(absolutePath);
       }
     }

@@ -7,7 +7,28 @@ const SPOKEN_ALERTS = {
   faceMissing: "Face not visible. Please move back inside the camera area.",
   multipleFace: "Multiple faces detected. Only one candidate should remain visible.",
   focus: "Please return to the exam window.",
+  visibility: "Exam screen was hidden. Stay on the exam tab.",
+  copy: "Copy action is not allowed during the exam.",
+  paste: "Paste action is not allowed during the exam.",
+  cut: "Cut action is not allowed during the exam.",
+  screenshot: "Screenshot shortcut detected.",
+  screenShare: "Unexpected screen share or capture behavior detected.",
 };
+
+const DETECTION_CHIPS = [
+  "Face",
+  "Eyes",
+  "Head",
+  "No face",
+  "Multi-face",
+  "Audio",
+  "Copy",
+  "Paste",
+  "Screenshot",
+  "Tab exit",
+  "Screen share",
+  "Duplicate",
+];
 
 const FACE_GUIDE = {
   left: 0.16,
@@ -908,12 +929,12 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   return (
     <div
       style={{
-        borderRadius: compact ? "24px" : "28px",
+        borderRadius: compact ? "20px" : "22px",
         overflow: "hidden",
         background:
           "linear-gradient(180deg, rgba(8, 15, 35, 0.98) 0%, rgba(15, 23, 42, 0.98) 100%)",
         border: "1px solid rgba(148, 163, 184, 0.16)",
-        boxShadow: "0 28px 54px rgba(15, 23, 42, 0.2)",
+        boxShadow: "0 18px 34px rgba(15, 23, 42, 0.18)",
         width: "100%",
       }}
     >
@@ -923,7 +944,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
           alignItems: "center",
           justifyContent: "space-between",
           gap: "12px",
-          padding: compact ? "16px 16px 12px" : "18px 18px 14px",
+          padding: compact ? "12px 12px 10px" : "14px 14px 10px",
           color: "#e2e8f0",
           fontSize: "12px",
           flexWrap: compact ? "wrap" : "nowrap",
@@ -953,9 +974,9 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
 
       <div
         style={{
-          padding: compact ? "0 16px 16px" : "0 18px 18px",
+          padding: compact ? "0 12px 12px" : "0 14px 14px",
           display: "grid",
-          gap: "14px",
+          gap: "10px",
         }}
       >
         <div style={{ position: "relative" }}>
@@ -966,12 +987,12 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
             playsInline
             style={{
               width: "100%",
-              aspectRatio: compact ? "3 / 4" : "4 / 3",
+              aspectRatio: compact ? "4 / 3" : "16 / 10",
               objectFit: "cover",
               display: "block",
               background:
                 "radial-gradient(circle at top, rgba(30, 41, 59, 0.85), rgba(2, 6, 23, 1))",
-              borderRadius: compact ? "18px" : "22px",
+              borderRadius: compact ? "16px" : "18px",
               border: "1px solid rgba(255,255,255,0.08)",
               filter: "brightness(1.06) contrast(1.04)",
               transform: "scaleX(-1)",
@@ -1034,9 +1055,9 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
               position: "absolute",
               left: "12px",
               right: "12px",
-              bottom: "12px",
-              padding: "10px 12px",
-              borderRadius: "16px",
+              bottom: "10px",
+              padding: "8px 10px",
+              borderRadius: "14px",
               background: "rgba(15, 23, 42, 0.76)",
               color: "#e2e8f0",
               fontSize: compact ? "12px" : "13px",
@@ -1053,7 +1074,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
           style={{
             display: "grid",
             gridTemplateColumns: compact ? "1fr 1fr" : "repeat(3, minmax(0, 1fr))",
-            gap: "10px",
+            gap: "8px",
             color: "#e2e8f0",
           }}
         >
@@ -1100,6 +1121,31 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
               Enabled for face, eye, and posture corrections
             </div>
           </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: "6px",
+            flexWrap: "wrap",
+            color: "#cbd5e1",
+            fontSize: "11px",
+          }}
+        >
+          {DETECTION_CHIPS.map((label) => (
+            <span
+              key={label}
+              style={{
+                padding: "6px 8px",
+                borderRadius: "999px",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                fontWeight: 700,
+              }}
+            >
+              {label}
+            </span>
+          ))}
         </div>
       </div>
     </div>

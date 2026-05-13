@@ -548,7 +548,7 @@ export const sanitizeCompetitiveMCQ = (question, difficulty = "medium", subject 
  * Generate fallback competitive-exam MCQs from extracted facts.
  */
 export const generateFallbackMCQs = (text, count = 5, difficulty = "medium", subject = "General") => {
-  const seed = Date.now() + Math.floor(Math.random() * 10000);
+  const seed = Math.max(1, String(text || subject).length);
   const facts = dedupeFacts(extractExamFacts(text, subject));
   const keywords = extractKeywordPhrases(text, subject);
   let keywordIndex = 0;
@@ -567,7 +567,7 @@ export const generateFallbackMCQs = (text, count = 5, difficulty = "medium", sub
   }
 
   const answerPool = facts.map((fact) => fact.correctAnswer);
-  const orderedFacts = shuffleBySeed(facts, seed);
+  const orderedFacts = facts;
   const questions = [];
 
   for (let i = 0; i < orderedFacts.length && questions.length < count; i += 1) {

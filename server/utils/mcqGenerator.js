@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import dotenv from "dotenv";
+import { generateFallbackMCQs } from "./quizGenerator.js";
 
 dotenv.config();
 
@@ -18,6 +19,43 @@ const getOpenAIClient = () => {
   }
   
   return openai;
+};
+
+const normalizeGeneratedMCQ = (mcq, fallbackDifficulty = "medium", subject = "General") => {
+  const options = Array.isArray(mcq.options)
+    ? mcq.options.map((option) => String(option || "").trim()).filter(Boolean).slice(0, 4)
+    : [];
+  const correctAnswer = String(mcq.correctAnswer || options[0] || "").trim();
+
+  if (!mcq.question && !mcq.questionText) return null;
+  if (options.length !== 4 || !options.includes(correctAnswer)) return null;
+
+  return {
+    question: String(mcq.question || mcq.questionText || "").trim(),
+    options,
+    correctAnswer,
+    explanation:
+      String(mcq.explanation || "").trim() ||
+      `${correctAnswer} is the correct answer based on the supplied study material.`,
+    difficulty: ["easy", "medium", "hard"].includes(mcq.difficulty || mcq.difficultyTag)
+      ? mcq.difficulty || mcq.difficultyTag
+      : fallbackDifficulty,
+    bloomsLevel: mcq.bloomsLevel || "understand",
+    mcqType: mcq.mcqType || "conceptual",
+    marks: Number(mcq.marks) || 1,
+    topic: mcq.topic || subject,
+  };
+};
+
+const generateLocalMCQs = (text, options = {}) => {
+  const numberOfQuestions = Number(options.numberOfQuestions) || 10;
+  const difficulty = options.difficulty === "mixed" ? "medium" : options.difficulty || "medium";
+  const subject = options.subject || options.topic || "General";
+
+  return generateFallbackMCQs(text, numberOfQuestions, difficulty, subject)
+    .map((mcq) => normalizeGeneratedMCQ(mcq, difficulty, subject))
+    .filter(Boolean)
+    .slice(0, numberOfQuestions);
 };
 
 /**
@@ -43,7 +81,12 @@ export const generateMCQsWithAI = async (extractedText, options = {}) => {
   }
 
   if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OpenAI API key not configured");
+    return generateLocalMCQs(extractedText, {
+      numberOfQuestions,
+      difficulty,
+      subject,
+      topic,
+    });
   }
 
   try {
@@ -93,6 +136,13 @@ export const generateMCQsWithAI = async (extractedText, options = {}) => {
     return allMCQs.slice(0, numberOfQuestions);
   } catch (error) {
     console.error("OpenAI MCQ Generation Error:", error);
+    const fallback = generateLocalMCQs(extractedText, {
+      numberOfQuestions,
+      difficulty,
+      subject,
+      topic,
+    });
+    if (fallback.length) return fallback;
     throw new Error(`Failed to generate MCQs: ${error.message}`);
   }
 };
@@ -279,6 +329,32 @@ export const regenerateWeakQuestions = async (weakMCQs, options = {}) => {
   }
 
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      return weakMCQs
+        .map((mcq) => {
+          const normalized = normalizeGeneratedMCQ(mcq, mcq.difficulty || "medium", mcq.topic || "General");
+          if (!normalized) return null;
+          const alternates = normalized.options.filter((option) => option !== normalized.correctAnswer);
+          const options = [...new Set([
+            normalized.correctAnswer,
+            ...alternates,
+            `${normalized.correctAnswer} only`,
+          ])]
+            .filter(Boolean)
+            .slice(0, 4);
+
+          return {
+            ...normalized,
+            question: `Which option best completes this improved concept check: ${normalized.question}`,
+            options,
+            originalMcqId: mcq._id,
+            topic: mcq.topic || "General",
+          };
+        })
+        .filter(Boolean);
+    }
+
+    const client = getOpenAIClient();
     const regeneratedMCQs = [];
 
     for (const mcq of weakMCQs) {
@@ -309,7 +385,7 @@ Respond in JSON format:
 }`;
 
       try {
-        const response = await openai.chat.completions.create({
+        const response = await client.chat.completions.create({
           model: "gpt-4-turbo",
           messages: [
             {

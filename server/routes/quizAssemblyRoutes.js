@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import jwt from "jsonwebtoken";
 
 // Models
 import Quiz from "../models/Quiz.js";
@@ -38,10 +39,7 @@ const verifyToken = (req, res, next) => {
   }
 
   try {
-    const decoded = require("jsonwebtoken").verify(
-      token,
-      process.env.JWT_SECRET || "secret"
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "secret");
     req.userId = decoded.userId;
     req.userRole = decoded.role;
     next();

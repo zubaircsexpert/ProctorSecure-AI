@@ -921,10 +921,10 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             ? "1fr"
             : isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.55fr) minmax(360px, 420px)",
+            : "minmax(0, 1.85fr) minmax(310px, 360px)",
         }}
       >
-        <div style={{ ...styles.questionCard, padding: isPhone ? "16px" : "22px" }}>
+        <div style={{ ...styles.questionCard, padding: isPhone ? "14px" : "18px" }}>
           <div
             style={{
               ...styles.questionHeader,
@@ -1055,7 +1055,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
           <div
             style={{
               ...styles.sidebarCard,
-              padding: isPhone ? "16px" : "22px",
+              padding: isPhone ? "14px" : "16px",
               position: isCompactLayout ? "relative" : "sticky",
               top: isCompactLayout ? "auto" : "106px",
             }}
@@ -1080,10 +1080,10 @@ const Exam = ({ assessmentFilter = "exam" }) => {
                   ...payload,
                 }))
               }
-              compact={isCompactLayout}
+              compact={isCompactLayout || viewportWidth < 1500}
             />
 
-            <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
+            <div style={{ display: "grid", gap: "8px", marginTop: "10px" }}>
               <div style={styles.inlineSectionTitle}>Live alerts</div>
 
               {showWarning ? (
@@ -1103,7 +1103,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             </div>
           </div>
 
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
+          <div style={{ ...styles.sidebarCard, padding: isPhone ? "14px" : "16px" }}>
             <h4 style={styles.sidebarTitle}>Readiness Signals</h4>
             <div
               style={{
@@ -1154,7 +1154,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             </div>
           </div>
 
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
+          <div style={{ ...styles.sidebarCard, padding: isPhone ? "14px" : "16px" }}>
             <h4 style={styles.sidebarTitle}>Integrity Snapshot</h4>
             <div
               style={{
@@ -1173,7 +1173,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             </div>
           </div>
 
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "16px" : "22px" }}>
+          <div style={{ ...styles.sidebarCard, padding: isPhone ? "14px" : "16px" }}>
             <h4 style={styles.sidebarTitle}>Recent Detections</h4>
             <div style={{ display: "grid", gap: "10px" }}>
               {activityLog.length === 0 ? (
@@ -1228,7 +1228,7 @@ const SignalRow = ({ label, value, good, compact = false }) => (
 const styles = {
   page: {
     minHeight: "calc(100vh - 104px)",
-    padding: "18px clamp(14px, 2.4vw, 28px) 28px",
+    padding: "12px clamp(10px, 1.6vw, 20px) 18px",
     background:
       "radial-gradient(circle at top right, rgba(37,99,235,0.10), transparent 28%), linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)",
   },
@@ -1422,12 +1422,12 @@ const styles = {
   headerCard: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-    gap: "14px",
-    padding: "20px 22px",
-    borderRadius: "24px",
+    gap: "12px",
+    padding: "14px 16px",
+    borderRadius: "18px",
     background: "rgba(255,255,255,0.92)",
     boxShadow: "0 22px 48px rgba(15, 23, 42, 0.08)",
-    marginBottom: "16px",
+    marginBottom: "12px",
   },
   headerMetrics: {
     display: "grid",
@@ -1436,12 +1436,12 @@ const styles = {
     alignItems: "stretch",
   },
   metricCard: {
-    padding: "14px 16px",
-    borderRadius: "18px",
+    padding: "11px 13px",
+    borderRadius: "14px",
     background: "#f8fbff",
     border: "1px solid rgba(148,163,184,0.16)",
     display: "grid",
-    gap: "10px",
+    gap: "6px",
     minWidth: 0,
   },
   quizAttemptCard: {
@@ -1479,8 +1479,8 @@ const styles = {
     flexShrink: 0,
   },
   timerCard: {
-    padding: "14px 16px",
-    borderRadius: "18px",
+    padding: "11px 13px",
+    borderRadius: "14px",
     background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
     border: "1px solid rgba(37,99,235,0.18)",
     display: "grid",
@@ -1490,12 +1490,12 @@ const styles = {
   examLayout: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
-    gap: "16px",
+    gap: "12px",
     alignItems: "start",
   },
   questionCard: {
-    padding: "22px",
-    borderRadius: "24px",
+    padding: "18px",
+    borderRadius: "18px",
     background: "rgba(255,255,255,0.96)",
     boxShadow: "0 24px 46px rgba(15, 23, 42, 0.08)",
     minWidth: 0,
@@ -1504,22 +1504,22 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: "16px",
-    marginBottom: "18px",
+    gap: "12px",
+    marginBottom: "12px",
   },
   questionBadge: {
     display: "inline-block",
-    padding: "9px 14px",
+    padding: "7px 11px",
     borderRadius: "999px",
     background: "#dbeafe",
     color: "#1d4ed8",
     fontWeight: 800,
     fontSize: "13px",
-    marginBottom: "12px",
+    marginBottom: "8px",
   },
   progressTrack: {
     width: "100%",
-    height: "8px",
+    height: "6px",
     borderRadius: "999px",
     background: "#e2e8f0",
     overflow: "hidden",
@@ -1531,8 +1531,8 @@ const styles = {
   },
   integrityMini: {
     minWidth: "160px",
-    padding: "16px",
-    borderRadius: "22px",
+    padding: "10px 12px",
+    borderRadius: "16px",
     background: "#fff7ed",
     color: "#9a3412",
     textAlign: "center",
@@ -1540,46 +1540,46 @@ const styles = {
     gap: "6px",
   },
   questionText: {
-    margin: "0 0 18px 0",
-    fontSize: "clamp(22px, 2.6vw, 32px)",
+    margin: "0 0 12px 0",
+    fontSize: "clamp(20px, 2.2vw, 28px)",
     color: "#0f172a",
     lineHeight: 1.2,
   },
   optionGrid: {
     display: "grid",
-    gap: "10px",
+    gap: "8px",
   },
   optionCard: {
     display: "flex",
     alignItems: "center",
-    gap: "14px",
-    padding: "14px 16px",
-    borderRadius: "16px",
+    gap: "12px",
+    padding: "11px 13px",
+    borderRadius: "13px",
     border: "1px solid rgba(148,163,184,0.2)",
     transition: "all 0.2s ease",
   },
   navigationRow: {
     display: "flex",
     justifyContent: "space-between",
-    gap: "14px",
-    marginTop: "18px",
+    gap: "10px",
+    marginTop: "12px",
     flexWrap: "wrap",
   },
   sidebar: {
     display: "grid",
-    gap: "12px",
+    gap: "10px",
     minWidth: 0,
   },
   sidebarCard: {
-    padding: "22px",
-    borderRadius: "22px",
+    padding: "16px",
+    borderRadius: "18px",
     background: "rgba(255,255,255,0.96)",
     border: "1px solid rgba(148,163,184,0.14)",
     boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
   },
   sidebarTitle: {
-    margin: "0 0 16px 0",
-    fontSize: "20px",
+    margin: "0 0 10px 0",
+    fontSize: "17px",
     color: "#0f172a",
   },
   monitorHeader: {
@@ -1587,7 +1587,7 @@ const styles = {
     alignItems: "flex-start",
     justifyContent: "space-between",
     gap: "12px",
-    marginBottom: "14px",
+    marginBottom: "10px",
     flexWrap: "wrap",
   },
   monitorKicker: {
@@ -1600,8 +1600,8 @@ const styles = {
   },
   monitorCaption: {
     color: "#64748b",
-    fontSize: "14px",
-    lineHeight: 1.55,
+    fontSize: "13px",
+    lineHeight: 1.45,
   },
   voiceBadge: {
     display: "inline-flex",
