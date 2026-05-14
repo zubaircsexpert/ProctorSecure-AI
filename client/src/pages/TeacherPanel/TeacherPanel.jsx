@@ -23,6 +23,7 @@ import {
 import API from "../../services/api";
 import ExamChecker from "./ExamChecker";
 import StudyVaultManager from "./StudyVaultManager";
+import { openFileFromClick } from "../../utils/fileViewer";
 
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
@@ -324,10 +325,6 @@ function TeacherPanel() {
         department: prev.department || profileRes.value?.data?.user?.department || "",
       }));
       setExamForm((prev) => ({
-        ...prev,
-        classroomId: prev.classroomId || nextClassrooms[0]?.id || "",
-      }));
-      setQuizForm((prev) => ({
         ...prev,
         classroomId: prev.classroomId || nextClassrooms[0]?.id || "",
       }));
@@ -1099,6 +1096,7 @@ function TeacherPanel() {
                     {student.studentIdCardUrl ? (
                       <a
                         href={buildUploadUrl(student.studentIdCardUrl)}
+                        onClick={(event) => openFileFromClick(event, buildUploadUrl(student.studentIdCardUrl))}
                         target="_blank"
                         rel="noreferrer"
                         style={styles.fileLink}
@@ -1724,6 +1722,7 @@ function TeacherPanel() {
                     {assignment.fileUrl ? (
                       <a
                         href={buildUploadUrl(assignment)}
+                        onClick={(event) => openFileFromClick(event, buildUploadUrl(assignment))}
                         target="_blank"
                         rel="noreferrer"
                         style={styles.fileLink}
@@ -1755,6 +1754,7 @@ function TeacherPanel() {
                                 {submission.fileUrl ? (
                                   <a
                                     href={buildUploadUrl(submission)}
+                                    onClick={(event) => openFileFromClick(event, buildUploadUrl(submission))}
                                     target="_blank"
                                     rel="noreferrer"
                                     style={styles.fileLink}
@@ -2041,6 +2041,7 @@ function TeacherPanel() {
                       {result.writtenFileUrl ? (
                         <a
                           href={buildUploadUrl(result.writtenFileUrl)}
+                          onClick={(event) => openFileFromClick(event, buildUploadUrl(result.writtenFileUrl))}
                           target="_blank"
                           rel="noreferrer"
                           style={styles.fileLink}

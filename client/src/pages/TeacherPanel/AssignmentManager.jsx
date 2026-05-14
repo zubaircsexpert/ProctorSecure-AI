@@ -1,6 +1,7 @@
 import React from "react";
 import { FileUp, Paperclip, ExternalLink, CheckCircle, Trash2 } from "lucide-react";
 import API from "../../services/api";
+import { openFileFromClick } from "../../utils/fileViewer";
 
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
@@ -322,6 +323,7 @@ const AssignmentManager = ({
               {assignment.fileUrl && (
                 <a
                   href={buildFileUrl(assignment)}
+                  onClick={(event) => openFileFromClick(event, buildFileUrl(assignment))}
                   target="_blank"
                   rel="noreferrer"
                   style={fileLink}
@@ -333,6 +335,7 @@ const AssignmentManager = ({
               {assignment.submissionUrl && (
                 <a
                   href={buildFileUrl(null, assignment.submissionUrl)}
+                  onClick={(event) => openFileFromClick(event, buildFileUrl(null, assignment.submissionUrl))}
                   target="_blank"
                   rel="noreferrer"
                   style={{ ...fileLink, background: "#ecfdf5", color: "#15803d" }}

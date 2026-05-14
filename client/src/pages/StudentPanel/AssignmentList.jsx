@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, FileUp, FolderKanban, Sparkles } from "lucide-react";
 import API from "../../services/api";
+import { openFileFromClick } from "../../utils/fileViewer";
 
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
@@ -148,6 +149,7 @@ const AssignmentList = () => {
                     {assignment.fileUrl ? (
                       <a
                         href={buildFileUrl(assignment)}
+                        onClick={(event) => openFileFromClick(event, buildFileUrl(assignment))}
                         target="_blank"
                         rel="noreferrer"
                         style={styles.linkChip}
@@ -160,6 +162,7 @@ const AssignmentList = () => {
                     {mySubmission?.fileUrl ? (
                       <a
                         href={buildFileUrl(mySubmission)}
+                        onClick={(event) => openFileFromClick(event, buildFileUrl(mySubmission))}
                         target="_blank"
                         rel="noreferrer"
                         style={{ ...styles.linkChip, background: "#ecfdf5", color: "#15803d" }}

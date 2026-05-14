@@ -646,8 +646,9 @@ const Exam = ({ assessmentFilter = "exam" }) => {
         activityLog,
       };
 
-      await API.post("/api/results/submit", resultData);
-      localStorage.setItem(isQuizMode ? "quizResult" : "examResult", JSON.stringify(resultData));
+      const submitResponse = await API.post("/api/results/submit", resultData);
+      const savedResult = submitResponse.data?.result;
+      localStorage.setItem(isQuizMode ? "quizResult" : "examResult", JSON.stringify(savedResult || resultData));
       localStorage.removeItem(ACTIVE_SESSION_KEY);
       setSubmitted(true);
 

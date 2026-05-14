@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import API from "../../services/api";
+import { openFileFromClick } from "../../utils/fileViewer";
 
 const clamp = (value, min = 0, max = 100) => Math.min(max, Math.max(min, value));
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
@@ -94,7 +95,14 @@ const Results = () => {
 
         try {
           const response = await API.get("/api/results/my");
-          if (Array.isArray(response.data)) collected.push(...response.data);
+          const serverResults = Array.isArray(response.data) ? response.data : [];
+          if (serverResults.length) {
+            collected.length = 0;
+            collected.push(...serverResults);
+            localStorage.removeItem("examResult");
+            localStorage.removeItem("/api/examResult");
+            localStorage.removeItem("quizResult");
+          }
         } catch (err) {
           console.error("Primary result fetch failed:", err);
         }
@@ -313,6 +321,12 @@ const Results = () => {
               {selectedResult.writtenFileUrl ? (
                 <a
                   href={`${FILE_BASE_URL}/${String(selectedResult.writtenFileUrl).replace(/^\/+/, "")}`}
+                  onClick={(event) =>
+                    openFileFromClick(
+                      event,
+                      `${FILE_BASE_URL}/${String(selectedResult.writtenFileUrl).replace(/^\/+/, "")}`
+                    )
+                  }
                   target="_blank"
                   rel="noreferrer"
                   style={styles.linkChip}
