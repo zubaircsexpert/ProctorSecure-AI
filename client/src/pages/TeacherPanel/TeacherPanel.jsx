@@ -175,6 +175,17 @@ function TeacherPanel() {
     [exams]
   );
 
+  const mcqExamOptions = useMemo(
+    () =>
+      exams
+        .filter((exam) => exam.responseMode === "mcq")
+        .map((exam) => ({
+          value: exam._id,
+          label: `${exam.title} | ${exam.classroomName}`,
+        })),
+    [exams]
+  );
+
   const allResults = useMemo(
     () => results,
     [results]
