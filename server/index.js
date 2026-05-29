@@ -698,12 +698,16 @@ const buildLocalTutorAnswer = ({ user, question, mode, assignments, results, res
   const lower = question.toLowerCase();
   const latestAssignment = assignments[0];
   const latestResult = results[0];
-  const pendingAssignments = assignments.filter((assignment) => !assignment.mySubmission).slice(0, 4);
-  const submittedAssignments = assignments.filter((assignment) => assignment.mySubmission).slice(0, 4);
-  const weakResults = results
-    .filter((result) => Number(result.percentage || 0) < 60)
-    .slice(0, 3)
-    .map((result) => result.testName || "Assessment");
+  const pendingAssignments = assignments.filter((assignment) => !assignment.mySubmission).slice(0, 5);
+  const submittedAssignments = assignments.filter((assignment) => assignment.mySubmission).slice(0, 5);
+  
+  // Calculate performance metrics
+  const avgScore = results.length ? (results.reduce((sum, r) => sum + Number(r.percentage || 0), 0) / results.length).toFixed(1) : 0;
+  const improvementTrend = results.length >= 2 ? (Number(results[0].percentage || 0) - Number(results[1].percentage || 0)).toFixed(1) : 0;
+  
+  const weakResults = results.filter((result) => Number(result.percentage || 0) < 60).slice(0, 3);
+  const strongResults = results.filter((result) => Number(result.percentage || 0) >= 80).slice(0, 3);
+  
   const detectionTotals = results.reduce(
     (acc, result) => ({
       copy: acc.copy + Number(result.copyWarnings || 0),
@@ -715,14 +719,18 @@ const buildLocalTutorAnswer = ({ user, question, mode, assignments, results, res
     }),
     { copy: 0, paste: 0, tab: 0, head: 0, eyes: 0, focus: 0 }
   );
+  
+  const totalViolations = Object.values(detectionTotals).reduce((a, b) => a + b, 0);
+  
   const weakAnswers = results
     .flatMap((result) =>
       (result.answerSheet || [])
         .filter((answer) => !answer.isCorrect)
         .slice(0, 3)
-        .map((answer) => answer.questionText || "Missed question")
+        .map((answer) => answer.questionText || "Unknown question")
     )
     .slice(0, 5);
+  
   const relevantResource = resources.find((resource) =>
     lower.includes(String(resource.title || "").toLowerCase().slice(0, 8))
   );
@@ -731,65 +739,204 @@ const buildLocalTutorAnswer = ({ user, question, mode, assignments, results, res
     lower.includes(String(item.questionText || "").toLowerCase().slice(0, 12))
   ) || questions[0];
 
-  const lines = [
-    `Hi ${user.name || "there"}, I checked your student portal context and prepared a focused answer.`,
-  ];
+  const lines = [];
 
+  // Welcome message based on performance
+  if (results.length === 0) {
+    lines.push(`Hi ${user.name || "there"}! 👋 Welcome to your personalized AI tutor. I can see you're just getting started. Let me help you prepare strategically for your upcoming exams and assignments.`);
+  } else if (avgScore >= 80) {
+    lines.push(`Hi ${user.name || "there"}! 🌟 You're performing well with an average score of ${avgScore}%. Let's build on this momentum and tackle any remaining challenges.`);
+  } else if (avgScore >= 60) {
+    lines.push(`Hi ${user.name || "there"}! 📈 You're at ${avgScore}% average. There's room for improvement, and I'm here to help you identify weak areas and build a stronger study strategy.`);
+  } else {
+    lines.push(`Hi ${user.name || "there"}! 💪 I can see you're working hard. Your current average is ${avgScore}%. Let's work together to turn things around with targeted practice and focused studying.`);
+  }
+
+  // Handle file uploads
   if (file) {
     lines.push(
       file.mimetype?.startsWith("image/")
-        ? "I received your image. If OPENAI_API_KEY is configured, the system analyzes it visually; otherwise use the steps below with the visible question/text."
-        : `I received your file: ${file.originalname}. For PDFs/docs, describe the exact confusing question and I will guide you step by step.`
+        ? `📸 I see you've uploaded an image. Please describe which question or topic you need help with, and I'll provide a step-by-step explanation.`
+        : `📄 I received: ${file.originalname}. Walk me through the specific concept or question you find challenging, and I'll break it down for you.`
     );
   }
 
-  if (mode === "assignment" || lower.includes("assignment") || lower.includes("homework") || lower.includes("solve")) {
-    lines.push(
-      `Assignment focus: ${latestAssignment?.title || "No active assignment found"}. Pending items: ${
-        pendingAssignments.map((assignment) => assignment.title).join(", ") || "none"
-      }. Submitted items: ${submittedAssignments.map((assignment) => assignment.title).join(", ") || "none"}.`,
-      "Assignment method: read the instructions, make a short outline, draft the answer, add examples or calculations, then check the due date and upload format before submission."
-    );
+  // Mode-specific detailed analysis
+  if (mode === "results" || lower.includes("result") || lower.includes("analyze")) {
+    lines.push("📊 **PERFORMANCE ANALYSIS**");
+    
+    if (latestResult) {
+      lines.push(
+        `Latest Assessment: ${latestResult.testName || "Test"} - ${latestResult.percentage || 0}%`,
+        `Average Score: ${avgScore}%`,
+        improvementTrend > 0 ? `📈 Progress: +${improvementTrend}% improvement from last attempt` : `📉 Trend: ${improvementTrend}% change from last attempt`
+      );
+    }
+
+    if (strongResults.length) {
+      lines.push(
+        `✅ **Your Strengths:**`,
+        strongResults.map(r => `• ${r.testName || "Assessment"} (${r.percentage}%)`).join("\n")
+      );
+    }
+
+    if (weakResults.length) {
+      lines.push(
+        `⚠️ **Areas to Focus:**`,
+        weakResults.map(r => `• ${r.testName || "Assessment"} (${r.percentage}%) - Needs attention`).join("\n"),
+        "Strategy: Review the concepts from these tests, redo practice questions, and ask me for explanations of tricky topics."
+      );
+    }
+
+    if (weakAnswers.length) {
+      lines.push(
+        `❓ **Commonly Missed Questions:**`,
+        weakAnswers.slice(0, 4).map(q => `• ${q}`).join("\n"),
+        "Action: Send me these questions one by one, and I'll explain the reasoning behind each correct answer."
+      );
+    }
+
+    if (totalViolations > 0) {
+      lines.push(
+        `⚡ **Proctoring Summary:** ${totalViolations} total signals detected`,
+        `Breakdown: Copy/Paste (${detectionTotals.copy + detectionTotals.paste}), Tab switches (${detectionTotals.tab}), Gaze issues (${detectionTotals.eyes}), Focus loss (${detectionTotals.focus})`,
+        "Tip: Minimize these by minimizing browser tabs, staying focused on the exam window, and maintaining good posture."
+      );
+    }
   }
 
-  if (mode === "exam" || mode === "quiz" || lower.includes("quiz") || lower.includes("mcq") || lower.includes("exam")) {
+  if (mode === "assignment" || lower.includes("assignment") || lower.includes("homework")) {
+    lines.push("📝 **ASSIGNMENT GUIDANCE**");
+    
+    if (pendingAssignments.length > 0) {
+      lines.push(
+        `⏰ **Pending (${pendingAssignments.length}):**`,
+        pendingAssignments.map(a => `• ${a.title} (Due: ${a.dueDate || 'TBD'})`).join("\n")
+      );
+    }
+
+    if (submittedAssignments.length > 0) {
+      lines.push(
+        `✅ **Completed (${submittedAssignments.length}):**`,
+        submittedAssignments.map(a => `• ${a.title}`).join("\n")
+      );
+    }
+
     lines.push(
-      `Assessment plan: latest score is ${latestResult?.percentage || 0}% in ${
-        latestResult?.testName || "your latest assessment"
-      }. Upcoming/live focus: ${activeExam?.title || "No active assessment found"}.`,
-      `Cheating-risk signals from recent attempts: copy ${detectionTotals.copy}, paste ${detectionTotals.paste}, tab/focus ${detectionTotals.tab + detectionTotals.focus}, head ${detectionTotals.head}, eyes ${detectionTotals.eyes}. Reduce these by staying fullscreen, centered, and using only the exam window.`
+      `🎯 **How to Excel at Assignments:**`,
+      `1. **Understand** - Read the requirements twice. Note key instructions and submission format.`,
+      `2. **Plan** - Create an outline before writing. This saves time and keeps you organized.`,
+      `3. **Draft** - Write your answer, include examples, calculations, or evidence as needed.`,
+      `4. **Review** - Check for spelling, grammar, completeness, and adherence to guidelines.`,
+      `5. **Submit** - Save in correct format and upload before the deadline.`,
+      `💡 Pro tip: Start assignments 3-4 days early. This gives you time to revise and ask for clarification if needed.`
+    );
+
+    if (latestAssignment) {
+      lines.push(`Current Focus: ${latestAssignment.title || "Your latest assignment"}. Send me the specific topic, and I'll help you structure your answer.`);
+    }
+  }
+
+  if (mode === "quiz" || mode === "results" || lower.includes("quiz") || lower.includes("exam")) {
+    lines.push("🧠 **QUIZ & EXAM STRATEGY**");
+    
+    if (latestResult) {
+      lines.push(
+        `Last Attempt: ${latestResult.testName} - ${latestResult.percentage}%`,
+        `Target: Aim for 80%+ by focusing on weak topics and practicing similar questions.`
+      );
+    }
+
+    if (activeExam) {
+      lines.push(`📅 Upcoming: ${activeExam.title || "Assessment"} - ${activeExam.examDate || 'Schedule pending'}`);
+    }
+
+    lines.push(
+      `🎓 **Proven Quiz Success Method:**`,
+      `1. **Before** - Review notes on key topics, skim practice questions, be well-rested.`,
+      `2. **During** - Read each question carefully, eliminate wrong options, manage time (don't rush).`,
+      `3. **After** - Review wrong answers, understand the correct reasoning, note patterns.`,
+      `💪 **Build Confidence:**`,
+      `- Practice 10-15 random MCQs from your weak areas each day`,
+      `- Time yourself to match exam conditions`,
+      `- Ask me to explain any tricky concept`
     );
   }
 
   if (mode === "question" || lower.includes("question") || lower.includes("explain")) {
+    lines.push("🔍 **QUESTION SOLVING GUIDE**");
+    
+    if (sampleQuestion) {
+      lines.push(
+        `Question: "${sampleQuestion.questionText || 'Unknown'}"`,
+        `Correct Answer: ${sampleQuestion.correctAnswer || 'TBD'}`,
+        `🧠 **Step-by-Step Approach:**`,
+        `1. **Identify** - What concept is this testing?`,
+        `2. **Recall** - What do I know about this topic?`,
+        `3. **Analyze** - Eliminate obviously wrong options.`,
+        `4. **Compare** - Evaluate remaining options logically.`,
+        `5. **Justify** - Why is this answer correct?`
+      );
+    } else {
+      lines.push(
+        `📤 **Send me a question** - Copy/paste the question or upload an image, and I'll explain:`,
+        `• What the question is asking`,
+        `• Key concepts involved`,
+        `• How to eliminate wrong answers`,
+        `• Why the correct answer is right`
+      );
+    }
+  }
+
+  if (mode === "study" || lower.includes("study plan") || lower.includes("preparation")) {
+    lines.push("📚 **PERSONALIZED STUDY PLAN**");
+    
+    const totalPending = pendingAssignments.length;
+    const totalResults = results.length;
+    
     lines.push(
-      `Question help: ${sampleQuestion?.questionText || "Send the exact question and I will break it down."}`,
-      sampleQuestion
-        ? `Approach: identify the key concept, compare each option, eliminate wrong choices, then justify why "${sampleQuestion.correctAnswer}" fits.`
-        : "Approach: paste the question, tell me your selected option, and I will explain the correct reasoning."
+      `📋 **Your Current Status:**`,
+      `• Pending Assignments: ${totalPending}`,
+      `• Completed Assessments: ${totalResults}`,
+      `• Study Resources Available: ${resources.length}`,
+      `• Avg Performance: ${avgScore}%`,
+      `\n🎯 **Recommended Weekly Schedule:**`,
+      `Monday/Wednesday/Friday: Practice 20 MCQs from weak topics (1 hour)`,
+      `Tuesday/Thursday: Review notes and assignments (1 hour each)`,
+      `Weekend: Full practice test + error review (2-3 hours)`,
+      `\n✅ **Action Items This Week:**`,
+      `1. Complete ${totalPending} pending assignment(s)`,
+      `2. Review ${weakResults.length} weak assessment(s) for patterns`,
+      `3. Practice 5 questions from weak areas daily`,
+      `4. Ask me to explain any concept you're uncertain about`
     );
+
+    if (resources.length > 0) {
+      lines.push(
+        `📖 **Study Resources:**`,
+        resources.slice(0, 3).map(r => `• ${r.title}`).join("\n")
+      );
+    }
   }
 
-  if (weakResults.length) {
-    lines.push(`Weak area signal: your lower attempts include ${weakResults.join(", ")}. Spend the next session on these topics before broad revision.`);
+  if (mode === "general") {
+    lines.push("📌 **TODAY'S FOCUS**");
+    
+    if (pendingAssignments.length > 0 || activeExam) {
+      lines.push(
+        `⚡ Priority Tasks:`,
+        pendingAssignments.length > 0 ? `1. Submit ${pendingAssignments.length} pending assignment(s)` : ``,
+        activeExam ? `${pendingAssignments.length > 0 ? '2' : '1'}. Prepare for ${activeExam.title}` : ``,
+        latestResult && avgScore < 70 ? `\n2. Review weak areas (current avg: ${avgScore}%)` : ``
+      ).filter(Boolean);
+    } else {
+      lines.push(`No urgent deadlines. This is a good time to:\n• Review notes from recent classes\n• Practice previous exam questions\n• Ask me about difficult concepts`);
+    }
   }
 
-  if (weakAnswers.length) {
-    lines.push(`Missed-question pattern: review these first - ${weakAnswers.join(" | ")}.`);
-  }
-
-  if (relevantResource) {
-    lines.push(`Study Vault match: open "${relevantResource.title}" first, then ask me the exact paragraph/question you do not understand.`);
-  } else if (resources.length) {
-    lines.push(`Study Vault has ${resources.length} resource(s). Start with "${resources[0].title}" if your question is from class material.`);
-  }
-
+  // Closing with next steps
   lines.push(
-    "Next action plan:",
-    "1. Tell me whether this is exam, quiz, assignment, question, or result analysis.",
-    "2. Send the exact question/instructions or upload a clear image.",
-    "3. I will explain the logic, draft a structure, and give a short checklist.",
-    "4. After your next result, ask me to analyze the faults and I will compare score, wrong answers, and proctoring warnings."
+    `\n✨ **Next Step:** Choose a mode above or ask me a specific question about any assignment, exam, or topic you need help with.`
   );
 
   return lines.join("\n\n");
