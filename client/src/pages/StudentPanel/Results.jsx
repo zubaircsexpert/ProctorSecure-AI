@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import API from "../../services/api";
 import { openFileFromClick } from "../../utils/fileViewer";
 
@@ -68,10 +68,35 @@ const normalizeResults = (items) =>
     .filter(Boolean)
     .sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0));
 
+const getResultKey = (result, index = 0) =>
+  result?._id || `${result?.examId || "local"}-${result?.createdAt || index}`;
+
+const buildAiInsight = (result, derived, isQuiz) => {
+  const missed = derived.answerSheet.filter((item) => item.isCorrect === false).slice(0, 3);
+
+  if (isQuiz) {
+    if (!missed.length && derived.academicAccuracy >= 80) {
+      return "AI learning insight: strong quiz performance. Move to a timed AI exam attempt for a presentation-ready proctoring report.";
+    }
+
+    const topics = missed
+      .map((item) => item.questionText)
+      .filter(Boolean)
+      .join("; ");
+
+    return `AI learning insight: revise ${topics || result?.testName || "the missed quiz areas"} before the next attempt.`;
+  }
+
+  if (derived.suspiciousScore >= 35) {
+    return "AI proctoring insight: review camera, tab, audio, and focus warnings before final grading.";
+  }
+
+  return "AI proctoring insight: this attempt is ready for score review with integrity signals attached.";
+};
+
 const Results = () => {
   const [results, setResults] = useState([]);
   const [selectedId, setSelectedId] = useState("");
-  const [activeType, setActiveType] = useState("exam");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -109,13 +134,13 @@ const Results = () => {
 
         const unique = new Map();
         normalizeResults(collected).forEach((result, index) => {
-          const key = result._id || `${result.examId || "local"}-${result.createdAt || index}`;
+          const key = getResultKey(result, index);
           unique.set(key, result);
         });
 
         const nextResults = Array.from(unique.values());
         setResults(nextResults);
-        setSelectedId((prev) => prev || nextResults[0]?._id || "0");
+        setSelectedId((prev) => prev || getResultKey(nextResults[0], 0));
       } finally {
         setLoading(false);
       }
@@ -124,31 +149,23 @@ const Results = () => {
     getResults();
   }, []);
 
-  const grouped = useMemo(
-    () => ({
-      exam: results.filter((result) => (result.assessmentType || "exam") !== "quiz"),
-      quiz: results.filter((result) => (result.assessmentType || "exam") === "quiz"),
-    }),
-    [results]
-  );
-
-  const visibleResults = grouped[activeType] || [];
+  const visibleResults = results;
   const selectedResult =
-    results.find((result, index) => (result._id || String(index)) === selectedId) ||
+    visibleResults.find((result, index) => getResultKey(result, index) === selectedId) ||
     visibleResults[0] ||
-    results[0] ||
     null;
   const derived = selectedResult ? buildDerived(selectedResult) : null;
   const isQuiz = (selectedResult?.assessmentType || "exam") === "quiz";
   const isManualReview = selectedResult?.manualReviewRequired || selectedResult?.status === "UNDER_REVIEW";
+  const aiInsight = selectedResult && derived ? buildAiInsight(selectedResult, derived, isQuiz) : "";
 
   useEffect(() => {
     if (visibleResults.length) {
       const stillVisible = visibleResults.some(
-        (result, index) => (result._id || String(index)) === selectedId
+        (result, index) => getResultKey(result, index) === selectedId
       );
       if (!stillVisible) {
-        setSelectedId(visibleResults[0]._id || "0");
+        setSelectedId(getResultKey(visibleResults[0], 0));
       }
     }
   }, [selectedId, visibleResults]);
@@ -158,7 +175,7 @@ const Results = () => {
       <div style={styles.loaderState}>
         <div style={styles.loaderOrb} />
         <h2 style={{ margin: "18px 0 8px" }}>Preparing your result center</h2>
-        <p style={{ margin: 0, color: "#64748b" }}>Loading AI exam reports and quiz attempts.</p>
+        <p style={{ margin: 0, color: "#64748b" }}>Loading AI assessment reports.</p>
       </div>
     );
   }
@@ -168,7 +185,7 @@ const Results = () => {
       <div style={styles.loaderState}>
         <h2 style={{ margin: 0 }}>No result found</h2>
         <p style={{ margin: "12px 0 0", color: "#64748b" }}>
-          Attempt an AI exam or quiz first. Your reports will appear here.
+          Attempt an AI assessment first. Your report will appear here.
         </p>
       </div>
     );
@@ -201,14 +218,14 @@ const Results = () => {
       <section style={styles.hero}>
         <div>
           <div style={styles.heroKicker}>Student Result Center</div>
-          <h1 style={styles.heroTitle}>AI Exam and Quiz Progress Reports</h1>
+          <h1 style={styles.heroTitle}>AI Assessment Reports</h1>
           <p style={styles.heroText}>
-            Every submitted attempt is separated by type, date, score, answer review, and integrity analytics.
+            Exams and quizzes now appear in one simple AI report center with score, answer review, and AI insight.
           </p>
         </div>
 
         <div style={styles.heroStatusCard}>
-          <span style={styles.heroStatusLabel}>{isQuiz ? "Quiz Score" : "Trust Factor"}</span>
+          <span style={styles.heroStatusLabel}>{isQuiz ? "AI Quiz Score" : "Trust Factor"}</span>
           <strong style={styles.heroStatusValue(derived.trustFactor)}>
             {isQuiz ? `${derived.score}/${derived.total}` : derived.trustFactor}
           </strong>
@@ -218,28 +235,20 @@ const Results = () => {
         </div>
       </section>
 
-      <div style={styles.tabRow}>
-        <button type="button" style={styles.tabButton(activeType === "exam")} onClick={() => setActiveType("exam")}>
-          AI Exams <strong>{grouped.exam.length}</strong>
-        </button>
-        <button type="button" style={styles.tabButton(activeType === "quiz")} onClick={() => setActiveType("quiz")}>
-          Quizzes <strong>{grouped.quiz.length}</strong>
-        </button>
-      </div>
-
       <div style={styles.reportLayout}>
         <aside style={styles.attemptPanel}>
-          <div style={styles.panelKicker}>{activeType === "quiz" ? "Quiz attempts" : "AI exam attempts"}</div>
+          <div style={styles.panelKicker}>AI attempts</div>
           <h2 style={styles.panelTitle}>Attempt History</h2>
 
           {visibleResults.length === 0 ? (
-            <div style={styles.emptyAudit}>No {activeType === "quiz" ? "quiz" : "AI exam"} result yet.</div>
+            <div style={styles.emptyAudit}>No AI assessment result yet.</div>
           ) : (
             <div style={{ display: "grid", gap: "10px", marginTop: "16px" }}>
               {visibleResults.map((result, index) => {
-                const key = result._id || String(index);
+                const key = getResultKey(result, index);
                 const itemDerived = buildDerived(result);
-                const active = (selectedResult._id || "0") === key;
+                const active = selectedId === key;
+                const itemIsQuiz = (result.assessmentType || "exam") === "quiz";
 
                 return (
                   <button
@@ -248,7 +257,10 @@ const Results = () => {
                     onClick={() => setSelectedId(key)}
                     style={styles.attemptCard(active)}
                   >
-                    <span style={styles.attemptTitle}>{result.testName || (activeType === "quiz" ? "Quiz" : "AI Exam")}</span>
+                    <span style={styles.attemptTitle}>
+                      {result.testName || (itemIsQuiz ? "AI Quiz" : "AI Exam")}
+                    </span>
+                    <span style={styles.attemptType}>{itemIsQuiz ? "AI Quiz Analysis" : "AI Exam Proctoring"}</span>
                     <span style={styles.attemptMeta}>{formatDateTime(result.createdAt)}</span>
                     <span style={styles.attemptScore}>
                       {itemDerived.score}/{itemDerived.total} | {itemDerived.academicAccuracy}%
@@ -263,9 +275,9 @@ const Results = () => {
         <main style={styles.reportPanel}>
           <div style={styles.reportHeader}>
             <div>
-              <div style={styles.panelKicker}>{isQuiz ? "Quiz report" : "AI exam report"}</div>
+              <div style={styles.panelKicker}>{isQuiz ? "AI quiz report" : "AI exam report"}</div>
               <h2 style={styles.reportTitle}>
-                {selectedResult.testName || (isQuiz ? "Quiz" : "AI Exam")} |{" "}
+                {selectedResult.testName || (isQuiz ? "AI Quiz" : "AI Exam")} |{" "}
                 {selectedResult.status || (derived.academicAccuracy >= 50 ? "PASSED" : "FAILED")}
               </h2>
               <p style={styles.reportText}>
@@ -281,14 +293,20 @@ const Results = () => {
           <div style={styles.cardGrid}>
             <ScoreCard tone="blue" label="Score" value={`${derived.score}/${derived.total}`} detail={`Accuracy ${derived.academicAccuracy}%`} />
             <ScoreCard label="Answered" value={derived.answeredCount} detail={`Unanswered ${derived.unansweredAnswers}`} />
-            <ScoreCard label={isQuiz ? "Percentage" : "Intelligence"} value={`${isQuiz ? derived.academicAccuracy : derived.intelligenceScore}%`} detail={isQuiz ? "Simple quiz score" : "Accuracy + integrity"} />
+            <ScoreCard label={isQuiz ? "AI Accuracy" : "Intelligence"} value={`${isQuiz ? derived.academicAccuracy : derived.intelligenceScore}%`} detail={isQuiz ? "AI quiz analysis" : "Accuracy + integrity"} />
             <ScoreCard tone="amber" label="Integrity" value={`${derived.suspiciousScore}%`} detail={`${derived.warnings} alerts`} />
           </div>
+
+          <section style={styles.aiInsightPanel}>
+            <div style={styles.panelKicker}>AI insight</div>
+            <h3 style={styles.panelTitle}>Presentation-ready analysis</h3>
+            <p style={styles.reportText}>{aiInsight}</p>
+          </section>
 
           <section style={styles.panel}>
             <div style={styles.panelHeader}>
               <div>
-                <div style={styles.panelKicker}>{isQuiz ? "Quiz answer review" : "Answer review"}</div>
+                <div style={styles.panelKicker}>{isQuiz ? "AI quiz answer review" : "Answer review"}</div>
                 <h3 style={styles.panelTitle}>Selected answers and correct answers</h3>
               </div>
             </div>
@@ -530,6 +548,17 @@ const styles = {
     color: "#64748b",
     fontSize: "12px",
   },
+  attemptType: {
+    width: "fit-content",
+    padding: "5px 8px",
+    borderRadius: "999px",
+    background: "#ecfeff",
+    color: "#0f766e",
+    fontWeight: 900,
+    fontSize: "11px",
+    textTransform: "uppercase",
+    letterSpacing: "0.06em",
+  },
   attemptScore: {
     color: "#1d4ed8",
     fontWeight: 800,
@@ -644,6 +673,13 @@ const styles = {
     borderRadius: "24px",
     background: "rgba(255,255,255,0.96)",
     border: "1px solid rgba(148,163,184,0.12)",
+    boxShadow: "0 20px 44px rgba(15, 23, 42, 0.08)",
+  },
+  aiInsightPanel: {
+    padding: "22px",
+    borderRadius: "24px",
+    background: "linear-gradient(135deg, #ecfeff 0%, #ffffff 100%)",
+    border: "1px solid rgba(14, 165, 233, 0.2)",
     boxShadow: "0 20px 44px rgba(15, 23, 42, 0.08)",
   },
   panelHeader: {
