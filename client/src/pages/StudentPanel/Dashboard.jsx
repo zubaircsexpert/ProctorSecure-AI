@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import {
   BookOpenCheck,
   BrainCircuit,
-  CalendarClock,
   FileStack,
   Gauge,
   Shield,
@@ -261,49 +260,7 @@ function Dashboard() {
         })}
       </section>
 
-      <section style={styles.gridTwo}>
-        <div style={styles.card}>
-          <div style={styles.sectionHead}>
-            <div>
-              <div style={styles.sectionKicker}>Upcoming Assessments</div>
-              <h2 style={styles.sectionTitle}>Classroom exam pipeline</h2>
-            </div>
-            <div style={styles.iconBadge("#fef3c7", "#b45309")}>
-              <CalendarClock size={18} />
-            </div>
-          </div>
-
-          {upcomingExams.length === 0 ? (
-            <div style={styles.emptyState}>No scheduled exams are available for your class yet.</div>
-          ) : (
-            <div style={{ display: "grid", gap: "12px" }}>
-              {upcomingExams.map((exam) => (
-                <div key={exam._id} style={styles.timelineCard}>
-                  <div>
-                    <div style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b" }}>
-                      {exam.assessmentType || "exam"}
-                    </div>
-                    <div style={{ fontSize: "20px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
-                      {exam.title}
-                    </div>
-                    <div style={{ color: "#475569", marginTop: "6px", lineHeight: 1.6 }}>
-                      {exam.course} | {exam.classroomName || profile?.classroomName || "Classroom"}
-                    </div>
-                  </div>
-                  <div style={styles.timelineMeta}>
-                    <strong>{exam.startTime ? new Date(exam.startTime).toLocaleString() : "Teacher will schedule time"}</strong>
-                    <span>{exam.duration} min</span>
-                  </div>
-                </div>
-              ))}
-              <Link to="/exam" style={styles.examLaunch}>
-                <Shield size={18} />
-                <span>Open AI Exam Center</span>
-              </Link>
-            </div>
-          )}
-        </div>
-
+      <section style={styles.singleCardGrid}>
         <div style={styles.card}>
           <div style={styles.sectionHead}>
             <div>
@@ -423,6 +380,12 @@ const styles = {
   gridTwo: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: "18px",
+    marginBottom: "20px",
+  },
+  singleCardGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
     gap: "18px",
     marginBottom: "20px",
   },
