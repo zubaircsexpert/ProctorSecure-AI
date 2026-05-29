@@ -246,7 +246,7 @@ function Dashboard() {
         </div>
       </section>
 
-      <section style={styles.modulesGrid}>
+      <section style={styles.modulesStrip}>
         {quickModules.map((module) => {
           const Icon = module.icon;
           return (
@@ -254,7 +254,7 @@ function Dashboard() {
               <div style={styles.moduleIcon}>
                 <Icon size={22} />
               </div>
-              <div style={{ fontSize: "22px", fontWeight: 800, color: "#0f172a" }}>{module.title}</div>
+              <div style={{ fontSize: "19px", fontWeight: 900, color: "#0f172a" }}>{module.title}</div>
               <p style={styles.moduleText}>{module.text}</p>
             </Link>
           );
@@ -266,7 +266,7 @@ function Dashboard() {
           <div style={styles.sectionHead}>
             <div>
               <div style={styles.sectionKicker}>Upcoming Assessments</div>
-              <h2 style={styles.sectionTitle}>Classroom exam pipeline</h2>
+              <h2 style={styles.sectionTitle}>Exam pipeline</h2>
             </div>
             <div style={styles.iconBadge("#fef3c7", "#b45309")}>
               <CalendarClock size={18} />
@@ -485,26 +485,28 @@ const styles = {
     display: "grid",
     gap: "10px",
   },
-  modulesGrid: {
+  modulesStrip: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: "18px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "14px",
     marginBottom: "20px",
   },
   moduleCard: {
     textDecoration: "none",
     background: "rgba(255,255,255,0.96)",
-    borderRadius: "26px",
-    padding: "22px",
+    borderRadius: "18px",
+    padding: "18px",
     border: "1px solid rgba(148,163,184,0.14)",
-    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.06)",
+    boxShadow: "0 14px 28px rgba(15, 23, 42, 0.05)",
     display: "grid",
-    gap: "14px",
+    gap: "12px",
+    alignContent: "start",
+    minHeight: "170px",
   },
   moduleIcon: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "16px",
+    width: "46px",
+    height: "46px",
+    borderRadius: "14px",
     display: "grid",
     placeItems: "center",
     background: "linear-gradient(135deg, #dbeafe, #d1fae5)",
@@ -513,7 +515,8 @@ const styles = {
   moduleText: {
     margin: 0,
     color: "#64748b",
-    lineHeight: 1.7,
+    lineHeight: 1.55,
+    fontSize: "14px",
   },
   timelineCard: {
     display: "flex",

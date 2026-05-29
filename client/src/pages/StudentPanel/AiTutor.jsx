@@ -142,28 +142,18 @@ function AiTutor() {
 
   return (
     <div style={styles.page}>
-      <section style={styles.header}>
-        <div>
-          <div style={styles.kicker}>
-            <BrainCircuit size={16} />
-            AI Tutor
-          </div>
-          <h1 style={styles.title}>Student AI workspace</h1>
-          <p style={styles.subtitle}>
-            Ask for exam analysis, assignment help, quiz practice, question explanations, or a full
-            study plan from your portal context.
-          </p>
-        </div>
-
-        <div style={styles.headerStats}>
-          <Stat label="Mode" value={currentMode.label} />
-          <Stat label="Context" value={contextSummary ? "Loaded" : "Ready"} />
-          <Stat label="Attachment" value={file ? "Selected" : "Optional"} />
-        </div>
-      </section>
-
       <section style={styles.workspace}>
         <aside style={styles.sidePanel}>
+          <div style={styles.brandBlock}>
+            <div style={styles.brandIcon}><BrainCircuit size={22} /></div>
+            <div>
+              <strong>AI Tutor</strong>
+              <span>Chat with portal context</span>
+            </div>
+          </div>
+
+          <div style={styles.newChatButton}>New study chat</div>
+
           <div style={styles.panelTitle}>Tutor Modes</div>
           <div style={styles.modeList}>
             {tutorModes.map((mode) => {
@@ -217,7 +207,7 @@ function AiTutor() {
           <div style={styles.chatHeader}>
             <div>
               <div style={styles.modeEyebrow}>{currentMode.label}</div>
-              <h2 style={styles.chatTitle}>{currentMode.prompt}</h2>
+              <h1 style={styles.chatTitle}>How can I help with your study work?</h1>
             </div>
             <div style={styles.statusPill}>{loading ? "Thinking" : "Ready"}</div>
           </div>
@@ -264,9 +254,9 @@ function AiTutor() {
               <textarea
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
-                placeholder={`Ask ${currentMode.label.toLowerCase()} anything...`}
+                placeholder={`Message AI Tutor about ${currentMode.label.toLowerCase()}...`}
                 style={styles.input}
-                rows={3}
+                rows={2}
               />
               {file ? (
                 <div style={styles.fileChip}>
@@ -318,44 +308,9 @@ const ContextStat = ({ label, value }) => (
 const styles = {
   page: {
     minHeight: "calc(100vh - 104px)",
-    padding: "22px clamp(16px, 3vw, 32px) 32px",
-    background: "linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%)",
+    padding: "16px clamp(12px, 2vw, 24px) 24px",
+    background: "#f7f7f8",
     color: "#0f172a",
-  },
-  header: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
-    gap: "18px",
-    alignItems: "stretch",
-    marginBottom: "18px",
-  },
-  kicker: {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: "8px",
-    padding: "8px 11px",
-    borderRadius: "8px",
-    background: "#e0f2fe",
-    color: "#075985",
-    textTransform: "uppercase",
-    fontSize: "12px",
-    fontWeight: 800,
-  },
-  title: {
-    margin: "12px 0 8px",
-    fontSize: "36px",
-    lineHeight: 1.05,
-  },
-  subtitle: {
-    margin: 0,
-    color: "#475569",
-    lineHeight: 1.6,
-    maxWidth: "820px",
-  },
-  headerStats: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-    gap: "10px",
   },
   stat: {
     display: "grid",
@@ -369,52 +324,76 @@ const styles = {
   },
   workspace: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))",
+    gridTemplateColumns: "280px minmax(0, 1fr)",
     gap: "16px",
-    alignItems: "start",
+    alignItems: "stretch",
+    minHeight: "calc(100vh - 136px)",
   },
   sidePanel: {
     display: "grid",
-    gap: "14px",
-    alignSelf: "start",
+    gap: "12px",
+    alignSelf: "stretch",
+    alignContent: "start",
     padding: "16px",
-    borderRadius: "8px",
-    background: "#fff",
-    border: "1px solid rgba(148,163,184,0.18)",
-    boxShadow: "0 18px 38px rgba(15,23,42,0.07)",
+    borderRadius: "14px",
+    background: "#111827",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+  brandBlock: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    paddingBottom: "10px",
+    borderBottom: "1px solid rgba(255,255,255,0.1)",
+  },
+  brandIcon: {
+    width: "40px",
+    height: "40px",
+    borderRadius: "12px",
+    display: "grid",
+    placeItems: "center",
+    background: "rgba(255,255,255,0.1)",
+  },
+  newChatButton: {
+    padding: "11px 12px",
+    borderRadius: "10px",
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    fontWeight: 900,
   },
   panelTitle: {
     fontSize: "12px",
     fontWeight: 900,
     textTransform: "uppercase",
-    color: "#475569",
+    color: "rgba(255,255,255,0.66)",
   },
   modeList: {
     display: "grid",
     gap: "8px",
   },
   modeButton: {
-    border: "1px solid rgba(148,163,184,0.22)",
-    background: "#f8fafc",
-    borderRadius: "8px",
+    border: "1px solid transparent",
+    background: "transparent",
+    borderRadius: "10px",
     padding: "11px 12px",
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    color: "#0f172a",
+    color: "rgba(255,255,255,0.86)",
     fontWeight: 800,
     cursor: "pointer",
     textAlign: "left",
   },
   modeButtonActive: {
-    border: "1px solid rgba(37,99,235,0.34)",
-    background: "#eff6ff",
-    borderRadius: "8px",
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.12)",
+    borderRadius: "10px",
     padding: "11px 12px",
     display: "flex",
     alignItems: "center",
     gap: "10px",
-    color: "#1d4ed8",
+    color: "#fff",
     fontWeight: 900,
     cursor: "pointer",
     textAlign: "left",
@@ -428,14 +407,14 @@ const styles = {
     gap: "8px",
   },
   quickButton: {
-    border: "1px solid rgba(37,99,235,0.14)",
-    background: "#f8fbff",
-    borderRadius: "8px",
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.06)",
+    borderRadius: "10px",
     padding: "10px 11px",
     display: "flex",
     gap: "8px",
     alignItems: "flex-start",
-    color: "#334155",
+    color: "rgba(255,255,255,0.84)",
     fontWeight: 700,
     cursor: "pointer",
     textAlign: "left",
@@ -446,34 +425,36 @@ const styles = {
     gap: "8px",
     padding: "12px",
     borderRadius: "8px",
-    background: "#f8fafc",
-    border: "1px solid rgba(148,163,184,0.16)",
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.08)",
   },
   contextStat: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: "12px",
-    color: "#475569",
+    color: "rgba(255,255,255,0.78)",
     fontSize: "13px",
   },
   chatPanel: {
     display: "grid",
-    gap: "12px",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    gap: "0",
     minWidth: 0,
-    padding: "16px",
-    borderRadius: "8px",
+    padding: 0,
+    borderRadius: "14px",
     background: "#fff",
     border: "1px solid rgba(148,163,184,0.18)",
     boxShadow: "0 18px 38px rgba(15,23,42,0.07)",
+    overflow: "hidden",
   },
   chatHeader: {
     display: "flex",
     justifyContent: "space-between",
     gap: "14px",
     alignItems: "flex-start",
-    borderBottom: "1px solid rgba(148,163,184,0.18)",
-    paddingBottom: "12px",
+    borderBottom: "1px solid rgba(148,163,184,0.16)",
+    padding: "16px 20px",
   },
   modeEyebrow: {
     color: "#2563eb",
@@ -483,7 +464,7 @@ const styles = {
   },
   chatTitle: {
     margin: "5px 0 0",
-    fontSize: "22px",
+    fontSize: "24px",
     lineHeight: 1.25,
   },
   statusPill: {
@@ -497,19 +478,18 @@ const styles = {
   chatWindow: {
     display: "grid",
     gap: "12px",
-    height: "min(54vh, 520px)",
-    minHeight: "360px",
+    alignContent: "start",
+    height: "auto",
+    minHeight: 0,
     overflowY: "auto",
-    padding: "14px",
-    borderRadius: "8px",
-    background: "#f8fafc",
-    border: "1px solid rgba(148,163,184,0.14)",
+    padding: "22px min(7vw, 78px)",
+    background: "#fff",
   },
   userBubble: {
     justifySelf: "end",
     maxWidth: "780px",
     padding: "13px 15px",
-    borderRadius: "8px",
+    borderRadius: "14px",
     background: "#2563eb",
     color: "#fff",
     lineHeight: 1.6,
@@ -518,8 +498,8 @@ const styles = {
     justifySelf: "start",
     maxWidth: "820px",
     padding: "13px 15px",
-    borderRadius: "8px",
-    background: "#fff",
+    borderRadius: "14px",
+    background: "#f7f7f8",
     color: "#334155",
     border: "1px solid rgba(148,163,184,0.16)",
     lineHeight: 1.6,
@@ -532,6 +512,9 @@ const styles = {
     display: "grid",
     gridTemplateColumns: "minmax(0, 1fr) auto",
     gap: "10px",
+    padding: "14px min(7vw, 78px) 18px",
+    borderTop: "1px solid rgba(148,163,184,0.12)",
+    background: "#fff",
   },
   composer: {
     display: "grid",
@@ -539,12 +522,13 @@ const styles = {
   },
   input: {
     border: "1px solid rgba(148,163,184,0.24)",
-    borderRadius: "8px",
+    borderRadius: "16px",
     padding: "13px 14px",
     fontSize: "15px",
     fontFamily: "inherit",
     resize: "vertical",
-    minHeight: "86px",
+    minHeight: "58px",
+    maxHeight: "150px",
   },
   fileChip: {
     display: "inline-flex",
@@ -576,7 +560,7 @@ const styles = {
   attachButton: {
     width: "48px",
     minHeight: "48px",
-    borderRadius: "8px",
+    borderRadius: "14px",
     background: "#f8fafc",
     border: "1px solid rgba(148,163,184,0.22)",
     color: "#1d4ed8",
@@ -586,7 +570,7 @@ const styles = {
   },
   sendButton: {
     border: "none",
-    borderRadius: "8px",
+    borderRadius: "14px",
     padding: "0 16px",
     background: "linear-gradient(135deg, #1d4ed8, #0f766e)",
     color: "#fff",
