@@ -166,6 +166,7 @@ function AiTutor() {
   const isEmptyChat = messages.length === 1 && !messages[0].text.includes("What");
 
   return (
+<<<<<<< HEAD
     <div style={styles.container}>
       {/* Header */}
       <div style={styles.topBar}>
@@ -215,6 +216,26 @@ function AiTutor() {
                   );
                 })}
               </div>
+=======
+    <div style={styles.page}>
+      <section style={styles.workspace}>
+        <aside style={styles.sidePanel}>
+          <div style={styles.brandBlock}>
+            <div style={styles.brandIcon}><BrainCircuit size={22} /></div>
+            <div>
+              <strong>AI Tutor</strong>
+              <span>Chat with portal context</span>
+            </div>
+          </div>
+
+          <div style={styles.newChatButton}>New study chat</div>
+
+          <div style={styles.panelTitle}>Tutor Modes</div>
+          <div style={styles.modeList}>
+            {tutorModes.map((mode) => {
+              const Icon = mode.icon;
+              const active = selectedMode === mode.id;
+>>>>>>> 8c8e10086dccce67ae63b729b88e186aeb63b115
 
               {/* Quick Starter Messages */}
               <div style={styles.starterSection}>
@@ -240,6 +261,7 @@ function AiTutor() {
                 <div style={styles.modeBadgeTop}>{currentMode.label}</div>
               </div>
 
+<<<<<<< HEAD
               {/* Messages */}
               <div style={styles.messagesArea}>
                 {messages.map((message, index) => (
@@ -266,6 +288,46 @@ function AiTutor() {
                       ))}
                     </div>
                   </div>
+=======
+          <div style={styles.contextBox}>
+            <div style={styles.panelTitle}>Portal Context</div>
+            <ContextStat label="Assignments" value={contextSummary?.assignments ?? "-"} />
+            <ContextStat label="Pending" value={contextSummary?.pendingAssignments ?? "-"} />
+            <ContextStat label="Results" value={contextSummary?.results ?? "-"} />
+            <ContextStat label="Assessments" value={contextSummary?.assessments ?? "-"} />
+            <ContextStat label="Questions" value={contextSummary?.questions ?? "-"} />
+            <ContextStat label="Resources" value={contextSummary?.resources ?? "-"} />
+          </div>
+        </aside>
+
+        <main style={styles.chatPanel}>
+          <div style={styles.chatHeader}>
+            <div>
+              <div style={styles.modeEyebrow}>{currentMode.label}</div>
+              <h1 style={styles.chatTitle}>How can I help with your study work?</h1>
+            </div>
+            <div style={styles.statusPill}>{loading ? "Thinking" : "Ready"}</div>
+          </div>
+
+          <div style={styles.chatWindow}>
+            {messages.map((message, index) => (
+              <div
+                key={`${message.role}-${index}`}
+                style={message.role === "user" ? styles.userBubble : styles.assistantBubble}
+              >
+                <span style={styles.modeBadge(message.mode || message.tutorMode)}>
+                  {message.modeLabel ||
+                    (message.mode === "ai"
+                      ? "Live AI"
+                      : message.mode === "error"
+                      ? "System"
+                      : "Context AI")}
+                </span>
+                {message.text.split("\n").map((line, lineIndex) => (
+                  <p key={`${index}-${lineIndex}`} style={styles.messageLine}>
+                    {line}
+                  </p>
+>>>>>>> 8c8e10086dccce67ae63b729b88e186aeb63b115
                 ))}
 
                 {loading && (
@@ -338,6 +400,7 @@ function AiTutor() {
               <textarea
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
+<<<<<<< HEAD
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && event.ctrlKey && canSend) {
                     event.preventDefault();
@@ -347,6 +410,11 @@ function AiTutor() {
                 placeholder={`Ask ${currentMode.label.toLowerCase()}...`}
                 style={styles.textarea}
                 rows={1}
+=======
+                placeholder={`Message AI Tutor about ${currentMode.label.toLowerCase()}...`}
+                style={styles.input}
+                rows={2}
+>>>>>>> 8c8e10086dccce67ae63b729b88e186aeb63b115
               />
               <div style={styles.inputActions}>
                 <label style={styles.attachBtn} title="Attach file">
@@ -401,6 +469,7 @@ const ContextStat = ({ label, value }) => (
 );
 
 const styles = {
+<<<<<<< HEAD
   container: {
     display: "flex",
     flexDirection: "column",
@@ -781,6 +850,14 @@ const styles = {
     justifyContent: "center",
     padding: "0",
   },
+=======
+  page: {
+    minHeight: "calc(100vh - 104px)",
+    padding: "16px clamp(12px, 2vw, 24px) 24px",
+    background: "#f7f7f8",
+    color: "#0f172a",
+  },
+>>>>>>> 8c8e10086dccce67ae63b729b88e186aeb63b115
   stat: {
     display: "grid",
     alignContent: "center",
@@ -791,14 +868,283 @@ const styles = {
     border: "1px solid rgba(148,163,184,0.18)",
     boxShadow: "0 14px 30px rgba(15,23,42,0.06)",
   },
+<<<<<<< HEAD
+=======
+  workspace: {
+    display: "grid",
+    gridTemplateColumns: "280px minmax(0, 1fr)",
+    gap: "16px",
+    alignItems: "stretch",
+    minHeight: "calc(100vh - 136px)",
+  },
+  sidePanel: {
+    display: "grid",
+    gap: "12px",
+    alignSelf: "stretch",
+    alignContent: "start",
+    padding: "16px",
+    borderRadius: "14px",
+    background: "#111827",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+  brandBlock: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    paddingBottom: "10px",
+    borderBottom: "1px solid rgba(255,255,255,0.1)",
+  },
+  brandIcon: {
+    width: "40px",
+    height: "40px",
+    borderRadius: "12px",
+    display: "grid",
+    placeItems: "center",
+    background: "rgba(255,255,255,0.1)",
+  },
+  newChatButton: {
+    padding: "11px 12px",
+    borderRadius: "10px",
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    fontWeight: 900,
+  },
+  panelTitle: {
+    fontSize: "12px",
+    fontWeight: 900,
+    textTransform: "uppercase",
+    color: "rgba(255,255,255,0.66)",
+  },
+  modeList: {
+    display: "grid",
+    gap: "8px",
+  },
+  modeButton: {
+    border: "1px solid transparent",
+    background: "transparent",
+    borderRadius: "10px",
+    padding: "11px 12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    color: "rgba(255,255,255,0.86)",
+    fontWeight: 800,
+    cursor: "pointer",
+    textAlign: "left",
+  },
+  modeButtonActive: {
+    border: "1px solid rgba(255,255,255,0.12)",
+    background: "rgba(255,255,255,0.12)",
+    borderRadius: "10px",
+    padding: "11px 12px",
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    color: "#fff",
+    fontWeight: 900,
+    cursor: "pointer",
+    textAlign: "left",
+  },
+  panelBlock: {
+    display: "grid",
+    gap: "10px",
+  },
+  quickList: {
+    display: "grid",
+    gap: "8px",
+  },
+  quickButton: {
+    border: "1px solid rgba(255,255,255,0.08)",
+    background: "rgba(255,255,255,0.06)",
+    borderRadius: "10px",
+    padding: "10px 11px",
+    display: "flex",
+    gap: "8px",
+    alignItems: "flex-start",
+    color: "rgba(255,255,255,0.84)",
+    fontWeight: 700,
+    cursor: "pointer",
+    textAlign: "left",
+    lineHeight: 1.35,
+  },
+  contextBox: {
+    display: "grid",
+    gap: "8px",
+    padding: "12px",
+    borderRadius: "8px",
+    background: "rgba(255,255,255,0.06)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+>>>>>>> 8c8e10086dccce67ae63b729b88e186aeb63b115
   contextStat: {
     display: "flex",
     alignItems: "center",
     justifyContent: "space-between",
     gap: "12px",
-    color: "#475569",
+    color: "rgba(255,255,255,0.78)",
     fontSize: "13px",
   },
+<<<<<<< HEAD
+=======
+  chatPanel: {
+    display: "grid",
+    gridTemplateRows: "auto minmax(0, 1fr) auto",
+    gap: "0",
+    minWidth: 0,
+    padding: 0,
+    borderRadius: "14px",
+    background: "#fff",
+    border: "1px solid rgba(148,163,184,0.18)",
+    boxShadow: "0 18px 38px rgba(15,23,42,0.07)",
+    overflow: "hidden",
+  },
+  chatHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "14px",
+    alignItems: "flex-start",
+    borderBottom: "1px solid rgba(148,163,184,0.16)",
+    padding: "16px 20px",
+  },
+  modeEyebrow: {
+    color: "#2563eb",
+    fontWeight: 900,
+    fontSize: "12px",
+    textTransform: "uppercase",
+  },
+  chatTitle: {
+    margin: "5px 0 0",
+    fontSize: "24px",
+    lineHeight: 1.25,
+  },
+  statusPill: {
+    padding: "8px 10px",
+    borderRadius: "8px",
+    background: "#f1f5f9",
+    color: "#334155",
+    fontWeight: 900,
+    fontSize: "12px",
+  },
+  chatWindow: {
+    display: "grid",
+    gap: "12px",
+    alignContent: "start",
+    height: "auto",
+    minHeight: 0,
+    overflowY: "auto",
+    padding: "22px min(7vw, 78px)",
+    background: "#fff",
+  },
+  userBubble: {
+    justifySelf: "end",
+    maxWidth: "780px",
+    padding: "13px 15px",
+    borderRadius: "14px",
+    background: "#2563eb",
+    color: "#fff",
+    lineHeight: 1.6,
+  },
+  assistantBubble: {
+    justifySelf: "start",
+    maxWidth: "820px",
+    padding: "13px 15px",
+    borderRadius: "14px",
+    background: "#f7f7f8",
+    color: "#334155",
+    border: "1px solid rgba(148,163,184,0.16)",
+    lineHeight: 1.6,
+  },
+  messageLine: {
+    margin: "0 0 8px",
+    whiteSpace: "pre-wrap",
+  },
+  inputRow: {
+    display: "grid",
+    gridTemplateColumns: "minmax(0, 1fr) auto",
+    gap: "10px",
+    padding: "14px min(7vw, 78px) 18px",
+    borderTop: "1px solid rgba(148,163,184,0.12)",
+    background: "#fff",
+  },
+  composer: {
+    display: "grid",
+    gap: "8px",
+  },
+  input: {
+    border: "1px solid rgba(148,163,184,0.24)",
+    borderRadius: "16px",
+    padding: "13px 14px",
+    fontSize: "15px",
+    fontFamily: "inherit",
+    resize: "vertical",
+    minHeight: "58px",
+    maxHeight: "150px",
+  },
+  fileChip: {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "8px",
+    width: "fit-content",
+    borderRadius: "8px",
+    background: "#eff6ff",
+    color: "#1d4ed8",
+    padding: "8px 10px",
+    fontWeight: 800,
+    fontSize: "12px",
+  },
+  clearFileButton: {
+    border: "none",
+    background: "transparent",
+    color: "#1d4ed8",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+    padding: 0,
+  },
+  actionColumn: {
+    display: "grid",
+    gridTemplateColumns: "48px minmax(84px, 92px)",
+    gap: "8px",
+    alignItems: "stretch",
+  },
+  attachButton: {
+    width: "48px",
+    minHeight: "48px",
+    borderRadius: "14px",
+    background: "#f8fafc",
+    border: "1px solid rgba(148,163,184,0.22)",
+    color: "#1d4ed8",
+    display: "grid",
+    placeItems: "center",
+    cursor: "pointer",
+  },
+  sendButton: {
+    border: "none",
+    borderRadius: "14px",
+    padding: "0 16px",
+    background: "linear-gradient(135deg, #1d4ed8, #0f766e)",
+    color: "#fff",
+    fontWeight: 900,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: "8px",
+    cursor: "pointer",
+  },
+  modeBadge: (mode) => ({
+    display: "inline-flex",
+    width: "fit-content",
+    marginBottom: "8px",
+    borderRadius: "8px",
+    padding: "5px 8px",
+    background: mode === "ai" ? "#dcfce7" : mode === "error" ? "#fee2e2" : "#fef3c7",
+    color: mode === "ai" ? "#166534" : mode === "error" ? "#991b1b" : "#92400e",
+    fontWeight: 900,
+    fontSize: "11px",
+    textTransform: "uppercase",
+  }),
+>>>>>>> 8c8e10086dccce67ae63b729b88e186aeb63b115
 };
 
 export default AiTutor;

@@ -85,6 +85,15 @@ function SystemChecks() {
   };
 
   const latest = current || checks[0] || null;
+  const readinessScore = useMemo(() => {
+    if (!latest) return 0;
+    const statuses = [latest.camera, latest.microphone, latest.internet, latest.browser, latest.device];
+    return Math.round(
+      (statuses.reduce((sum, status) => sum + (status === "pass" ? 1 : status === "warning" ? 0.5 : 0), 0) /
+        statuses.length) *
+        100
+    );
+  }, [latest]);
   const summary = useMemo(() => {
     if (!latest) return "Run a check before starting your AI exam.";
     const statuses = [latest.camera, latest.microphone, latest.internet, latest.browser, latest.device];
@@ -98,12 +107,18 @@ function SystemChecks() {
       <section style={styles.hero}>
         <div>
           <div style={styles.kicker}>System Checks</div>
-          <h1 style={styles.title}>Camera, microphone and internet readiness</h1>
-          <p style={styles.text}>Run this before AI exams so technical issues are caught early.</p>
+          <h1 style={styles.title}>Exam readiness command center</h1>
+          <p style={styles.text}>A unique pre-exam health check for camera, mic, internet, browser, screen and battery.</p>
         </div>
-        <button type="button" style={styles.runButton} onClick={runCheck} disabled={running}>
-          {running ? "Checking..." : "Run check"}
-        </button>
+        <div style={styles.heroActions}>
+          <div style={styles.scoreRing}>
+            <strong>{readinessScore}%</strong>
+            <span>Ready</span>
+          </div>
+          <button type="button" style={styles.runButton} onClick={runCheck} disabled={running}>
+            {running ? "Checking..." : "Run full check"}
+          </button>
+        </div>
       </section>
 
       <section style={styles.grid}>
@@ -122,6 +137,13 @@ function SystemChecks() {
         <p style={styles.cardText}>
           Keep your face visible, allow browser permissions, close heavy apps, and use stable Wi-Fi or cable before starting.
         </p>
+        <div style={styles.checklistGrid}>
+          <ChecklistItem label="Camera permission allowed" ok={latest?.camera === "pass"} />
+          <ChecklistItem label="Microphone permission allowed" ok={latest?.microphone === "pass"} />
+          <ChecklistItem label="Internet latency acceptable" ok={latest?.internet === "pass"} />
+          <ChecklistItem label="Browser supports secure exam" ok={latest?.browser === "pass"} />
+          <ChecklistItem label="Screen size is exam-ready" ok={latest?.device === "pass"} />
+        </div>
       </section>
 
       <section style={styles.history}>
@@ -143,6 +165,13 @@ const StatusCard = ({ icon, label, status, value }) => (
     <div style={styles.statusIcon(status)}>{icon}</div>
     <span style={styles.statusLabel}>{label}</span>
     <strong style={styles.statusText(status)}>{value || status}</strong>
+  </div>
+);
+
+const ChecklistItem = ({ label, ok }) => (
+  <div style={styles.checklistItem(ok)}>
+    <span>{ok ? "Pass" : "Needs check"}</span>
+    <strong>{label}</strong>
   </div>
 );
 
@@ -185,6 +214,23 @@ const styles = {
     fontWeight: 900,
     cursor: "pointer",
   },
+  heroActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "14px",
+    flexWrap: "wrap",
+  },
+  scoreRing: {
+    width: "96px",
+    height: "96px",
+    borderRadius: "999px",
+    display: "grid",
+    placeItems: "center",
+    alignContent: "center",
+    background: "rgba(255,255,255,0.14)",
+    border: "1px solid rgba(255,255,255,0.18)",
+    color: "#fff",
+  },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: "16px", marginBottom: "18px" },
   statusCard: {
     background: "#fff",
@@ -220,6 +266,21 @@ const styles = {
   kickerDark: { color: "#2563eb", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.12em", fontSize: "12px" },
   cardTitle: { margin: "8px 0", color: "#0f172a", fontSize: "28px" },
   cardText: { margin: 0, color: "#475569", lineHeight: 1.7 },
+  checklistGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "10px",
+    marginTop: "18px",
+  },
+  checklistItem: (ok) => ({
+    display: "grid",
+    gap: "6px",
+    padding: "13px 14px",
+    borderRadius: "14px",
+    background: ok ? "#f0fdf4" : "#fff7ed",
+    border: ok ? "1px solid #bbf7d0" : "1px solid #fed7aa",
+    color: ok ? "#166534" : "#9a3412",
+  }),
   history: { display: "grid", gap: "10px" },
   historyRow: {
     display: "grid",

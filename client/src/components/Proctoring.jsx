@@ -1013,7 +1013,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
             playsInline
             style={{
               width: "100%",
-              aspectRatio: compact ? "4 / 3" : "16 / 10",
+              aspectRatio: compact ? "16 / 9" : "16 / 10",
               objectFit: "cover",
               display: "block",
               background:
@@ -1153,86 +1153,77 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
           </div>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: compact ? "1fr 1fr" : "repeat(3, minmax(0, 1fr))",
-            gap: "8px",
-            color: "#e2e8f0",
-          }}
-        >
-          <div
-            style={{
-              padding: compact ? "11px 12px" : "13px 14px",
-              borderRadius: "18px",
-              background: "rgba(255,255,255,0.06)",
-            }}
-          >
-            <div style={{ fontSize: "11px", color: "rgba(226,232,240,0.65)" }}>Face status</div>
-            <div style={{ fontSize: compact ? "13px" : "14px", fontWeight: 700 }}>
-              {presenceLabel}
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: compact ? "11px 12px" : "13px 14px",
-              borderRadius: "18px",
-              background: "rgba(255,255,255,0.06)",
-            }}
-          >
-            <div style={{ fontSize: "11px", color: "rgba(226,232,240,0.65)" }}>
-              Tracking score
-            </div>
-            <div style={{ fontSize: compact ? "13px" : "14px", fontWeight: 700 }}>
-              {trackingScore}%
-            </div>
-          </div>
-
-          <div
-            style={{
-              padding: compact ? "11px 12px" : "13px 14px",
-              borderRadius: "18px",
-              background: "rgba(255,255,255,0.06)",
-              gridColumn: compact ? "1 / -1" : "auto",
-            }}
-          >
-            <div style={{ fontSize: "11px", color: "rgba(226,232,240,0.65)" }}>
-              Voice guidance
-            </div>
-            <div style={{ fontSize: compact ? "13px" : "14px", fontWeight: 700 }}>
-              Enabled for face, eye, and posture corrections
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: "6px",
-            flexWrap: "wrap",
-            color: "#cbd5e1",
-            fontSize: "11px",
-          }}
-        >
-          {DETECTION_CHIPS.map((label) => (
-            <span
-              key={label}
+        {!compact ? (
+          <>
+            <div
               style={{
-                padding: "6px 8px",
-                borderRadius: "999px",
-                background: "rgba(255,255,255,0.06)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                fontWeight: 700,
+                display: "grid",
+                gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                gap: "8px",
+                color: "#e2e8f0",
               }}
             >
-              {label}
-            </span>
-          ))}
-        </div>
+              <div style={proctorStatStyle}>
+                <div style={proctorStatLabelStyle}>Face status</div>
+                <div style={proctorStatValueStyle}>{presenceLabel}</div>
+              </div>
+
+              <div style={proctorStatStyle}>
+                <div style={proctorStatLabelStyle}>Tracking score</div>
+                <div style={proctorStatValueStyle}>{trackingScore}%</div>
+              </div>
+
+              <div style={proctorStatStyle}>
+                <div style={proctorStatLabelStyle}>Voice guidance</div>
+                <div style={proctorStatValueStyle}>Enabled</div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "flex",
+                gap: "6px",
+                flexWrap: "wrap",
+                color: "#cbd5e1",
+                fontSize: "11px",
+              }}
+            >
+              {DETECTION_CHIPS.map((label) => (
+                <span
+                  key={label}
+                  style={{
+                    padding: "6px 8px",
+                    borderRadius: "999px",
+                    background: "rgba(255,255,255,0.06)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    fontWeight: 700,
+                  }}
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : null}
       </div>
     </div>
   );
+};
+
+const proctorStatStyle = {
+  padding: "13px 14px",
+  borderRadius: "18px",
+  background: "rgba(255,255,255,0.06)",
+};
+
+const proctorStatLabelStyle = {
+  fontSize: "11px",
+  color: "rgba(226,232,240,0.65)",
+};
+
+const proctorStatValueStyle = {
+  fontSize: "14px",
+  fontWeight: 700,
 };
 
 export default Proctoring;

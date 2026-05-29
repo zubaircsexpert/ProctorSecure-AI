@@ -922,7 +922,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
             ? "1fr"
             : isCompactLayout
             ? "1fr"
-            : "minmax(0, 1.85fr) minmax(310px, 360px)",
+            : "minmax(0, 1fr) minmax(300px, 330px)",
         }}
       >
         <div style={{ ...styles.questionCard, padding: isPhone ? "14px" : "18px" }}>
@@ -1048,8 +1048,8 @@ const Exam = ({ assessmentFilter = "exam" }) => {
           style={{
             ...styles.sidebar,
             order: isPhone ? -1 : 0,
-            maxHeight: isCompactLayout ? "none" : "calc(100vh - 138px)",
-            overflowY: isCompactLayout ? "visible" : "auto",
+            maxHeight: "none",
+            overflowY: "visible",
             paddingRight: isCompactLayout ? 0 : "4px",
           }}
         >
@@ -1070,7 +1070,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
                 </div>
               </div>
 
-              <div style={styles.voiceBadge}>Voice guide on</div>
+              <div style={styles.voiceBadge}>{warningCounts.total} alerts</div>
             </div>
 
             <Proctoring
@@ -1081,8 +1081,25 @@ const Exam = ({ assessmentFilter = "exam" }) => {
                   ...payload,
                 }))
               }
-              compact={isCompactLayout || viewportWidth < 1500}
+              compact
             />
+
+            <div style={styles.monitorSummaryGrid}>
+              <SignalRow
+                label="Face"
+                value={telemetry.faceStatus || (telemetry.faceVisible ? "Visible" : "Scanning")}
+                good={telemetry.faceVisible && !telemetry.multipleFaces}
+                compact
+              />
+              <SignalRow
+                label="Audio"
+                value={`${telemetry.audioLevel || 0}%`}
+                good={(telemetry.audioLevel || 0) < 65}
+                compact
+              />
+              <SignalRow label="Eye" value={warningCounts.eyeWarnings} compact />
+              <SignalRow label="Tab" value={warningCounts.tabWarnings + warningCounts.visibilityWarnings} compact />
+            </div>
 
             <div style={{ display: "grid", gap: "8px", marginTop: "10px" }}>
               <div style={styles.inlineSectionTitle}>Live alerts</div>
@@ -1102,100 +1119,11 @@ const Exam = ({ assessmentFilter = "exam" }) => {
                 </div>
               )}
             </div>
-          </div>
-
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "14px" : "16px" }}>
-            <h4 style={styles.sidebarTitle}>Readiness Signals</h4>
-            <div
-              style={{
-                ...styles.signalList,
-                gridTemplateColumns: "1fr",
-              }}
-            >
-              <SignalRow
-                label="Camera"
-                value={telemetry.cameraReady ? "Connected" : "Checking permissions"}
-                good={telemetry.cameraReady}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Microphone"
-                value={telemetry.microphoneReady ? "Connected" : "Checking permissions"}
-                good={telemetry.microphoneReady}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Face lock"
-                value={telemetry.faceStatus || (telemetry.faceVisible ? "Visible" : "Scanning")}
-                good={telemetry.faceVisible && !telemetry.multipleFaces}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Framing"
-                value={
-                  telemetry.framingStatus || "Center your face inside the camera frame."
-                }
-                good={telemetry.faceVisible}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Room audio"
-                value={`${telemetry.audioLevel || 0}% | ${
-                  telemetry.audioStatus || "Calibrating room"
-                }`}
-                good={(telemetry.audioLevel || 0) < 65}
-                compact={isPhone}
-              />
-              <SignalRow
-                label="Multi-face"
-                value={telemetry.multipleFaces ? "Detected" : "Single candidate"}
-                good={!telemetry.multipleFaces}
-                compact={isPhone}
-              />
-            </div>
-          </div>
-
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "14px" : "16px" }}>
-            <h4 style={styles.sidebarTitle}>Integrity Snapshot</h4>
-            <div
-              style={{
-                ...styles.signalList,
-                gridTemplateColumns: viewportWidth < 520 ? "1fr" : isPhone ? "1fr 1fr" : "1fr",
-              }}
-            >
-              <SignalRow label="Total Alerts" value={warningCounts.total} compact={isPhone} />
-              <SignalRow label="Eye Tracking" value={warningCounts.eyeWarnings} compact={isPhone} />
-              <SignalRow label="Head Movement" value={warningCounts.headWarnings} compact={isPhone} />
-              <SignalRow label="Audio" value={warningCounts.soundWarnings} compact={isPhone} />
-              <SignalRow label="Tab / Visibility" value={warningCounts.tabWarnings + warningCounts.visibilityWarnings} compact={isPhone} />
-              <SignalRow label="Clipboard" value={warningCounts.copyWarnings + warningCounts.pasteWarnings + warningCounts.cutWarnings} compact={isPhone} />
-              <SignalRow label="Screenshot" value={warningCounts.screenshotWarnings} compact={isPhone} />
-              <SignalRow label="Focus / Share" value={warningCounts.focusWarnings + warningCounts.screenShareWarnings} compact={isPhone} />
-            </div>
-          </div>
-
-          <div style={{ ...styles.sidebarCard, padding: isPhone ? "14px" : "16px" }}>
-            <h4 style={styles.sidebarTitle}>Recent Detections</h4>
-            <div style={{ display: "grid", gap: "10px" }}>
-              {activityLog.length === 0 ? (
-                <div style={{ color: "#64748b", fontSize: "14px" }}>No suspicious action recorded yet.</div>
-              ) : (
-                activityLog.slice(0, 5).map((event, index) => (
-                  <div key={`${event.type}-${index}`} style={styles.eventCard}>
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
-                      <strong style={{ textTransform: "capitalize", color: "#0f172a" }}>{event.type}</strong>
-                      <span style={styles.severityBadge(event.severity)}>{event.severity}</span>
-                    </div>
-                    <div style={{ color: "#475569", marginTop: "8px", fontSize: "13px", lineHeight: 1.5 }}>
-                      {event.message}
-                    </div>
-                    <div style={{ color: "#94a3b8", fontSize: "12px", marginTop: "8px" }}>
-                      Count {event.count} | {new Date(event.occurredAt).toLocaleTimeString()}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
+            {activityLog.length ? (
+              <div style={styles.latestEventStrip}>
+                Latest: {activityLog[0].message}
+              </div>
+            ) : null}
           </div>
         </aside>
         ) : null}
@@ -1635,12 +1563,28 @@ const styles = {
     display: "grid",
     gap: "10px",
   },
+  monitorSummaryGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: "8px",
+    marginTop: "10px",
+  },
   signalRow: {
     display: "grid",
-    padding: "14px 15px",
-    borderRadius: "18px",
+    padding: "10px 11px",
+    borderRadius: "14px",
     background: "#f8fbff",
     border: "1px solid rgba(148,163,184,0.12)",
+  },
+  latestEventStrip: {
+    marginTop: "10px",
+    padding: "10px 12px",
+    borderRadius: "14px",
+    background: "#fff7ed",
+    color: "#9a3412",
+    fontSize: "13px",
+    lineHeight: 1.5,
+    fontWeight: 700,
   },
   eventCard: {
     padding: "14px",

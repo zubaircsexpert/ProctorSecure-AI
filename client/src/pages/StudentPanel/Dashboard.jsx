@@ -245,7 +245,7 @@ function Dashboard() {
         </div>
       </section>
 
-      <section style={styles.modulesGrid}>
+      <section style={styles.modulesStrip}>
         {quickModules.map((module) => {
           const Icon = module.icon;
           return (
@@ -253,14 +253,60 @@ function Dashboard() {
               <div style={styles.moduleIcon}>
                 <Icon size={22} />
               </div>
-              <div style={{ fontSize: "22px", fontWeight: 800, color: "#0f172a" }}>{module.title}</div>
+              <div style={{ fontSize: "19px", fontWeight: 900, color: "#0f172a" }}>{module.title}</div>
               <p style={styles.moduleText}>{module.text}</p>
             </Link>
           );
         })}
       </section>
 
+<<<<<<< HEAD
       <section style={styles.singleCardGrid}>
+=======
+      <section style={styles.gridTwo}>
+        <div style={styles.card}>
+          <div style={styles.sectionHead}>
+            <div>
+              <div style={styles.sectionKicker}>Upcoming Assessments</div>
+              <h2 style={styles.sectionTitle}>Exam pipeline</h2>
+            </div>
+            <div style={styles.iconBadge("#fef3c7", "#b45309")}>
+              <CalendarClock size={18} />
+            </div>
+          </div>
+
+          {upcomingExams.length === 0 ? (
+            <div style={styles.emptyState}>No scheduled exams are available for your class yet.</div>
+          ) : (
+            <div style={{ display: "grid", gap: "12px" }}>
+              {upcomingExams.map((exam) => (
+                <div key={exam._id} style={styles.timelineCard}>
+                  <div>
+                    <div style={{ fontSize: "12px", textTransform: "uppercase", letterSpacing: "0.08em", color: "#64748b" }}>
+                      {exam.assessmentType || "exam"}
+                    </div>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
+                      {exam.title}
+                    </div>
+                    <div style={{ color: "#475569", marginTop: "6px", lineHeight: 1.6 }}>
+                      {exam.course} | {exam.classroomName || profile?.classroomName || "Classroom"}
+                    </div>
+                  </div>
+                  <div style={styles.timelineMeta}>
+                    <strong>{exam.startTime ? new Date(exam.startTime).toLocaleString() : "Teacher will schedule time"}</strong>
+                    <span>{exam.duration} min</span>
+                  </div>
+                </div>
+              ))}
+              <Link to="/exam" style={styles.examLaunch}>
+                <Shield size={18} />
+                <span>Open AI Exam Center</span>
+              </Link>
+            </div>
+          )}
+        </div>
+
+>>>>>>> 8c8e10086dccce67ae63b729b88e186aeb63b115
         <div style={styles.card}>
           <div style={styles.sectionHead}>
             <div>
@@ -448,26 +494,28 @@ const styles = {
     display: "grid",
     gap: "10px",
   },
-  modulesGrid: {
+  modulesStrip: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-    gap: "18px",
+    gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+    gap: "14px",
     marginBottom: "20px",
   },
   moduleCard: {
     textDecoration: "none",
     background: "rgba(255,255,255,0.96)",
-    borderRadius: "26px",
-    padding: "22px",
+    borderRadius: "18px",
+    padding: "18px",
     border: "1px solid rgba(148,163,184,0.14)",
-    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.06)",
+    boxShadow: "0 14px 28px rgba(15, 23, 42, 0.05)",
     display: "grid",
-    gap: "14px",
+    gap: "12px",
+    alignContent: "start",
+    minHeight: "170px",
   },
   moduleIcon: {
-    width: "48px",
-    height: "48px",
-    borderRadius: "16px",
+    width: "46px",
+    height: "46px",
+    borderRadius: "14px",
     display: "grid",
     placeItems: "center",
     background: "linear-gradient(135deg, #dbeafe, #d1fae5)",
@@ -476,7 +524,8 @@ const styles = {
   moduleText: {
     margin: 0,
     color: "#64748b",
-    lineHeight: 1.7,
+    lineHeight: 1.55,
+    fontSize: "14px",
   },
   timelineCard: {
     display: "flex",

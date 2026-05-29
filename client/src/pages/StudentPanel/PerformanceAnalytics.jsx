@@ -32,7 +32,11 @@ function PerformanceAnalytics() {
       ? Math.round(results.reduce((sum, result) => sum + Number(result.suspiciousScore || result.cheatingPercent || 0), 0) / results.length)
       : 0;
 
-    return { ordered, latest, average, trend, suspiciousAverage };
+    const best = Math.max(...scores, 0);
+    const attempts = scores.length;
+    const weakAttempts = ordered.filter((result) => Number(result.percentage || 0) < average || Number(result.percentage || 0) < 50);
+
+    return { ordered, latest, average, trend, suspiciousAverage, best, attempts, weakAttempts };
   }, [results]);
 
   const advice = useMemo(() => {
@@ -48,8 +52,8 @@ function PerformanceAnalytics() {
       <section style={styles.hero}>
         <div>
           <div style={styles.kicker}>Performance Analytics</div>
-          <h1 style={styles.title}>Improvement trend report</h1>
-          <p style={styles.text}>Monitor old results, score movement, and AI exam integrity signals.</p>
+          <h1 style={styles.title}>AI performance command center</h1>
+          <p style={styles.text}>Score trend, integrity risk, best attempt, weak attempts and next-study action in one clean report.</p>
         </div>
         <div style={styles.heroIcon}><TrendingUp size={42} /></div>
       </section>
@@ -59,8 +63,10 @@ function PerformanceAnalytics() {
       <section style={styles.grid}>
         <Metric label="Latest Score" value={`${analytics.latest}%`} />
         <Metric label="Average Score" value={`${analytics.average}%`} />
+        <Metric label="Best Score" value={`${analytics.best}%`} />
         <Metric label="Trend" value={`${analytics.trend >= 0 ? "+" : ""}${analytics.trend}%`} />
         <Metric label="Integrity Risk Avg" value={`${analytics.suspiciousAverage}%`} />
+        <Metric label="Attempts" value={analytics.attempts} />
       </section>
 
       <section style={styles.card}>
@@ -69,6 +75,31 @@ function PerformanceAnalytics() {
           <strong>AI improvement suggestion</strong>
         </div>
         <p style={styles.cardText}>{advice}</p>
+        <div style={styles.progressWrap}>
+          <Progress label="Latest score" value={analytics.latest} tone="#2563eb" />
+          <Progress label="Average score" value={analytics.average} tone="#0f766e" />
+          <Progress label="Integrity safety" value={Math.max(0, 100 - analytics.suspiciousAverage)} tone="#16a34a" />
+        </div>
+      </section>
+
+      <section style={styles.card}>
+        <div style={styles.cardHead}>
+          <Activity size={20} />
+          <strong>Weak attempt review</strong>
+        </div>
+        {!analytics.weakAttempts.length ? (
+          <p style={styles.cardText}>No weak attempt detected yet. Keep taking short practice checks before major exams.</p>
+        ) : (
+          <div style={styles.weakGrid}>
+            {analytics.weakAttempts.slice(-3).map((result) => (
+              <div key={result._id || result.createdAt} style={styles.weakCard}>
+                <strong>{result.testName || "Assessment"}</strong>
+                <span>{result.percentage || 0}% score</span>
+                <small>Revise answers and run System Checks before retry.</small>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section style={styles.history}>
@@ -94,6 +125,18 @@ const Metric = ({ label, value }) => (
   <div style={styles.metric}>
     <span>{label}</span>
     <strong>{value}</strong>
+  </div>
+);
+
+const Progress = ({ label, value, tone }) => (
+  <div style={styles.progressItem}>
+    <div style={styles.progressTop}>
+      <span>{label}</span>
+      <strong>{value}%</strong>
+    </div>
+    <div style={styles.progressTrack}>
+      <div style={{ ...styles.progressBar, width: `${Math.min(100, Math.max(0, value))}%`, background: tone }} />
+    </div>
   </div>
 );
 
@@ -154,6 +197,13 @@ const styles = {
   },
   cardHead: { display: "flex", gap: "10px", alignItems: "center", color: "#0f172a", fontSize: "18px" },
   cardText: { margin: "12px 0 0", color: "#475569", lineHeight: 1.7 },
+  progressWrap: { display: "grid", gap: "12px", marginTop: "18px" },
+  progressItem: { display: "grid", gap: "8px" },
+  progressTop: { display: "flex", justifyContent: "space-between", color: "#334155", fontWeight: 800 },
+  progressTrack: { height: "10px", borderRadius: "999px", background: "#e2e8f0", overflow: "hidden" },
+  progressBar: { height: "100%", borderRadius: "999px" },
+  weakGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px", marginTop: "14px" },
+  weakCard: { display: "grid", gap: "7px", padding: "14px 16px", borderRadius: "16px", background: "#f8fafc", border: "1px solid rgba(148,163,184,0.16)", color: "#475569" },
   history: { display: "grid", gap: "10px" },
   row: {
     display: "flex",
