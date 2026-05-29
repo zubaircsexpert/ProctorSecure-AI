@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, FileStack, Trash2, Upload } from "lucide-react";
 import API from "../../services/api";
+import { openFileFromClick } from "../../utils/fileViewer";
 
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 const initialForm = {
@@ -154,7 +155,19 @@ function StudyVaultManager({ embedded = false }) {
                   <span>{resource.classroomName || "Classroom"} | {resource.resourceType}</span>
                 </div>
                 <div style={styles.actions}>
-                  {resource.downloadUrl || resource.fileUrl ? <a href={buildUploadUrl(resource.downloadUrl || resource.fileUrl)} target="_blank" rel="noreferrer" style={styles.iconButton}><ExternalLink size={15} /></a> : null}
+                  {resource.downloadUrl || resource.fileUrl ? (
+                    <a
+                      href={buildUploadUrl(resource.downloadUrl || resource.fileUrl)}
+                      onClick={(event) =>
+                        openFileFromClick(event, buildUploadUrl(resource.downloadUrl || resource.fileUrl))
+                      }
+                      target="_blank"
+                      rel="noreferrer"
+                      style={styles.iconButton}
+                    >
+                      <ExternalLink size={15} />
+                    </a>
+                  ) : null}
                   <button type="button" style={styles.deleteButton} onClick={() => deleteResource(resource._id)}><Trash2 size={15} /></button>
                 </div>
               </div>

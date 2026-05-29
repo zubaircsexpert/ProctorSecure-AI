@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, FileStack } from "lucide-react";
 import API from "../../services/api";
+import { openFileFromClick } from "../../utils/fileViewer";
 
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
@@ -62,7 +63,13 @@ function StudyVault() {
               <div style={styles.meta}>{resource.classroomName || "Classroom"} | {new Date(resource.createdAt).toLocaleString()}</div>
               <div style={styles.actions}>
                 {fileUrl ? (
-                  <a href={fileUrl} target="_blank" rel="noreferrer" style={styles.primaryLink}>
+                  <a
+                    href={fileUrl}
+                    onClick={(event) => openFileFromClick(event, fileUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={styles.primaryLink}
+                  >
                     <ExternalLink size={15} />
                     Open file
                   </a>
