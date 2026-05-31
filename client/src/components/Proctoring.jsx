@@ -57,7 +57,7 @@ const getPresenceTone = (label) => {
   }
 
   if (
-    ["Move closer", "Re-aligning", "Head movement", "Eye drift"].includes(label)
+    ["Aligning face", "Preparing camera", "Requesting camera", "Start camera", "Move closer", "Re-aligning", "Head movement", "Eye drift"].includes(label)
   ) {
     return {
       background: "rgba(245, 158, 11, 0.18)",
@@ -114,6 +114,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   const fallbackBusyRef = useRef(false);
   const fallbackLastRunRef = useRef(0);
   const lastRenderBoxRef = useRef(null);
+  const warningArmedAtRef = useRef(Date.now() + 12000);
 
   const [cameraState, setCameraState] = useState("Preparing camera");
   const [presenceLabel, setPresenceLabel] = useState("Aligning face");
@@ -177,6 +178,10 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
   const triggerWarning = useCallback(
     (type, message, cooldown = 5000, announce = true) => {
       const now = Date.now();
+      if (now < warningArmedAtRef.current) {
+        return;
+      }
+
       if (now - (lastWarningRef.current[type] || 0) <= cooldown) {
         return;
       }
@@ -193,6 +198,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
 
   const restartCamera = useCallback(() => {
     setCameraNeedsAction(false);
+    warningArmedAtRef.current = Date.now() + 10000;
     setCameraState("Requesting camera");
     setPresenceLabel("Aligning face");
     setFramingLabel("Allow camera access, then keep your face inside the live frame.");
@@ -838,6 +844,7 @@ const Proctoring = ({ addWarning, onTelemetryChange, compact = false }) => {
         baselineRef.current = null;
         missingFramesRef.current = 0;
         lastFaceSeenAtRef.current = 0;
+        warningArmedAtRef.current = Date.now() + 10000;
         updateTrackingScore(0);
         setCameraState("Camera live");
         emitTelemetry({

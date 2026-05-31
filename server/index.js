@@ -440,7 +440,7 @@ const buildStudentQuestionPayload = (question) => {
   const payload = question.toObject ? question.toObject() : { ...question };
   return {
     ...payload,
-    options: shuffleList(payload.options || []),
+    options: payload.options || [],
   };
 };
 
@@ -2334,7 +2334,7 @@ app.get("/api/questions/:examId", verifyToken, async (req, res) => {
       createdAt: 1,
     });
 
-    res.json(user.role === "teacher" ? questions : shuffleList(questions).map(buildStudentQuestionPayload));
+    res.json(user.role === "teacher" ? questions : questions.map(buildStudentQuestionPayload));
   } catch (err) {
     console.log("FETCH EXAM QUESTIONS ERROR:", err);
     res.status(500).json({ message: "Failed to load questions" });

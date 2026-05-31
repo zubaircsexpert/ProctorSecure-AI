@@ -155,6 +155,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
   const warningTimeoutRef = useRef(null);
   const sessionIdRef = useRef(createSessionId());
   const warningCountRef = useRef(initialWarningCounts);
+  const monitoringArmedAtRef = useRef(0);
 
   const isPhone = viewportWidth < 768;
   const isCompactLayout = viewportWidth < 1120;
@@ -314,6 +315,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
 
   const addWarning = useCallback((type, message) => {
     if (submitted || hasSubmitted.current) return;
+    if (Date.now() < monitoringArmedAtRef.current) return;
 
     const field = WARNING_FIELD_MAP[type];
     const nextTotal = (warningCountRef.current?.total || 0) + 1;
@@ -482,6 +484,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
     setWarningCounts(initialWarningCounts);
     setActivityLog([]);
     sessionIdRef.current = createSessionId();
+    monitoringArmedAtRef.current = 0;
     hasSubmitted.current = false;
     localStorage.removeItem(ACTIVE_SESSION_KEY);
   };
@@ -521,24 +524,12 @@ const Exam = ({ assessmentFilter = "exam" }) => {
     setAnswers({});
     setWarningCounts({
       ...initialWarningCounts,
-      exitWarnings: !isQuizMode && resumeNotice ? 1 : 0,
-      total: !isQuizMode && resumeNotice ? 1 : 0,
     });
-    setActivityLog(
-      !isQuizMode && resumeNotice
-        ? [
-            {
-              type: "exit",
-              message: resumeNotice,
-              count: 1,
-              severity: "critical",
-              occurredAt: new Date().toISOString(),
-            },
-          ]
-        : []
-    );
+    warningCountRef.current = initialWarningCounts;
+    setActivityLog([]);
     setErrorMessage("");
     sessionIdRef.current = createSessionId();
+    monitoringArmedAtRef.current = Date.now() + 12000;
 
     if (shouldEnforceFullscreen && !document.fullscreenElement) {
       try {
@@ -548,7 +539,7 @@ const Exam = ({ assessmentFilter = "exam" }) => {
       }
     }
 
-    await loadQuestions(exam._id, true);
+    setLoadingQuestions(true);
   };
 
   const handleSubmit = useCallback(async () => {
