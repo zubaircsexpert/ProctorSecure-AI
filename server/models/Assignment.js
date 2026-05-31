@@ -17,6 +17,9 @@ const assignmentSchema = new mongoose.Schema(
     description: { type: String, default: "", trim: true },
     dueDate: { type: String, required: true },
     fileUrl: { type: String, default: "" },
+    fileData: { type: String, default: "" },
+    fileMimeType: { type: String, default: "" },
+    originalFileName: { type: String, default: "" },
     allowResubmission: { type: Boolean, default: true },
   },
   { timestamps: true }

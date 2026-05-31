@@ -18,6 +18,21 @@ const submissionSchema = new mongoose.Schema({
     required: true 
   },
 
+  fileData: {
+    type: String,
+    default: ""
+  },
+
+  fileMimeType: {
+    type: String,
+    default: ""
+  },
+
+  originalFileName: {
+    type: String,
+    default: ""
+  },
+
   studentName: {
     type: String,
     default: "",

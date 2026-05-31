@@ -46,23 +46,26 @@ export const openFileFromClick = async (event, url) => {
   } catch (error) {
     console.error("File open failed:", error);
     targetWindow?.close();
-    
-    let errorMsg = "File could not be opened.";
-    
-    if (error?.response?.data?.message) {
-      errorMsg = error.response.data.message;
-    } else if (error?.message) {
-      errorMsg = `Error: ${error.message}`;
-    } else if (error?.status) {
-      errorMsg = `Server error (${error.status}): Unable to fetch file.`;
+
+    let message = error.response?.data?.message || "";
+    if (!message && error.response?.data instanceof Blob) {
+      try {
+        const payload = JSON.parse(await error.response.data.text());
+        message = payload.message || "";
+      } catch {
+        message = "";
+      }
     }
-    
+
+    if (!message && error?.message) {
+      message = `Error: ${error.message}`;
+    }
+
     console.error("Detailed error:", {
       status: error?.response?.status,
-      message: error?.response?.data?.message,
-      errorMsg
+      message,
     });
-    
-    window.alert(errorMsg);
+
+    window.alert(message || "File could not be opened.");
   }
 };

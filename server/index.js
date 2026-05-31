@@ -64,6 +64,7 @@ const TEACHER_ACCESS_KEY =
   process.env.TEACHER_ACCESS_KEY || "Teacher-@9080#$@";
 const ADMIN_EMAIL = String(process.env.ADMIN_EMAIL || "admin@proctor.ai").trim().toLowerCase();
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "ADMIN-PROCTOR-2026";
+const DB_FILE_BACKUP_LIMIT = Number(process.env.DB_FILE_BACKUP_LIMIT || 8 * 1024 * 1024);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,6 +88,31 @@ app.use("/uploads", express.static(uploadsDir));
 const normalizeText = (value) => String(value || "").trim();
 const toRelativeUploadPath = (absolutePath) =>
   path.relative(uploadsDir, absolutePath).replace(/\\/g, "/");
+
+const buildDbFileBackup = (file) => {
+  if (!file?.path || !fs.existsSync(file.path)) {
+    return {
+      fileData: "",
+      fileMimeType: "",
+      originalFileName: "",
+    };
+  }
+
+  const stats = fs.statSync(file.path);
+  if (stats.size > DB_FILE_BACKUP_LIMIT) {
+    return {
+      fileData: "",
+      fileMimeType: file.mimetype || "",
+      originalFileName: file.originalname || "",
+    };
+  }
+
+  return {
+    fileData: fs.readFileSync(file.path).toString("base64"),
+    fileMimeType: file.mimetype || "application/octet-stream",
+    originalFileName: file.originalname || "",
+  };
+};
 
 const extractTextFromUploadedFile = async (file) => {
   if (!file || !file.path) return "";
@@ -229,6 +255,7 @@ const buildAssignmentPayload = (assignment) => {
   if (!item) return item;
   return {
     ...item,
+    fileData: undefined,
     downloadUrl: item.fileUrl ? `/api/assignments/file/assignment/${item._id}` : "",
   };
 };
@@ -238,6 +265,7 @@ const buildSubmissionPayload = (submission) => {
   if (!item) return item;
   return {
     ...item,
+    fileData: undefined,
     downloadUrl: item.fileUrl ? `/api/assignments/file/submission/${item._id}` : "",
   };
 };
@@ -2455,6 +2483,21 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "No file attached to this assignment." });
     }
 
+    const fileRecord =
+      kind === "assignment"
+        ? await Assignment.findById(id).select("fileData fileMimeType originalFileName")
+        : await Submission.findById(id).select("fileData fileMimeType originalFileName");
+
+    if (fileRecord?.fileData) {
+      const buffer = Buffer.from(fileRecord.fileData, "base64");
+      res.setHeader("Content-Type", fileRecord.fileMimeType || "application/octet-stream");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${sanitizeFileName(fileRecord.originalFileName || fileName)}"`
+      );
+      return res.send(buffer);
+    }
+
     const absolutePath = resolveUploadPath(fileUrl);
     
     if (!absolutePath) {
@@ -2469,7 +2512,11 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
       return res.status(404).json({ message: `File not found at: ${fileUrl}` });
     }
 
-    return res.download(absolutePath, `${sanitizeFileName(fileName)}${path.extname(absolutePath)}`);
+    return res.sendFile(absolutePath, {
+      headers: {
+        "Content-Disposition": `inline; filename="${sanitizeFileName(fileName)}${path.extname(absolutePath)}"`,
+      },
+    });
   } catch (err) {
     console.log("ASSIGNMENT FILE ERROR:", err);
     res.status(500).json({ message: `Failed to load assignment file: ${err.message}` });
@@ -2517,7 +2564,8 @@ app.post(
         title,
         description,
         dueDate,
-        fileUrl: fileUrl,
+        fileUrl,
+        ...buildDbFileBackup(req.file),
       });
 
       await Notification.create({
@@ -2605,6 +2653,7 @@ app.post(
         assignmentId,
         studentId: req.dbUser._id,
         fileUrl: toRelativeUploadPath(req.file.path),
+        ...buildDbFileBackup(req.file),
         studentName: req.dbUser.name,
         rollNumber: req.dbUser.rollNumber || "",
         marks: existingSubmission?.marks || 0,
@@ -3384,8 +3433,8 @@ app.get("/api/admin/overview", verifyToken, verifyAdmin, async (req, res) => {
       results,
       aiExamResults,
       quizResults,
-      assignments,
-      submissions,
+      assignments: assignments.map(buildAssignmentPayload),
+      submissions: submissions.map(buildSubmissionPayload),
       notifications,
       studyResources: studyResources.map(buildStudyResourcePayload),
       systemChecks,
