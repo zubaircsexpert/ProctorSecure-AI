@@ -21,6 +21,7 @@ const AssignmentList = () => {
   const [submittingId, setSubmittingId] = useState("");
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
+  const [user, setUser] = useState(null);
 
   const fetchAssignments = async () => {
     try {
@@ -33,6 +34,14 @@ const AssignmentList = () => {
       setLoading(false);
     }
   };
+
+  // Get current user info
+  useEffect(() => {
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) {
+      setUser(JSON.parse(storedUser));
+    }
+  }, []);
 
   useEffect(() => {
     fetchAssignments();
@@ -51,6 +60,7 @@ const AssignmentList = () => {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("assignmentId", assignmentId);
+      formData.append("studentName", user?.name || user?.email || "Student");
       await API.post("/api/assignments/upload", formData);
       setSelectedFiles((previous) => ({
         ...previous,
