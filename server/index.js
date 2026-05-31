@@ -38,6 +38,7 @@ import QuizTemplate from "./models/QuizTemplate.js";
 import QuizSession from "./models/QuizSession.js";
 import CheatDetection from "./models/CheatDetection.js";
 import QuizAnalytics from "./models/QuizAnalytics.js";
+import ChatMessage from "./models/ChatMessage.js";
 import {
   extractTextFromImage,
   extractTextFromImageWithLanguage,
@@ -75,8 +76,9 @@ const teacherFilesDir = path.join(uploadsDir, "assignment-files");
 const studentSubmissionsDir = path.join(uploadsDir, "assignment-submissions");
 const studyVaultDir = path.join(uploadsDir, "study-vault");
 const tutorUploadsDir = path.join(uploadsDir, "ai-tutor");
+const chatUploadsDir = path.join(uploadsDir, "chat");
 
-[uploadsDir, paperChecksDir, studentCardsDir, teacherFilesDir, studentSubmissionsDir, studyVaultDir, tutorUploadsDir].forEach(
+[uploadsDir, paperChecksDir, studentCardsDir, teacherFilesDir, studentSubmissionsDir, studyVaultDir, tutorUploadsDir, chatUploadsDir].forEach(
   (directory) => fs.mkdirSync(directory, { recursive: true })
 );
 
@@ -223,6 +225,18 @@ const paperCheckUpload = multer({
 });
 const studyVaultUpload = multer({ storage: createDiskStorage(studyVaultDir) });
 const tutorUpload = multer({ storage: createDiskStorage(tutorUploadsDir) });
+const chatUpload = multer({
+  storage: createDiskStorage(chatUploadsDir),
+  limits: { fileSize: 35 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/^(image|video)\//i.test(file.mimetype || "")) {
+      cb(null, true);
+      return;
+    }
+
+    cb(new Error("Only images and videos can be sent in chat."));
+  },
+});
 
 const safeJsonParse = (value, fallback) => {
   if (!value) return fallback;
@@ -1220,6 +1234,42 @@ const verifyApprovedStudent = async (req, res, next) => {
   }
 };
 
+const verifyChatUser = async (req, res, next) => {
+  try {
+    const user = await getDbUser(req.user?.userId);
+
+    if (!user || !["student", "teacher", "admin"].includes(user.role)) {
+      return res.status(403).json({ message: "Only portal users can open chat." });
+    }
+
+    if (user.role !== "admin") {
+      const accessMessage = await assertPortalAccess(user.role);
+      if (accessMessage) {
+        return res.status(403).json({ message: accessMessage });
+      }
+
+      if (user.approvalStatus !== "approved") {
+        return res.status(403).json({ message: "Your account is not approved for portal chat yet." });
+      }
+    }
+
+    req.dbUser = user;
+    next();
+  } catch (err) {
+    console.log("VERIFY CHAT USER ERROR:", err);
+    res.status(500).json({ message: "Chat access check failed." });
+  }
+};
+
+const buildChatPayload = (message) => {
+  const item = message?.toObject ? message.toObject() : message;
+  return {
+    ...item,
+    fileData: undefined,
+    fileUrl: item.fileUrl ? `/uploads/${item.fileUrl}` : "",
+  };
+};
+
 const findTeacherClassroom = async (teacherId, classroomId) => {
   if (!classroomId) return null;
 
@@ -1232,6 +1282,65 @@ const findTeacherClassroom = async (teacherId, classroomId) => {
 
 app.get("/", (req, res) => {
   res.send("Backend Running");
+});
+
+app.get("/api/chat/messages", verifyToken, verifyChatUser, async (req, res) => {
+  try {
+    const messages = await ChatMessage.find({})
+      .sort({ createdAt: -1 })
+      .limit(120)
+      .lean();
+
+    res.json(messages.reverse().map(buildChatPayload));
+  } catch (err) {
+    console.log("CHAT FETCH ERROR:", err);
+    res.status(500).json({ message: "Failed to load chat messages." });
+  }
+});
+
+app.post(
+  "/api/chat/messages",
+  verifyToken,
+  verifyChatUser,
+  chatUpload.single("file"),
+  async (req, res) => {
+    try {
+      const text = normalizeText(req.body.text);
+      const fileUrl = req.file ? toRelativeUploadPath(req.file.path) : "";
+
+      if (!text && !fileUrl) {
+        return res.status(400).json({ message: "Type a message or attach a picture/video." });
+      }
+
+      const message = await ChatMessage.create({
+        senderId: req.dbUser._id,
+        senderName: req.dbUser.name || req.dbUser.email || "Portal User",
+        senderRole: req.dbUser.role,
+        text,
+        fileUrl,
+        fileType: req.file?.mimetype?.startsWith("video/") ? "video" : req.file ? "image" : "",
+        originalFileName: req.file?.originalname || "",
+      });
+
+      res.status(201).json(buildChatPayload(message));
+    } catch (err) {
+      console.log("CHAT SEND ERROR:", err);
+      res.status(500).json({ message: err.message || "Failed to send chat message." });
+    }
+  }
+);
+
+app.delete("/api/chat/messages", verifyToken, verifyChatUser, async (req, res) => {
+  try {
+    const messages = await ChatMessage.find({ fileUrl: { $ne: "" } }).select("fileUrl").lean();
+    messages.forEach((message) => removeFileIfExists(message.fileUrl));
+    await ChatMessage.deleteMany({});
+
+    res.json({ message: "Chat cleared for everyone." });
+  } catch (err) {
+    console.log("CHAT CLEAR ERROR:", err);
+    res.status(500).json({ message: "Failed to clear chat." });
+  }
 });
 
 app.get("/api/auth/bootstrap", async (req, res) => {

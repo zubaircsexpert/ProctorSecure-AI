@@ -56,11 +56,15 @@ function Navbar() {
     role === "admin" ? "/admin-panel" : role === "teacher" ? "/teacher-panel" : "/dashboard";
   const navLinks =
     role === "admin"
-      ? [{ label: "Admin Panel", to: "/admin-panel" }]
+      ? [
+          { label: "Admin Panel", to: "/admin-panel" },
+          { label: "Chat", to: "/chat" },
+        ]
       : role === "teacher"
       ? [
           { label: "Teacher Panel", to: "/teacher-panel" },
           { label: "Schedule", to: "/schedule" },
+          { label: "Chat", to: "/chat" },
           { label: "Profile", to: "/profile" },
         ]
       : [
@@ -68,6 +72,7 @@ function Navbar() {
           { label: "Results", to: "/results" },
           { label: "Assignments", to: "/assignment-list" },
           { label: "Schedule", to: "/schedule" },
+          { label: "Chat", to: "/chat" },
           { label: "Profile", to: "/profile" },
         ];
 
