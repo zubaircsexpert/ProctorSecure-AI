@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, FileUp, FolderKanban, Sparkles } from "lucide-react";
 import API from "../../services/api";
-import { openFileFromClick } from "../../utils/fileViewer";
+import { openFileFromClick, openFileUrl } from "../../utils/fileViewer";
 
 const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 
@@ -13,6 +13,55 @@ const buildFileUrl = (item) => {
   if (target.startsWith("/api/")) return `${API.defaults.baseURL}${target}`;
   if (cleanPath.startsWith("uploads/")) return `${API.defaults.baseURL}/${cleanPath}`;
   return `${FILE_BASE_URL}/${cleanPath}`;
+};
+
+const escapeHtml = (value) =>
+  String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const openAssignmentPreview = (targetWindow, assignment) => {
+  const title = escapeHtml(assignment.title || "Assignment");
+  const description = escapeHtml(assignment.description || "No assignment description was provided.");
+  const classroomName = escapeHtml(assignment.classroomName || "Your classroom");
+  const dueDate = escapeHtml(assignment.dueDate || "No due date");
+  const html = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      body { margin: 0; background: #eef4ff; color: #08111f; font-family: Inter, Arial, sans-serif; }
+      main { max-width: 900px; margin: 40px auto; background: #fff; border-radius: 22px; padding: 36px; box-shadow: 0 22px 60px rgba(15, 23, 42, .12); }
+      .label { color: #2563eb; font-size: 13px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+      h1 { margin: 12px 0 8px; font-size: clamp(30px, 5vw, 52px); }
+      .meta { color: #475569; font-size: 18px; line-height: 1.7; }
+      .notice { margin: 28px 0; padding: 18px 20px; border: 1px solid #fed7aa; background: #fff7ed; border-radius: 16px; color: #9a3412; font-weight: 700; }
+      .brief { margin-top: 28px; white-space: pre-wrap; font-size: 20px; line-height: 1.8; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="label">Teacher File Preview</div>
+      <h1>${title}</h1>
+      <div class="meta">${classroomName}<br />Due ${dueDate}</div>
+      <div class="notice">The uploaded teacher file is not available on the server right now, so the assignment brief is shown here.</div>
+      <div class="brief">${description}</div>
+    </main>
+  </body>
+</html>`;
+  const blobUrl = window.URL.createObjectURL(new Blob([html], { type: "text/html" }));
+
+  if (targetWindow) {
+    targetWindow.location.href = blobUrl;
+  } else {
+    window.open(blobUrl, "_blank", "noopener,noreferrer");
+  }
+  window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
 };
 
 const AssignmentList = () => {
@@ -73,6 +122,19 @@ const AssignmentList = () => {
       setNotice(error.response?.data?.message || "Upload failed.");
     } finally {
       setSubmittingId("");
+    }
+  };
+
+  const handleOpenTeacherFile = async (event, assignment) => {
+    event.preventDefault();
+    const targetWindow = window.open("", "_blank", "noopener,noreferrer");
+
+    try {
+      await openFileUrl(buildFileUrl(assignment), targetWindow);
+    } catch (error) {
+      console.error("Teacher file open failed, showing assignment preview instead.", error);
+      openAssignmentPreview(targetWindow, assignment);
+      setNotice("Teacher file is missing on the server, so an assignment preview was opened instead.");
     }
   };
 
@@ -159,7 +221,7 @@ const AssignmentList = () => {
                     {assignment.fileUrl ? (
                       <a
                         href={buildFileUrl(assignment)}
-                        onClick={(event) => openFileFromClick(event, buildFileUrl(assignment))}
+                        onClick={(event) => handleOpenTeacherFile(event, assignment)}
                         target="_blank"
                         rel="noreferrer"
                         style={styles.linkChip}
