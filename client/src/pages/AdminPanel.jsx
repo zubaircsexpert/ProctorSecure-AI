@@ -253,11 +253,19 @@ const AdminPanel = () => {
   };
 
   const metrics = data.metrics || {};
+  const assessmentRows = useMemo(
+    () =>
+      [
+        ...data.aiExams.map((item) => ({ ...item, typeLabel: "Exam" })),
+        ...data.quizzes.map((item) => ({ ...item, typeLabel: "Quiz" })),
+      ].sort((left, right) => new Date(right.createdAt || 0) - new Date(left.createdAt || 0)),
+    [data.aiExams, data.quizzes]
+  );
   const tabs = [
     { id: "overview", label: "Overview", icon: Activity },
     { id: "access", label: "Access Control", icon: Power },
     { id: "users", label: "Users", icon: Users },
-    { id: "assessments", label: "AI Exams & Quizzes", icon: BookOpenCheck },
+    { id: "assessments", label: "AI Quiz", icon: BookOpenCheck },
     { id: "results", label: "Results", icon: ClipboardCheck },
     { id: "content", label: "Assignments & Notices", icon: Megaphone },
     { id: "system", label: "Vault & Checks", icon: Layers },
@@ -289,7 +297,7 @@ const AdminPanel = () => {
           <div style={styles.heroBadge}>Admin Command Center</div>
           <h1 style={styles.heroTitle}>Complete system access</h1>
           <p style={styles.heroText}>
-            Manage teachers, students, AI exams, quizzes, reports, assignments, and announcements from one fast workspace.
+            Manage teachers, students, AI quizzes, reports, assignments, and announcements from one fast workspace.
           </p>
         </div>
         <div style={styles.heroMetricGrid}>
@@ -322,9 +330,9 @@ const AdminPanel = () => {
         <div style={styles.sectionStack}>
           <section style={styles.gridFour}>
             <MetricCard label="Classrooms" value={metrics.classrooms || 0} />
-            <MetricCard label="AI Exams" value={metrics.aiExams || 0} />
-            <MetricCard label="Quizzes" value={metrics.quizzes || 0} />
+            <MetricCard label="AI Quiz" value={(metrics.aiExams || 0) + (metrics.quizzes || 0)} />
             <MetricCard label="Reports" value={(metrics.aiExamResults || 0) + (metrics.quizResults || 0)} />
+            <MetricCard label="Assignments" value={metrics.assignments || 0} />
           </section>
 
           <section style={styles.gridTwo}>
@@ -568,17 +576,10 @@ const AdminPanel = () => {
       ) : null}
 
       {activeTab === "assessments" ? (
-        <section style={styles.gridTwo}>
+        <section style={styles.singleCardGrid}>
           <AssessmentPanel
-            title="AI Exams"
-            items={data.aiExams}
-            busyKey={busyKey}
-            onUpdate={updateAssessment}
-            onDelete={(id) => deleteAdminItem("exams", id)}
-          />
-          <AssessmentPanel
-            title="Quizzes"
-            items={data.quizzes}
+            title="AI Quiz"
+            items={assessmentRows}
             busyKey={busyKey}
             onUpdate={updateAssessment}
             onDelete={(id) => deleteAdminItem("exams", id)}
@@ -768,13 +769,15 @@ const AdminPanel = () => {
 
 const AssessmentPanel = ({ title, items, busyKey, onUpdate, onDelete }) => (
   <Panel title={title} kicker="Access control" icon={<BookOpenCheck size={18} />}>
-    {items.length === 0 ? <EmptyState text={`No ${title.toLowerCase()} created yet.`} /> : null}
+    {items.length === 0 ? <EmptyState text="No AI quizzes created yet." /> : null}
     {items.map((item) => (
       <div key={item._id} style={styles.adminRow}>
         <div style={styles.rowTop}>
           <div>
             <strong style={styles.rowTitle}>{item.title}</strong>
-            <span style={styles.rowMeta}>{item.course || "Course"} | {item.classroomName || "Classroom"} | {item.duration} min</span>
+            <span style={styles.rowMeta}>
+              {item.typeLabel || "AI Quiz"} | {item.course || "Course"} | {item.classroomName || "Classroom"} | {item.duration} min
+            </span>
           </div>
           <span style={styles.statusBadge(item.status)}>{item.status}</span>
         </div>
@@ -1010,6 +1013,11 @@ const styles = {
   gridTwo: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+    gap: "18px",
+  },
+  singleCardGrid: {
+    display: "grid",
+    gridTemplateColumns: "1fr",
     gap: "18px",
   },
   card: {
