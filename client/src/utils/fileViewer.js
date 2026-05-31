@@ -46,6 +46,23 @@ export const openFileFromClick = async (event, url) => {
   } catch (error) {
     console.error("File open failed:", error);
     targetWindow?.close();
-    window.alert(error.response?.data?.message || "File could not be opened.");
+    
+    let errorMsg = "File could not be opened.";
+    
+    if (error?.response?.data?.message) {
+      errorMsg = error.response.data.message;
+    } else if (error?.message) {
+      errorMsg = `Error: ${error.message}`;
+    } else if (error?.status) {
+      errorMsg = `Server error (${error.status}): Unable to fetch file.`;
+    }
+    
+    console.error("Detailed error:", {
+      status: error?.response?.status,
+      message: error?.response?.data?.message,
+      errorMsg
+    });
+    
+    window.alert(errorMsg);
   }
 };

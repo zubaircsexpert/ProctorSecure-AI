@@ -2450,15 +2450,29 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "Invalid assignment file type." });
     }
 
+    if (!fileUrl || String(fileUrl).trim() === "") {
+      console.log(`ASSIGNMENT FILE: No fileUrl found for ${kind}/${id}`);
+      return res.status(404).json({ message: "No file attached to this assignment." });
+    }
+
     const absolutePath = resolveUploadPath(fileUrl);
-    if (!absolutePath || !fs.existsSync(absolutePath)) {
-      return res.status(404).json({ message: "File not found on server." });
+    
+    if (!absolutePath) {
+      console.log(`ASSIGNMENT FILE: resolveUploadPath returned empty for fileUrl="${fileUrl}"`);
+      return res.status(404).json({ message: "Invalid file path on server." });
+    }
+
+    if (!fs.existsSync(absolutePath)) {
+      console.log(`ASSIGNMENT FILE: File does not exist at path="${absolutePath}" (fileUrl="${fileUrl}")`);
+      console.log(`  uploadsDir="${uploadsDir}"`);
+      console.log(`  Checking directory contents:`, fs.readdirSync(uploadsDir).slice(0, 5));
+      return res.status(404).json({ message: `File not found at: ${fileUrl}` });
     }
 
     return res.download(absolutePath, `${sanitizeFileName(fileName)}${path.extname(absolutePath)}`);
   } catch (err) {
     console.log("ASSIGNMENT FILE ERROR:", err);
-    res.status(500).json({ message: "Failed to load assignment file." });
+    res.status(500).json({ message: `Failed to load assignment file: ${err.message}` });
   }
 });
 
@@ -2483,6 +2497,19 @@ app.post(
         });
       }
 
+      let fileUrl = "";
+      if (req.file) {
+        fileUrl = toRelativeUploadPath(req.file.path);
+        console.log("✅ ASSIGNMENT FILE UPLOAD:", {
+          originalName: req.file.originalname,
+          absolutePath: req.file.path,
+          relativePath: fileUrl,
+          fileExists: fs.existsSync(req.file.path),
+        });
+      } else {
+        console.log("⚠️ ASSIGNMENT: No file provided");
+      }
+
       const assignment = await Assignment.create({
         teacherId: req.dbUser._id,
         classroomId: classroom._id,
@@ -2490,7 +2517,7 @@ app.post(
         title,
         description,
         dueDate,
-        fileUrl: req.file ? toRelativeUploadPath(req.file.path) : "",
+        fileUrl: fileUrl,
       });
 
       await Notification.create({

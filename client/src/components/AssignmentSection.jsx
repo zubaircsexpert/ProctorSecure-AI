@@ -8,11 +8,25 @@ const FILE_BASE_URL = `${API.defaults.baseURL}/uploads`;
 const buildFileUrl = (item, fallbackPath = "") => {
   const target = item?.downloadUrl || item?.fileUrl || fallbackPath || "";
   if (!target) return "";
+  
   const cleanPath = String(target).replace(/^\/+/, "");
+  
+  // If it's already a full URL, return as is
   if (/^https?:\/\//i.test(target)) return target;
+  
+  // If it's an API endpoint, use baseURL + path
   if (target.startsWith("/api/")) return `${API.defaults.baseURL}${target}`;
-  if (cleanPath.startsWith("uploads/")) return `${API.defaults.baseURL}/${cleanPath}`;
-  return `${FILE_BASE_URL}/${cleanPath}`;
+  
+  // If it's an uploads path (either assignment-files/, assignment-submissions/, etc.)
+  // Build proper URL
+  if (cleanPath.startsWith("assignment-files/") || 
+      cleanPath.startsWith("assignment-submissions/") ||
+      cleanPath.startsWith("uploads/")) {
+    return `${API.defaults.baseURL}/uploads/${cleanPath}`;
+  }
+  
+  // Default fallback
+  return `${API.defaults.baseURL}/uploads/${cleanPath}`;
 };
 
 const AssignmentSection = ({ user }) => {

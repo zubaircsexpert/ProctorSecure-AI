@@ -2,28 +2,49 @@ import express from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { fileURLToPath } from "url";
 import Assignment from "../models/Assignment.js";
 
 const router = express.Router();
 
-// --- AUTOMATIC FOLDER CREATION ---
-const uploadDir = "uploads/";
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-  console.log("Uploads folder created automatically! ✅");
-}
+// --- GET CURRENT DIRECTORY ---
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// --- MULTER SETUP ---
-const storage = multer.diskStorage({
+// --- SETUP DIRECTORIES ---
+const uploadsDir = path.join(__dirname, "..", "uploads");
+const assignmentFilesDir = path.join(uploadsDir, "assignment-files");
+const assignmentSubmissionsDir = path.join(uploadsDir, "assignment-submissions");
+
+// --- AUTOMATIC FOLDER CREATION ---
+[uploadsDir, assignmentFilesDir, assignmentSubmissionsDir].forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`✅ Created directory: ${dir}`);
+  }
+});
+
+// --- MULTER SETUP FOR TEACHER FILES ---
+const teacherFileStorage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadDir);
+    cb(null, assignmentFilesDir);
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + path.extname(file.originalname));
+    cb(null, Date.now() + "_" + file.originalname);
   },
 });
 
-const upload = multer({ storage: storage });
+// --- MULTER SETUP FOR STUDENT SUBMISSIONS ---
+const studentSubmissionStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, assignmentSubmissionsDir);
+  },
+  filename: (req, file, cb) => {
+    cb(null, Date.now() + "_" + file.originalname);
+  },
+});
+
+const uploadTeacherFile = multer({ storage: teacherFileStorage });
+const uploadStudentFile = multer({ storage: studentSubmissionStorage });
 
 // =============================
 // 1. Get All Assignments
@@ -40,13 +61,15 @@ router.get("/all", async (req, res) => {
 // =============================
 // 2. Add New Assignment (Teacher)
 // =============================
-router.post("/add", upload.single("file"), async (req, res) => {
+router.post("/add", uploadTeacherFile.single("file"), async (req, res) => {
   try {
+    const fileUrl = req.file ? `assignment-files/${req.file.filename}` : "";
+    
     const newAssignment = new Assignment({
       title: req.body.title,
       dueDate: req.body.dueDate,
       description: req.body.description || "",
-      fileUrl: req.file ? req.file.filename : "",
+      fileUrl: fileUrl,
       status: "Pending",
       marks: "-",
       submissionUrl: "",
@@ -76,7 +99,7 @@ router.delete("/delete/:id", async (req, res) => {
 // =============================
 // 4. STUDENT SUBMIT ASSIGNMENT ✅
 // =============================
-router.post("/upload", upload.single("file"), async (req, res) => {
+router.post("/upload", uploadStudentFile.single("file"), async (req, res) => {
   try {
     const { assignmentId, studentName } = req.body;
 
@@ -94,7 +117,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
       return res.status(404).json({ message: "Assignment not found" });
     }
 
-    assignment.submissionUrl = req.file.filename;
+    assignment.submissionUrl = `assignment-submissions/${req.file.filename}`;
     assignment.status = "Submitted";
     assignment.studentName = studentName;
 
