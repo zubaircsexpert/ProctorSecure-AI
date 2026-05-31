@@ -47,7 +47,11 @@ function Navbar() {
 
   const role = user.role;
   const notificationTarget =
-    role === "admin" ? "/admin-panel" : role === "teacher" ? "/teacher-panel" : "/notifications";
+    role === "admin"
+      ? "/admin-panel?tab=content"
+      : role === "teacher"
+      ? "/teacher-panel?tab=announcements"
+      : "/notifications";
   const dashboardTarget =
     role === "admin" ? "/admin-panel" : role === "teacher" ? "/teacher-panel" : "/dashboard";
   const navLinks =

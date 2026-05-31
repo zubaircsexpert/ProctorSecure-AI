@@ -17,6 +17,7 @@ import {
   Users,
   XCircle,
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import API from "../services/api";
 import { saveAuthSession } from "../utils/authSession";
 
@@ -85,6 +86,7 @@ const formatDateTime = (value) => {
 };
 
 const AdminPanel = () => {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
   const [data, setData] = useState(emptyData);
   const [loading, setLoading] = useState(true);
@@ -95,6 +97,13 @@ const AdminPanel = () => {
   const [studyResourceFile, setStudyResourceFile] = useState(null);
   const [teacherForm, setTeacherForm] = useState(initialTeacherForm);
   const [classroomForm, setClassroomForm] = useState(initialClassroomForm);
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(location.search).get("tab");
+    if (["overview", "access", "users", "assessments", "results", "content", "system"].includes(requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [location.search]);
 
   const loadAdminData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);

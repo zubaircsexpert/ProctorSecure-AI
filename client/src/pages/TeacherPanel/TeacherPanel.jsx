@@ -20,6 +20,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
+import { useLocation } from "react-router-dom";
 import API from "../../services/api";
 import ExamChecker from "./ExamChecker";
 import StudyVaultManager from "./StudyVaultManager";
@@ -136,6 +137,7 @@ const buildUploadUrl = (fileRef) => {
 };
 
 function TeacherPanel() {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState("");
@@ -160,6 +162,13 @@ function TeacherPanel() {
   const [editingExamId, setEditingExamId] = useState(null);
   const [editingNotificationId, setEditingNotificationId] = useState(null);
   const [submissionDrafts, setSubmissionDrafts] = useState({});
+
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(location.search).get("tab");
+    if (tabs.some((tab) => tab.id === requestedTab)) {
+      setActiveTab(requestedTab);
+    }
+  }, [location.search]);
 
   const classOptions = useMemo(
     () => classrooms.map((classroom) => ({ value: classroom.id, label: classroom.label })),
