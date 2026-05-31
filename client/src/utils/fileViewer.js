@@ -36,6 +36,23 @@ export const openFileUrl = async (url, targetWindow = null) => {
   window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60000);
 };
 
+const readApiErrorMessage = async (error) => {
+  const fallback = "File could not be opened. Please upload the file again if it was created before the latest deployment.";
+  const data = error.response?.data;
+
+  if (data instanceof Blob) {
+    try {
+      const text = await data.text();
+      const parsed = JSON.parse(text);
+      return parsed.message || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  return data?.message || fallback;
+};
+
 export const openFileFromClick = async (event, url) => {
   if (!url) return;
   event.preventDefault();
@@ -46,26 +63,11 @@ export const openFileFromClick = async (event, url) => {
   } catch (error) {
     console.error("File open failed:", error);
     targetWindow?.close();
-
-    let message = error.response?.data?.message || "";
-    if (!message && error.response?.data instanceof Blob) {
-      try {
-        const payload = JSON.parse(await error.response.data.text());
-        message = payload.message || "";
-      } catch {
-        message = "";
-      }
-    }
-
-    if (!message && error?.message) {
-      message = `Error: ${error.message}`;
-    }
-
+    const message = await readApiErrorMessage(error);
     console.error("Detailed error:", {
       status: error?.response?.status,
       message,
     });
-
-    window.alert(message || "File could not be opened.");
+    window.alert(message);
   }
 };

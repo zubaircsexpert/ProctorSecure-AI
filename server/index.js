@@ -234,6 +234,22 @@ const safeJsonParse = (value, fallback) => {
   }
 };
 
+const normalizeUploadReference = (fileName) => {
+  if (!fileName) return "";
+  const rawValue = String(fileName).trim();
+  let cleanValue = rawValue;
+
+  try {
+    const parsedUrl = new URL(rawValue);
+    cleanValue = parsedUrl.pathname;
+  } catch {
+    cleanValue = rawValue;
+  }
+
+  cleanValue = cleanValue.replace(/\\/g, "/").replace(/^\/+/, "");
+  return cleanValue.replace(/^uploads\//i, "");
+};
+
 const removeFileIfExists = (fileName) => {
   if (!fileName) return;
 
@@ -244,10 +260,57 @@ const removeFileIfExists = (fileName) => {
 };
 
 const resolveUploadPath = (fileName) => {
-  if (!fileName) return "";
-  const absolutePath = path.resolve(uploadsDir, String(fileName).replace(/^\/+/, ""));
+  const uploadReference = normalizeUploadReference(fileName);
+  if (!uploadReference) return "";
+  const absolutePath = path.resolve(uploadsDir, uploadReference);
   const rootPath = path.resolve(uploadsDir);
   return absolutePath.startsWith(rootPath) ? absolutePath : "";
+};
+
+const escapeHtml = (value) =>
+  String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const sendAssignmentFallbackPreview = (res, assignment, fileUrl) => {
+  const title = escapeHtml(assignment.title || "Assignment");
+  const description = escapeHtml(assignment.description || "No assignment description was provided.");
+  const dueDate = assignment.dueDate ? new Date(assignment.dueDate).toLocaleString() : "No due date";
+  const classroomName = escapeHtml(assignment.classroomName || "Classroom");
+  const missingFile = escapeHtml(normalizeUploadReference(fileUrl) || "attached file");
+
+  return res
+    .status(200)
+    .type("html")
+    .send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      body { margin: 0; background: #eef4ff; color: #08111f; font-family: Inter, Arial, sans-serif; }
+      main { max-width: 900px; margin: 40px auto; background: #fff; border-radius: 22px; padding: 36px; box-shadow: 0 22px 60px rgba(15, 23, 42, .12); }
+      .label { color: #2563eb; font-size: 13px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+      h1 { margin: 12px 0 8px; font-size: clamp(30px, 5vw, 52px); }
+      .meta { color: #475569; font-size: 18px; line-height: 1.7; }
+      .notice { margin: 28px 0; padding: 18px 20px; border: 1px solid #fed7aa; background: #fff7ed; border-radius: 16px; color: #9a3412; font-weight: 700; }
+      .brief { margin-top: 28px; white-space: pre-wrap; font-size: 20px; line-height: 1.8; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="label">Assignment Preview</div>
+      <h1>${title}</h1>
+      <div class="meta">${classroomName}<br />Due ${escapeHtml(dueDate)}</div>
+      <div class="notice">Original uploaded file is not available on the server right now: ${missingFile}. The assignment brief is shown below so the teacher/student can still view the work.</div>
+      <div class="brief">${description}</div>
+    </main>
+  </body>
+</html>`);
 };
 
 const buildAssignmentPayload = (assignment) => {
@@ -2434,12 +2497,14 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
     const id = normalizeText(req.params.id);
     let fileUrl = "";
     let fileName = "assignment-file";
+    let assignmentRecord = null;
 
     if (kind === "assignment") {
       const assignment = await Assignment.findById(id);
       if (!assignment) {
         return res.status(404).json({ message: "Assignment not found." });
       }
+      assignmentRecord = assignment;
 
       const studentScope = user.role === "student" ? await buildStudentClassroomScope(user) : null;
       const studentCanAccess = user.role === "student"
@@ -2478,11 +2543,6 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "Invalid assignment file type." });
     }
 
-    if (!fileUrl || String(fileUrl).trim() === "") {
-      console.log(`ASSIGNMENT FILE: No fileUrl found for ${kind}/${id}`);
-      return res.status(404).json({ message: "No file attached to this assignment." });
-    }
-
     const fileRecord =
       kind === "assignment"
         ? await Assignment.findById(id).select("fileData fileMimeType originalFileName")
@@ -2498,6 +2558,11 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
       return res.send(buffer);
     }
 
+    if (!fileUrl || String(fileUrl).trim() === "") {
+      console.log(`ASSIGNMENT FILE: No fileUrl found for ${kind}/${id}`);
+      return res.status(404).json({ message: "No file attached to this assignment." });
+    }
+
     const absolutePath = resolveUploadPath(fileUrl);
     
     if (!absolutePath) {
@@ -2509,7 +2574,13 @@ app.get("/api/assignments/file/:kind/:id", verifyToken, async (req, res) => {
       console.log(`ASSIGNMENT FILE: File does not exist at path="${absolutePath}" (fileUrl="${fileUrl}")`);
       console.log(`  uploadsDir="${uploadsDir}"`);
       console.log(`  Checking directory contents:`, fs.readdirSync(uploadsDir).slice(0, 5));
-      return res.status(404).json({ message: `File not found at: ${fileUrl}` });
+      if (kind === "assignment" && assignmentRecord) {
+        return sendAssignmentFallbackPreview(res, assignmentRecord, fileUrl);
+      }
+
+      return res.status(404).json({
+        message: "Submitted file is not available on the server. Please ask the student to upload it again.",
+      });
     }
 
     return res.sendFile(absolutePath, {
