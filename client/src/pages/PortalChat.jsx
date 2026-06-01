@@ -101,6 +101,24 @@ const PortalChat = () => {
     }
   };
 
+  const fetchContactStatuses = async () => {
+    try {
+      const response = await API.get("/api/chat/contacts/status");
+      const statuses = Array.isArray(response.data) ? response.data : [];
+      const statusMap = new Map(statuses.map((status) => [String(status.id), status]));
+      setContacts((current) =>
+        current.map((contact) => {
+          const nextStatus = statusMap.get(String(contact.id));
+          return nextStatus
+            ? { ...contact, online: nextStatus.online, lastSeenAt: nextStatus.lastSeenAt }
+            : contact;
+        })
+      );
+    } catch (error) {
+      console.error("Chat status refresh failed", error);
+    }
+  };
+
   const fetchMessages = async ({ silent = false } = {}) => {
     if (!selectedContactId || !unlocked) {
       setMessages([]);
@@ -146,6 +164,8 @@ const PortalChat = () => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === "hidden") {
         setUnlockedContactId("");
+        setChatCode("");
+        setMessages([]);
         markOfflineWithBeacon();
         return;
       }
@@ -156,6 +176,8 @@ const PortalChat = () => {
 
     const handleLeaveChatScreen = () => {
       setUnlockedContactId("");
+      setChatCode("");
+      setMessages([]);
       markOfflineWithBeacon();
     };
 
@@ -163,14 +185,15 @@ const PortalChat = () => {
     markOnline();
     const heartbeat = window.setInterval(() => {
       markOnline();
-      fetchContacts({ silent: true });
     }, 15000);
+    const presenceRefresh = window.setInterval(fetchContactStatuses, 1000);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handleLeaveChatScreen);
     window.addEventListener("beforeunload", handleLeaveChatScreen);
 
     return () => {
       window.clearInterval(heartbeat);
+      window.clearInterval(presenceRefresh);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handleLeaveChatScreen);
       window.removeEventListener("beforeunload", handleLeaveChatScreen);

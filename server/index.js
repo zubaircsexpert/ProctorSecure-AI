@@ -1579,6 +1579,21 @@ app.get("/api/chat/contacts", verifyToken, verifyChatUser, async (req, res) => {
   }
 });
 
+app.get("/api/chat/contacts/status", verifyToken, verifyChatUser, async (req, res) => {
+  try {
+    const contacts = await getChatContacts(req.dbUser);
+    res.json(
+      contacts.map((contact) => ({
+        id: contact._id,
+        ...buildChatStatus(contact.chatLastSeenAt, contact.chatIsOnline),
+      }))
+    );
+  } catch (err) {
+    console.log("CHAT CONTACT STATUS ERROR:", err);
+    res.status(500).json({ message: "Failed to refresh chat status." });
+  }
+});
+
 app.post("/api/chat/heartbeat", verifyToken, verifyChatUser, async (req, res) => {
   try {
     const chatLastSeenAt = new Date();
