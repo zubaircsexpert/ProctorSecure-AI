@@ -24,6 +24,7 @@ const Exam = lazy(() => import("./pages/StudentPanel/Exam"));
 const ExamAI = lazy(() => import("./pages/ExamAI"));
 const Notifications = lazy(() => import("./pages/StudentPanel/Notifications"));
 const PerformanceAnalytics = lazy(() => import("./pages/StudentPanel/PerformanceAnalytics"));
+const PortalChat = lazy(() => import("./pages/PortalChat"));
 const Results = lazy(() => import("./pages/StudentPanel/Results"));
 const StudyVault = lazy(() => import("./pages/StudentPanel/StudyVault"));
 const SystemChecks = lazy(() => import("./pages/StudentPanel/SystemChecks"));
@@ -219,6 +220,17 @@ function App() {
             <ProtectedRoute>
               <PageShell>
                 <Schedule />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <PageShell>
+                <PortalChat />
               </PageShell>
             </ProtectedRoute>
           }
