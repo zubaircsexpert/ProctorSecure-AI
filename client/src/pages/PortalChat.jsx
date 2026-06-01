@@ -375,10 +375,11 @@ const PortalChat = () => {
   };
 
   const endCall = ({ notify = true } = {}) => {
-    if (notify && activeCall?.contactId) {
+    const currentCall = activeCallRef.current;
+    if (notify && currentCall?.contactId) {
       socketRef.current?.emit("call:end", {
-        recipientId: activeCall.contactId,
-        callId: activeCall.callId,
+        recipientId: currentCall.contactId,
+        callId: currentCall.callId,
       });
     }
     peerRef.current?.close();
@@ -585,7 +586,10 @@ const PortalChat = () => {
   }, []);
 
   useEffect(() => {
-    endCall();
+    const currentCall = activeCallRef.current;
+    if (currentCall && String(currentCall.contactId) !== String(selectedContactId)) {
+      endCall();
+    }
   }, [selectedContactId]);
 
   return (
@@ -756,6 +760,10 @@ const PortalChat = () => {
           align-items: center;
           box-shadow: 0 16px 36px rgba(15, 23, 42, .18);
         }
+        .incoming-call {
+          background: #0f172a;
+          border: 1px solid rgba(96,165,250,.35);
+        }
         .call-info {
           min-width: 0;
           display: flex;
@@ -788,6 +796,54 @@ const PortalChat = () => {
           background: #0f172a;
           object-fit: cover;
           border: 1px solid rgba(255,255,255,.16);
+        }
+        .call-stage {
+          grid-column: 1 / -1;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(150px, 240px);
+          gap: 10px;
+          align-items: stretch;
+        }
+        .remote-video, .local-video {
+          width: 100%;
+          aspect-ratio: 16 / 10;
+          border-radius: 8px;
+          object-fit: cover;
+          background: #0f172a;
+          border: 1px solid rgba(255,255,255,.16);
+        }
+        .audio-call-surface {
+          grid-column: 1 / -1;
+          min-height: 86px;
+          border-radius: 8px;
+          display: grid;
+          place-items: center;
+          background: rgba(255,255,255,.06);
+          color: rgba(255,255,255,.78);
+          font-weight: 900;
+        }
+        .call-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .call-control {
+          width: 42px;
+          height: 42px;
+          border: 1px solid rgba(255,255,255,.18);
+          border-radius: 8px;
+          background: rgba(255,255,255,.08);
+          color: #fff;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+        }
+        .call-control.active {
+          background: #2563eb;
+        }
+        .call-control.warning {
+          background: #f97316;
         }
         .end-call {
           width: 46px;
@@ -938,6 +994,9 @@ const PortalChat = () => {
             grid-column: 1 / -1;
             width: 100%;
           }
+          .call-stage {
+            grid-template-columns: 1fr;
+          }
           .input-row { grid-template-columns: 40px 40px minmax(0, 1fr) 44px; }
           .primary-button.send-label span { display: none; }
           .composer { padding: 10px; }
@@ -1015,6 +1074,28 @@ const PortalChat = () => {
 
         {notice ? <div className="notice">{notice}</div> : null}
 
+        {incomingCall ? (
+          <section className="call-panel incoming-call">
+            <div className="call-info">
+              <div className="call-avatar">
+                {incomingCall.type === "video" ? <Video size={23} /> : <Phone size={23} />}
+              </div>
+              <div>
+                <strong>{incomingCall.from.name} is calling</strong>
+                <span>{incomingCall.type === "video" ? "Incoming video call" : "Incoming audio call"}</span>
+              </div>
+            </div>
+            <div className="call-actions">
+              <button type="button" className="call-control active" title="Accept call" onClick={acceptCall}>
+                <Phone size={20} />
+              </button>
+              <button type="button" className="end-call" title="Reject call" onClick={rejectCall}>
+                <PhoneOff size={21} />
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         {activeCall ? (
           <section className="call-panel">
             <div className="call-info">
@@ -1022,16 +1103,37 @@ const PortalChat = () => {
                 {activeCall.type === "video" ? <Video size={23} /> : <Phone size={23} />}
               </div>
               <div>
-                <strong>{activeCall.type === "video" ? "Video call" : "Audio call"} with {selectedContact?.name}</strong>
-                <span>Calling...</span>
+                <strong>{activeCall.type === "video" ? "Video call" : "Audio call"} with {activeCall.contactName || selectedContact?.name}</strong>
+                <span>{activeCall.status === "connected" ? "Connected" : activeCall.direction === "incoming" ? "Connecting..." : "Calling..."}</span>
               </div>
             </div>
-            <button type="button" className="end-call" title="End call" onClick={endCall}>
-              <PhoneOff size={21} />
-            </button>
+            <div className="call-actions">
+              <button type="button" className={`call-control ${callMuted ? "warning" : ""}`} title={callMuted ? "Unmute microphone" : "Mute microphone"} onClick={toggleMute}>
+                {callMuted ? <Mic size={18} /> : <Mic size={18} />}
+              </button>
+              <button type="button" className={`call-control ${speakerOn ? "active" : "warning"}`} title={speakerOn ? "Speaker on" : "Speaker muted"} onClick={toggleSpeaker}>
+                {speakerOn ? <Volume2 size={19} /> : <VolumeX size={19} />}
+              </button>
+              {activeCall.type === "video" ? (
+                <button type="button" className={`call-control ${cameraOff ? "warning" : ""}`} title={cameraOff ? "Turn camera on" : "Turn camera off"} onClick={toggleCamera}>
+                  {cameraOff ? <VideoOff size={19} /> : <Video size={19} />}
+                </button>
+              ) : null}
+              <button type="button" className="end-call" title="End call" onClick={() => endCall()}>
+                <PhoneOff size={21} />
+              </button>
+            </div>
+            <audio ref={remoteAudioRef} autoPlay playsInline />
             {activeCall.type === "video" ? (
-              <video ref={localVideoRef} className="call-video" autoPlay muted playsInline />
-            ) : null}
+              <div className="call-stage">
+                <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline />
+                <video ref={localVideoRef} className="local-video" autoPlay muted playsInline />
+              </div>
+            ) : (
+              <div className="audio-call-surface">
+                {activeCall.status === "connected" ? "Audio connected" : "Waiting for answer..."}
+              </div>
+            )}
           </section>
         ) : null}
 
