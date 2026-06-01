@@ -743,6 +743,13 @@ const PortalChat = () => {
     }
   }, [selectedContactId]);
 
+  // Sync speaker state with audio element
+  useEffect(() => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = !speakerOn;
+    }
+  }, [speakerOn]);
+
   return (
     <div className="portal-chat">
       <style>{`
@@ -1507,7 +1514,7 @@ const PortalChat = () => {
                 <PhoneOff size={21} />
               </button>
             </div>
-            <audio ref={remoteAudioRef} autoPlay playsInline />
+            <audio ref={remoteAudioRef} autoPlay playsInline controls={false} style={{ display: 'none' }} />
             {activeCall.type === "video" ? (
               <div className="call-stage">
                 <video ref={remoteVideoRef} className="remote-video" autoPlay playsInline />
