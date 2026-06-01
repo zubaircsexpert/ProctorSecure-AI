@@ -970,16 +970,17 @@ const PortalChat = () => {
         .call-stage {
           grid-column: 1 / -1;
           display: grid;
-          grid-template-columns: minmax(0, 1fr) minmax(150px, 240px);
+          grid-template-columns: minmax(0, 1fr) minmax(150px, 280px);
           gap: 10px;
           align-items: stretch;
+          min-height: 300px;
         }
         .remote-video, .local-video {
           width: 100%;
-          aspect-ratio: 16 / 9;
-          max-height: 220px;
+          aspect-ratio: 4 / 3;
+          max-height: none;
           border-radius: 8px;
-          object-fit: cover;
+          object-fit: contain;
           background: #0f172a;
           border: 1px solid rgba(255,255,255,.16);
         }
@@ -1303,9 +1304,11 @@ const PortalChat = () => {
           }
           .call-stage {
             grid-template-columns: 1fr;
+            min-height: 280px;
           }
           .remote-video, .local-video {
-            max-height: 160px;
+            max-height: none;
+            aspect-ratio: 4 / 3;
           }
           .audio-call-surface {
             min-height: 48px;
