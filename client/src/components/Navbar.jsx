@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bell, Menu, ShieldCheck, X, MessageCircle } from "lucide-react";
+import { Bell, Menu, ShieldCheck, X } from "lucide-react";
 import { Link, useLocation } from "react-router-dom";
 import API from "../services/api";
 import { clearAuthSession, getAuthUser } from "../utils/authSession";
@@ -247,23 +247,6 @@ function Navbar() {
                 {notificationCount}
               </span>
             ) : null}
-          </Link>
-
-          <Link
-            to="/chat"
-            style={{
-              position: "relative",
-              display: "grid",
-              placeItems: "center",
-              width: isMobile ? "44px" : "48px",
-              height: isMobile ? "44px" : "48px",
-              borderRadius: "16px",
-              background: "rgba(255,255,255,0.06)",
-              border: "1px solid rgba(255,255,255,0.15)",
-            }}
-            title="Messages"
-          >
-            <MessageCircle color="#fff" size={isMobile ? 20 : 22} />
           </Link>
 
           {isMobile ? (

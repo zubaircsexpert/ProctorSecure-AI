@@ -8,6 +8,8 @@ import dns from "dns";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
+import http from "http";
+import { Server as SocketServer } from "socket.io";
 import { PDFParse } from "pdf-parse";
 import mammoth from "mammoth";
 import crypto from "crypto";
@@ -61,6 +63,13 @@ dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
+const io = new SocketServer(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"],
+  },
+});
 const port = process.env.PORT || 5000;
 const JWT_SECRET = process.env.JWT_SECRET || "secret";
 const TEACHER_ACCESS_KEY =
@@ -1071,6 +1080,97 @@ const verifyToken = (req, res, next) => {
 };
 
 const getDbUser = async (userId) => User.findById(userId);
+
+const getSocketUser = async (socket) => {
+  const authToken = socket.handshake.auth?.token || "";
+  const headerToken = socket.handshake.headers?.authorization?.split(" ")[1] || "";
+  const token = authToken || headerToken;
+  if (!token) return null;
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return getDbUser(decoded.userId);
+  } catch {
+    return null;
+  }
+};
+
+const emitCallError = (socket, message) => {
+  socket.emit("call:error", { message });
+};
+
+io.use(async (socket, next) => {
+  const user = await getSocketUser(socket);
+  if (!user || !["student", "teacher", "admin"].includes(user.role)) {
+    return next(new Error("Unauthorized chat socket."));
+  }
+
+  socket.dbUser = user;
+  socket.join(`user:${user._id}`);
+  next();
+});
+
+io.on("connection", (socket) => {
+  const user = socket.dbUser;
+
+  socket.on("call:start", async ({ recipientId, type, callId } = {}) => {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(recipientId) || !["audio", "video"].includes(type)) {
+        emitCallError(socket, "Select a valid contact before calling.");
+        return;
+      }
+
+      const recipient = await User.findById(recipientId);
+      if (!(await canChatWith(user, recipient))) {
+        emitCallError(socket, "You cannot call this user.");
+        return;
+      }
+
+      io.to(`user:${recipient._id}`).emit("call:incoming", {
+        callId,
+        type,
+        from: {
+          id: user._id,
+          name: user.name || user.email || "Portal User",
+          role: user.role,
+        },
+      });
+    } catch (err) {
+      console.log("CALL START ERROR:", err);
+      emitCallError(socket, "Call could not be started.");
+    }
+  });
+
+  socket.on("call:accept", ({ recipientId, callId } = {}) => {
+    if (!mongoose.Types.ObjectId.isValid(recipientId)) return;
+    io.to(`user:${recipientId}`).emit("call:accepted", { callId, fromId: user._id });
+  });
+
+  socket.on("call:reject", ({ recipientId, callId } = {}) => {
+    if (!mongoose.Types.ObjectId.isValid(recipientId)) return;
+    io.to(`user:${recipientId}`).emit("call:rejected", { callId, fromId: user._id });
+  });
+
+  socket.on("call:end", ({ recipientId, callId } = {}) => {
+    if (!mongoose.Types.ObjectId.isValid(recipientId)) return;
+    io.to(`user:${recipientId}`).emit("call:ended", { callId, fromId: user._id });
+  });
+
+  socket.on("webrtc:offer", ({ recipientId, callId, description } = {}) => {
+    if (!mongoose.Types.ObjectId.isValid(recipientId) || !description) return;
+    io.to(`user:${recipientId}`).emit("webrtc:offer", { callId, fromId: user._id, description });
+  });
+
+  socket.on("webrtc:answer", ({ recipientId, callId, description } = {}) => {
+    if (!mongoose.Types.ObjectId.isValid(recipientId) || !description) return;
+    io.to(`user:${recipientId}`).emit("webrtc:answer", { callId, fromId: user._id, description });
+  });
+
+  socket.on("webrtc:ice-candidate", ({ recipientId, callId, candidate } = {}) => {
+    if (!mongoose.Types.ObjectId.isValid(recipientId) || !candidate) return;
+    io.to(`user:${recipientId}`).emit("webrtc:ice-candidate", { callId, fromId: user._id, candidate });
+  });
+});
 
 const ensureTeacherWorkspace = async (teacher) => {
   if (!teacher || teacher.role !== "teacher") {
@@ -4741,7 +4841,7 @@ const startServer = async () => {
     await mongoose.connect(process.env.MONGO_URI);
     console.log("MongoDB Connected");
 
-    app.listen(port, () => {
+    server.listen(port, () => {
       console.log(`Server Running on ${port}`);
     });
   } catch (err) {

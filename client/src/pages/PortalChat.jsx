@@ -12,7 +12,11 @@ import {
   Square,
   Trash2,
   Video,
+  VideoOff,
+  Volume2,
+  VolumeX,
 } from "lucide-react";
+import { io } from "socket.io-client";
 import API from "../services/api";
 import { getAuthToken, getAuthUser } from "../utils/authSession";
 
@@ -47,10 +51,21 @@ const PortalChat = () => {
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
   const [activeCall, setActiveCall] = useState(null);
+  const [incomingCall, setIncomingCall] = useState(null);
+  const [callMuted, setCallMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(false);
+  const [speakerOn, setSpeakerOn] = useState(true);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
   const localVideoRef = useRef(null);
+  const remoteVideoRef = useRef(null);
+  const remoteAudioRef = useRef(null);
   const callStreamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
+  const peerRef = useRef(null);
+  const socketRef = useRef(null);
+  const activeCallRef = useRef(null);
+  const incomingCallRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const selectedContact = contacts.find((contact) => String(contact.id) === String(selectedContactId));
@@ -162,6 +177,24 @@ const PortalChat = () => {
       localVideoRef.current.srcObject = callStreamRef.current;
     }
   }, [activeCall]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+    }
+    if (remoteAudioRef.current && remoteStreamRef.current) {
+      remoteAudioRef.current.srcObject = remoteStreamRef.current;
+      remoteAudioRef.current.muted = !speakerOn;
+    }
+  }, [activeCall, speakerOn]);
+
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+
+  useEffect(() => {
+    incomingCallRef.current = incomingCall;
+  }, [incomingCall]);
 
   const unlockChat = async () => {
     if (!selectedContactId) {
@@ -285,10 +318,74 @@ const PortalChat = () => {
     }
   };
 
-  const endCall = () => {
+  const createPeer = (recipientId, callId) => {
+    const peer = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
+
+    peer.onicecandidate = (event) => {
+      if (event.candidate) {
+        socketRef.current?.emit("webrtc:ice-candidate", {
+          recipientId,
+          callId,
+          candidate: event.candidate,
+        });
+      }
+    };
+
+    peer.ontrack = (event) => {
+      const [remoteStream] = event.streams;
+      remoteStreamRef.current = remoteStream;
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStream;
+      if (remoteAudioRef.current) {
+        remoteAudioRef.current.srcObject = remoteStream;
+        remoteAudioRef.current.muted = !speakerOn;
+      }
+      setActiveCall((current) => current ? { ...current, status: "connected" } : current);
+    };
+
+    peer.onconnectionstatechange = () => {
+      if (["failed", "closed", "disconnected"].includes(peer.connectionState)) {
+        setActiveCall((current) => current ? { ...current, status: peer.connectionState } : current);
+      }
+    };
+
+    peerRef.current = peer;
+    return peer;
+  };
+
+  const getCallMedia = async (type) => {
+    const stream = await navigator.mediaDevices.getUserMedia(
+      type === "video" ? { audio: true, video: true } : { audio: true, video: false }
+    );
+    callStreamRef.current = stream;
+    setCallMuted(false);
+    setCameraOff(false);
+    return stream;
+  };
+
+  const stopCallMedia = () => {
     callStreamRef.current?.getTracks().forEach((track) => track.stop());
     callStreamRef.current = null;
+    remoteStreamRef.current?.getTracks().forEach((track) => track.stop());
+    remoteStreamRef.current = null;
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    if (remoteAudioRef.current) remoteAudioRef.current.srcObject = null;
+  };
+
+  const endCall = ({ notify = true } = {}) => {
+    if (notify && activeCall?.contactId) {
+      socketRef.current?.emit("call:end", {
+        recipientId: activeCall.contactId,
+        callId: activeCall.callId,
+      });
+    }
+    peerRef.current?.close();
+    peerRef.current = null;
+    stopCallMedia();
     setActiveCall(null);
+    setIncomingCall(null);
   };
 
   const startCall = async (type) => {
@@ -303,22 +400,183 @@ const PortalChat = () => {
     }
 
     try {
-      endCall();
-      const stream = await navigator.mediaDevices.getUserMedia(
-        type === "video" ? { audio: true, video: true } : { audio: true }
-      );
-      callStreamRef.current = stream;
+      endCall({ notify: false });
+      const stream = await getCallMedia(type);
+      const callId = `${user?.id || user?._id}-${selectedContact.id}-${Date.now()}`;
+      const peer = createPeer(selectedContact.id, callId);
+      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
       setNotice("");
       setActiveCall({
+        callId,
         type,
+        contactId: selectedContact.id,
+        contactName: selectedContact.name,
+        direction: "outgoing",
         startedAt: Date.now(),
         status: "calling",
+      });
+      socketRef.current?.emit("call:start", {
+        recipientId: selectedContact.id,
+        type,
+        callId,
       });
     } catch (error) {
       console.error("Call permission failed", error);
       setNotice(type === "video" ? "Camera and microphone permission is required for video call." : "Microphone permission is required for audio call.");
     }
   };
+
+  const acceptCall = async () => {
+    if (!incomingCall) return;
+
+    try {
+      endCall({ notify: false });
+      const stream = await getCallMedia(incomingCall.type);
+      const peer = createPeer(incomingCall.from.id, incomingCall.callId);
+      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+      setSelectedContactId(String(incomingCall.from.id));
+      setActiveCall({
+        callId: incomingCall.callId,
+        type: incomingCall.type,
+        contactId: incomingCall.from.id,
+        contactName: incomingCall.from.name,
+        direction: "incoming",
+        startedAt: Date.now(),
+        status: "connecting",
+      });
+      socketRef.current?.emit("call:accept", {
+        recipientId: incomingCall.from.id,
+        callId: incomingCall.callId,
+      });
+      setIncomingCall(null);
+    } catch (error) {
+      console.error("Accept call failed", error);
+      setNotice(incomingCall.type === "video" ? "Camera and microphone permission is required to answer video call." : "Microphone permission is required to answer audio call.");
+    }
+  };
+
+  const rejectCall = () => {
+    if (!incomingCall) return;
+    socketRef.current?.emit("call:reject", {
+      recipientId: incomingCall.from.id,
+      callId: incomingCall.callId,
+    });
+    setIncomingCall(null);
+  };
+
+  const toggleMute = () => {
+    const nextMuted = !callMuted;
+    callStreamRef.current?.getAudioTracks().forEach((track) => {
+      track.enabled = !nextMuted;
+    });
+    setCallMuted(nextMuted);
+  };
+
+  const toggleCamera = () => {
+    const nextOff = !cameraOff;
+    callStreamRef.current?.getVideoTracks().forEach((track) => {
+      track.enabled = !nextOff;
+    });
+    setCameraOff(nextOff);
+  };
+
+  const toggleSpeaker = () => {
+    const nextSpeaker = !speakerOn;
+    if (remoteAudioRef.current) remoteAudioRef.current.muted = !nextSpeaker;
+    setSpeakerOn(nextSpeaker);
+  };
+
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token) return undefined;
+
+    const socket = io(API.defaults.baseURL, {
+      auth: { token },
+      transports: ["websocket", "polling"],
+    });
+    socketRef.current = socket;
+
+    socket.on("call:incoming", (payload) => {
+      setIncomingCall(payload);
+    });
+
+    socket.on("call:accepted", async ({ callId, fromId }) => {
+      if (!peerRef.current || activeCallRef.current?.callId !== callId) return;
+      try {
+        setActiveCall((current) => current ? { ...current, status: "connecting" } : current);
+        const offer = await peerRef.current.createOffer();
+        await peerRef.current.setLocalDescription(offer);
+        socket.emit("webrtc:offer", {
+          recipientId: fromId,
+          callId,
+          description: offer,
+        });
+      } catch (error) {
+        console.error("Create offer failed", error);
+        setNotice("Call connection failed while creating offer.");
+      }
+    });
+
+    socket.on("call:rejected", ({ callId }) => {
+      if (activeCallRef.current?.callId === callId) {
+        setNotice("Call was rejected.");
+        endCall({ notify: false });
+      }
+    });
+
+    socket.on("call:ended", ({ callId }) => {
+      if (activeCallRef.current?.callId === callId || incomingCallRef.current?.callId === callId) {
+        setNotice("Call ended.");
+        endCall({ notify: false });
+      }
+    });
+
+    socket.on("webrtc:offer", async ({ callId, fromId, description }) => {
+      if (!peerRef.current || activeCallRef.current?.callId !== callId) return;
+      try {
+        await peerRef.current.setRemoteDescription(new RTCSessionDescription(description));
+        const answer = await peerRef.current.createAnswer();
+        await peerRef.current.setLocalDescription(answer);
+        socket.emit("webrtc:answer", {
+          recipientId: fromId,
+          callId,
+          description: answer,
+        });
+      } catch (error) {
+        console.error("Handle offer failed", error);
+        setNotice("Call connection failed while answering.");
+      }
+    });
+
+    socket.on("webrtc:answer", async ({ callId, description }) => {
+      if (!peerRef.current || activeCallRef.current?.callId !== callId) return;
+      try {
+        await peerRef.current.setRemoteDescription(new RTCSessionDescription(description));
+      } catch (error) {
+        console.error("Handle answer failed", error);
+        setNotice("Call connection failed while connecting.");
+      }
+    });
+
+    socket.on("webrtc:ice-candidate", async ({ callId, candidate }) => {
+      if (!peerRef.current || activeCallRef.current?.callId !== callId) return;
+      try {
+        await peerRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (error) {
+        console.error("ICE candidate failed", error);
+      }
+    });
+
+    socket.on("call:error", ({ message }) => {
+      setNotice(message || "Call failed.");
+      endCall({ notify: false });
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
