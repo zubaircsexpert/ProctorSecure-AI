@@ -53,6 +53,7 @@ import {
 } from "./utils/quizGenerator.js";
 import quizRoutes from "./routes/quizRoutes.js";
 import quizAssemblyRoutes from "./routes/quizAssemblyRoutes.js";
+import chatRoutes from "./routes/chatRoutes.js";
 
 dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
@@ -4347,6 +4348,7 @@ app.get("/api/exam-ai/reports/all", verifyToken, verifyStaff, async (req, res) =
 // Mount quiz routes
 app.use("/api/quiz", quizRoutes);
 app.use("/api/quiz-assembly", quizAssemblyRoutes);
+app.use("/api/chat", chatRoutes);
 
 const startServer = async () => {
   try {

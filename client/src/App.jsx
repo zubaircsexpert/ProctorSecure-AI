@@ -29,6 +29,7 @@ const StudyVault = lazy(() => import("./pages/StudentPanel/StudyVault"));
 const SystemChecks = lazy(() => import("./pages/StudentPanel/SystemChecks"));
 const StudyVaultManager = lazy(() => import("./pages/TeacherPanel/StudyVaultManager"));
 const TeacherPanel = lazy(() => import("./pages/TeacherPanel/TeacherPanel"));
+const Chat = lazy(() => import("./pages/Chat"));
 
 const NAVBAR_OFFSET = 104;
 
@@ -86,6 +87,17 @@ function App() {
             <ProtectedRoute>
               <PageShell>
                 <Profile />
+              </PageShell>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/chat"
+          element={
+            <ProtectedRoute>
+              <PageShell top={84} style={{ padding: 0 }}>
+                <Chat />
               </PageShell>
             </ProtectedRoute>
           }
