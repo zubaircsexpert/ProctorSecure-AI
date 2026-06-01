@@ -39,6 +39,7 @@ import QuizSession from "./models/QuizSession.js";
 import CheatDetection from "./models/CheatDetection.js";
 import QuizAnalytics from "./models/QuizAnalytics.js";
 import ChatMessage from "./models/ChatMessage.js";
+import ChatSession from "./models/ChatSession.js";
 import {
   extractTextFromImage,
   extractTextFromImageWithLanguage,
@@ -229,12 +230,12 @@ const chatUpload = multer({
   storage: createDiskStorage(chatUploadsDir),
   limits: { fileSize: 35 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (/^(image|video)\//i.test(file.mimetype || "")) {
+    if (/^(image|video|audio)\//i.test(file.mimetype || "")) {
       cb(null, true);
       return;
     }
 
-    cb(new Error("Only images and videos can be sent in chat."));
+    cb(new Error("Only images, videos, and voice notes can be sent in chat."));
   },
 });
 
@@ -1270,6 +1271,160 @@ const buildChatPayload = (message) => {
   };
 };
 
+const CHAT_ONLINE_WINDOW_MS = 90 * 1000;
+
+const buildChatStatus = (lastSeenAt) => {
+  const seenAt = lastSeenAt ? new Date(lastSeenAt) : null;
+  const online = Boolean(seenAt && Date.now() - seenAt.getTime() < CHAT_ONLINE_WINDOW_MS);
+  return {
+    online,
+    lastSeenAt: seenAt,
+  };
+};
+
+const buildChatContactPayload = (user) => ({
+  id: user._id,
+  name: user.name || user.email || "Portal User",
+  email: user.email || "",
+  role: user.role,
+  classroomName: user.classroomName || "",
+  rollNumber: user.rollNumber || "",
+  ...buildChatStatus(user.chatLastSeenAt),
+});
+
+const getConversationParticipants = (userId, recipientId) => {
+  const ids = [String(userId), String(recipientId)].sort();
+  return {
+    participantA: ids[0],
+    participantB: ids[1],
+    conversationKey: `${ids[0]}:${ids[1]}`,
+  };
+};
+
+const normalizeChatCode = (value) => normalizeText(value);
+
+const hashChatCode = (code, conversationKey) =>
+  crypto.createHash("sha256").update(`${conversationKey}:${code}:${JWT_SECRET}`).digest("hex");
+
+const secureCompare = (left, right) => {
+  const leftBuffer = Buffer.from(String(left || ""), "hex");
+  const rightBuffer = Buffer.from(String(right || ""), "hex");
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+};
+
+const ensureChatSession = async (userId, recipientId, rawCode, { create = false } = {}) => {
+  const code = normalizeChatCode(rawCode);
+  if (code.length < 4) {
+    const error = new Error("Enter the private chat code. It must be at least 4 characters.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const participants = getConversationParticipants(userId, recipientId);
+  const expectedHash = hashChatCode(code, participants.conversationKey);
+  let session = await ChatSession.findOne({
+    participantA: participants.participantA,
+    participantB: participants.participantB,
+  }).select("+codeHash");
+
+  if (!session) {
+    if (!create) {
+      const error = new Error("This chat is locked. Enter the same code first.");
+      error.statusCode = 403;
+      throw error;
+    }
+
+    session = await ChatSession.create({
+      participantA: participants.participantA,
+      participantB: participants.participantB,
+      codeHash: expectedHash,
+    });
+    session.codeHash = expectedHash;
+    return session;
+  }
+
+  if (!secureCompare(session.codeHash, expectedHash)) {
+    const error = new Error("Wrong chat code for this conversation.");
+    error.statusCode = 403;
+    throw error;
+  }
+
+  return session;
+};
+
+const getChatFileType = (file) => {
+  if (!file) return "";
+  if (/^video\//i.test(file.mimetype || "")) return "video";
+  if (/^audio\//i.test(file.mimetype || "")) return "audio";
+  return "image";
+};
+
+const getChatContacts = async (user) => {
+  if (user.role === "admin") {
+    return User.find({ _id: { $ne: user._id }, role: { $in: ["student", "teacher"] } })
+      .select("name email role classroomName rollNumber chatLastSeenAt")
+      .sort({ role: 1, name: 1 })
+      .lean();
+  }
+
+  if (user.role === "teacher") {
+    const teacherClassrooms = await Classroom.find({ teacherId: user._id }).select("_id").lean();
+    const classroomIds = teacherClassrooms.map((classroom) => classroom._id);
+    return User.find({
+      role: "student",
+      approvalStatus: "approved",
+      $or: [
+        { teacherId: user._id },
+        { classroomId: { $in: classroomIds } },
+      ],
+    })
+      .select("name email role classroomName rollNumber chatLastSeenAt")
+      .sort({ classroomName: 1, name: 1 })
+      .lean();
+  }
+
+  const teacherIds = [];
+  if (user.teacherId) teacherIds.push(user.teacherId);
+
+  if (user.classroomId) {
+    const classroom = await Classroom.findById(user.classroomId).select("teacherId").lean();
+    if (classroom?.teacherId) teacherIds.push(classroom.teacherId);
+  }
+
+  return User.find({
+    _id: { $in: [...new Set(teacherIds.map(String))] },
+    role: "teacher",
+    approvalStatus: "approved",
+  })
+    .select("name email role classroomName rollNumber chatLastSeenAt")
+    .sort({ name: 1 })
+    .lean();
+};
+
+const canChatWith = async (user, recipient) => {
+  if (!recipient || String(user._id) === String(recipient._id)) return false;
+  if (user.role === "admin") return ["student", "teacher"].includes(recipient.role);
+  if (user.role === "teacher") {
+    if (recipient.role !== "student" || recipient.approvalStatus !== "approved") return false;
+    if (String(recipient.teacherId || "") === String(user._id)) return true;
+    const teacherClassroom = recipient.classroomId
+      ? await Classroom.exists({ _id: recipient.classroomId, teacherId: user._id })
+      : null;
+    return Boolean(teacherClassroom);
+  }
+
+  if (user.role === "student") {
+    if (recipient.role !== "teacher" || recipient.approvalStatus !== "approved") return false;
+    if (String(user.teacherId || "") === String(recipient._id)) return true;
+    const classroom = user.classroomId
+      ? await Classroom.exists({ _id: user.classroomId, teacherId: recipient._id })
+      : null;
+    return Boolean(classroom);
+  }
+
+  return false;
+};
+
 const findTeacherClassroom = async (teacherId, classroomId) => {
   if (!classroomId) return null;
 
@@ -1284,9 +1439,79 @@ app.get("/", (req, res) => {
   res.send("Backend Running");
 });
 
+app.get("/api/chat/contacts", verifyToken, verifyChatUser, async (req, res) => {
+  try {
+    await User.updateOne({ _id: req.dbUser._id }, { chatLastSeenAt: new Date() });
+    const contacts = await getChatContacts(req.dbUser);
+    res.json(contacts.map(buildChatContactPayload));
+  } catch (err) {
+    console.log("CHAT CONTACTS ERROR:", err);
+    res.status(500).json({ message: "Failed to load chat contacts." });
+  }
+});
+
+app.post("/api/chat/heartbeat", verifyToken, verifyChatUser, async (req, res) => {
+  try {
+    const chatLastSeenAt = new Date();
+    await User.updateOne({ _id: req.dbUser._id }, { chatLastSeenAt });
+    res.json({ ...buildChatStatus(chatLastSeenAt), lastSeenAt: chatLastSeenAt });
+  } catch (err) {
+    console.log("CHAT HEARTBEAT ERROR:", err);
+    res.status(500).json({ message: "Failed to update chat status." });
+  }
+});
+
+app.post("/api/chat/session", verifyToken, verifyChatUser, async (req, res) => {
+  try {
+    const recipientId = normalizeText(req.body.recipientId);
+    const chatCode = normalizeChatCode(req.body.chatCode);
+
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
+      return res.status(400).json({ message: "Select a student or teacher first." });
+    }
+
+    const recipient = await User.findById(recipientId);
+    if (!(await canChatWith(req.dbUser, recipient))) {
+      return res.status(403).json({ message: "You cannot open this chat." });
+    }
+
+    const session = await ensureChatSession(req.dbUser._id, recipient._id, chatCode, { create: true });
+    res.json({
+      unlocked: true,
+      sessionId: session._id,
+      message: "Secure chat unlocked.",
+    });
+  } catch (err) {
+    console.log("CHAT SESSION ERROR:", err);
+    res.status(err.statusCode || 500).json({ message: err.message || "Chat code verification failed." });
+  }
+});
+
 app.get("/api/chat/messages", verifyToken, verifyChatUser, async (req, res) => {
   try {
+    const recipientId = normalizeText(req.query.recipientId);
+    const chatCode = normalizeChatCode(req.query.chatCode);
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
+      return res.status(400).json({ message: "Select a student or teacher first." });
+    }
+
+    const recipient = await User.findById(recipientId);
+    if (!(await canChatWith(req.dbUser, recipient))) {
+      return res.status(403).json({ message: "You cannot open this chat." });
+    }
+
+    await ensureChatSession(req.dbUser._id, recipient._id, chatCode);
+
+    await ChatMessage.updateMany(
+      { senderId: recipientId, recipientId: req.dbUser._id, readAt: null },
+      { readAt: new Date() }
+    );
+
     const messages = await ChatMessage.find({})
+      .or([
+        { senderId: req.dbUser._id, recipientId },
+        { senderId: recipientId, recipientId: req.dbUser._id },
+      ])
       .sort({ createdAt: -1 })
       .limit(120)
       .lean();
@@ -1307,20 +1532,38 @@ app.post(
     try {
       const text = normalizeText(req.body.text);
       const fileUrl = req.file ? toRelativeUploadPath(req.file.path) : "";
+      const recipientId = normalizeText(req.body.recipientId);
+      const chatCode = normalizeChatCode(req.body.chatCode);
 
       if (!text && !fileUrl) {
-        return res.status(400).json({ message: "Type a message or attach a picture/video." });
+        return res.status(400).json({ message: "Type a message or attach a picture/video/voice note." });
       }
+
+      if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
+        return res.status(400).json({ message: "Select a student or teacher first." });
+      }
+
+      const recipient = await User.findById(recipientId);
+      if (!(await canChatWith(req.dbUser, recipient))) {
+        return res.status(403).json({ message: "You cannot send a message to this user." });
+      }
+
+      const session = await ensureChatSession(req.dbUser._id, recipient._id, chatCode, { create: true });
 
       const message = await ChatMessage.create({
         senderId: req.dbUser._id,
         senderName: req.dbUser.name || req.dbUser.email || "Portal User",
         senderRole: req.dbUser.role,
+        recipientId: recipient._id,
+        recipientName: recipient.name || recipient.email || "Portal User",
+        recipientRole: recipient.role,
         text,
         fileUrl,
-        fileType: req.file?.mimetype?.startsWith("video/") ? "video" : req.file ? "image" : "",
+        fileType: getChatFileType(req.file),
         originalFileName: req.file?.originalname || "",
       });
+      session.lastMessageAt = new Date();
+      await session.save();
 
       res.status(201).json(buildChatPayload(message));
     } catch (err) {
@@ -1332,11 +1575,34 @@ app.post(
 
 app.delete("/api/chat/messages", verifyToken, verifyChatUser, async (req, res) => {
   try {
-    const messages = await ChatMessage.find({ fileUrl: { $ne: "" } }).select("fileUrl").lean();
-    messages.forEach((message) => removeFileIfExists(message.fileUrl));
-    await ChatMessage.deleteMany({});
+    const recipientId = normalizeText(req.query.recipientId);
+    const chatCode = normalizeChatCode(req.query.chatCode);
+    if (!recipientId || !mongoose.Types.ObjectId.isValid(recipientId)) {
+      return res.status(400).json({ message: "Select a chat before clearing it." });
+    }
 
-    res.json({ message: "Chat cleared for everyone." });
+    const recipient = await User.findById(recipientId);
+    if (!(await canChatWith(req.dbUser, recipient))) {
+      return res.status(403).json({ message: "You cannot clear this chat." });
+    }
+
+    await ensureChatSession(req.dbUser._id, recipient._id, chatCode);
+
+    const conversationQuery = {
+      $or: [
+        { senderId: req.dbUser._id, recipientId },
+        { senderId: recipientId, recipientId: req.dbUser._id },
+      ],
+    };
+    const messages = await ChatMessage.find({ ...conversationQuery, fileUrl: { $ne: "" } }).select("fileUrl").lean();
+    messages.forEach((message) => removeFileIfExists(message.fileUrl));
+    await ChatMessage.deleteMany(conversationQuery);
+    await ChatSession.deleteOne({
+      participantA: getConversationParticipants(req.dbUser._id, recipientId).participantA,
+      participantB: getConversationParticipants(req.dbUser._id, recipientId).participantB,
+    });
+
+    res.json({ message: "Chat cleared for both users. A new code will be required next time." });
   } catch (err) {
     console.log("CHAT CLEAR ERROR:", err);
     res.status(500).json({ message: "Failed to clear chat." });

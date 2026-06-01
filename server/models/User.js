@@ -72,6 +72,10 @@ const userSchema = new mongoose.Schema({
     default: "",
     trim: true,
   },
+  chatLastSeenAt: {
+    type: Date,
+    default: null,
+  },
   resetPasswordToken: {
     type: String,
     default: "",
