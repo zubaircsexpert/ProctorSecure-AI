@@ -7,6 +7,7 @@ import {
   Mic,
   Paperclip,
   Phone,
+  PhoneOff,
   Send,
   Square,
   Trash2,
@@ -45,8 +46,11 @@ const PortalChat = () => {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [activeCall, setActiveCall] = useState(null);
   const bottomRef = useRef(null);
   const fileInputRef = useRef(null);
+  const localVideoRef = useRef(null);
+  const callStreamRef = useRef(null);
   const recorderRef = useRef(null);
   const chunksRef = useRef([]);
   const selectedContact = contacts.find((contact) => String(contact.id) === String(selectedContactId));
@@ -152,6 +156,12 @@ const PortalChat = () => {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
+
+  useEffect(() => {
+    if (localVideoRef.current && activeCall?.type === "video" && callStreamRef.current) {
+      localVideoRef.current.srcObject = callStreamRef.current;
+    }
+  }, [activeCall]);
 
   const unlockChat = async () => {
     if (!selectedContactId) {
@@ -275,9 +285,50 @@ const PortalChat = () => {
     }
   };
 
-  const callNotice = (type) => {
-    setNotice(`${type} call option is ready for this contact. Connect a real calling service/WebRTC to start live calls.`);
+  const endCall = () => {
+    callStreamRef.current?.getTracks().forEach((track) => track.stop());
+    callStreamRef.current = null;
+    setActiveCall(null);
   };
+
+  const startCall = async (type) => {
+    if (!selectedContact) {
+      setNotice("Select a student or teacher first.");
+      return;
+    }
+
+    if (!unlocked) {
+      setNotice("Unlock this chat with the private code before starting a call.");
+      return;
+    }
+
+    try {
+      endCall();
+      const stream = await navigator.mediaDevices.getUserMedia(
+        type === "video" ? { audio: true, video: true } : { audio: true }
+      );
+      callStreamRef.current = stream;
+      setNotice("");
+      setActiveCall({
+        type,
+        startedAt: Date.now(),
+        status: "calling",
+      });
+    } catch (error) {
+      console.error("Call permission failed", error);
+      setNotice(type === "video" ? "Camera and microphone permission is required for video call." : "Microphone permission is required for audio call.");
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      callStreamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  useEffect(() => {
+    endCall();
+  }, [selectedContactId]);
 
   return (
     <div className="portal-chat">
@@ -435,6 +486,62 @@ const PortalChat = () => {
         .danger-button {
           background: #991b1b;
         }
+        .call-panel {
+          margin: 10px 18px 0;
+          border-radius: 8px;
+          background: #020617;
+          color: #fff;
+          padding: 14px;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 12px;
+          align-items: center;
+          box-shadow: 0 16px 36px rgba(15, 23, 42, .18);
+        }
+        .call-info {
+          min-width: 0;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .call-avatar {
+          width: 46px;
+          height: 46px;
+          border-radius: 8px;
+          display: grid;
+          place-items: center;
+          background: #2563eb;
+          flex: 0 0 auto;
+        }
+        .call-info strong, .call-info span {
+          display: block;
+          overflow-wrap: anywhere;
+        }
+        .call-info span {
+          margin-top: 3px;
+          color: rgba(255,255,255,.72);
+          font-size: 13px;
+          font-weight: 800;
+        }
+        .call-video {
+          width: min(240px, 38vw);
+          aspect-ratio: 16 / 10;
+          border-radius: 8px;
+          background: #0f172a;
+          object-fit: cover;
+          border: 1px solid rgba(255,255,255,.16);
+        }
+        .end-call {
+          width: 46px;
+          height: 46px;
+          border: 0;
+          border-radius: 8px;
+          background: #dc2626;
+          color: #fff;
+          display: grid;
+          place-items: center;
+          cursor: pointer;
+        }
         .messages {
           min-height: 0;
           overflow-y: auto;
@@ -565,6 +672,14 @@ const PortalChat = () => {
           .messages { padding: 12px; }
           .message-bubble { max-width: 88%; }
           .notice { margin: 8px 12px 0; }
+          .call-panel {
+            margin: 8px 12px 0;
+            grid-template-columns: 1fr auto;
+          }
+          .call-video {
+            grid-column: 1 / -1;
+            width: 100%;
+          }
           .input-row { grid-template-columns: 40px 40px minmax(0, 1fr) 44px; }
           .primary-button.send-label span { display: none; }
           .composer { padding: 10px; }
@@ -628,10 +743,10 @@ const PortalChat = () => {
             </div>
           </div>
           <div className="header-actions">
-            <button type="button" className="icon-button" title="Audio call" onClick={() => callNotice("Audio")}>
+            <button type="button" className="icon-button" title="Audio call" onClick={() => startCall("audio")} disabled={!unlocked}>
               <Phone size={19} />
             </button>
-            <button type="button" className="icon-button" title="Video call" onClick={() => callNotice("Video")}>
+            <button type="button" className="icon-button" title="Video call" onClick={() => startCall("video")} disabled={!unlocked}>
               <Video size={19} />
             </button>
             <button type="button" className="icon-button" title="Clear chat" onClick={clearChat}>
@@ -641,6 +756,26 @@ const PortalChat = () => {
         </header>
 
         {notice ? <div className="notice">{notice}</div> : null}
+
+        {activeCall ? (
+          <section className="call-panel">
+            <div className="call-info">
+              <div className="call-avatar">
+                {activeCall.type === "video" ? <Video size={23} /> : <Phone size={23} />}
+              </div>
+              <div>
+                <strong>{activeCall.type === "video" ? "Video call" : "Audio call"} with {selectedContact?.name}</strong>
+                <span>Calling...</span>
+              </div>
+            </div>
+            <button type="button" className="end-call" title="End call" onClick={endCall}>
+              <PhoneOff size={21} />
+            </button>
+            {activeCall.type === "video" ? (
+              <video ref={localVideoRef} className="call-video" autoPlay muted playsInline />
+            ) : null}
+          </section>
+        ) : null}
 
         {!unlocked ? (
           <section className="lock-panel">
