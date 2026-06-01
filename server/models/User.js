@@ -76,6 +76,10 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  chatIsOnline: {
+    type: Boolean,
+    default: false,
+  },
   resetPasswordToken: {
     type: String,
     default: "",

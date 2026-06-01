@@ -13,7 +13,7 @@ import {
   Video,
 } from "lucide-react";
 import API from "../services/api";
-import { getAuthUser } from "../utils/authSession";
+import { getAuthToken, getAuthUser } from "../utils/authSession";
 
 const buildMediaUrl = (fileUrl) => {
   if (!fileUrl) return "";
@@ -90,12 +90,51 @@ const PortalChat = () => {
   };
 
   useEffect(() => {
-    fetchContacts();
-    const heartbeat = window.setInterval(() => {
+    const markOnline = () => {
       API.post("/api/chat/heartbeat").catch(() => {});
+    };
+
+    const markOffline = () => {
+      API.post("/api/chat/offline").catch(() => {});
+    };
+
+    const markOfflineWithBeacon = () => {
+      const token = getAuthToken();
+      const endpoint = `${API.defaults.baseURL}/api/chat/offline`;
+
+      fetch(endpoint, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        keepalive: true,
+      }).catch(() => {});
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        markOfflineWithBeacon();
+      } else {
+        markOnline();
+        fetchContacts({ silent: true });
+      }
+    };
+
+    fetchContacts();
+    markOnline();
+    const heartbeat = window.setInterval(() => {
+      markOnline();
       fetchContacts({ silent: true });
     }, 30000);
-    return () => window.clearInterval(heartbeat);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", markOfflineWithBeacon);
+    window.addEventListener("beforeunload", markOfflineWithBeacon);
+
+    return () => {
+      window.clearInterval(heartbeat);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", markOfflineWithBeacon);
+      window.removeEventListener("beforeunload", markOfflineWithBeacon);
+      markOffline();
+    };
   }, []);
 
   useEffect(() => {

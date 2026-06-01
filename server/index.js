@@ -1274,9 +1274,9 @@ const buildChatPayload = (message) => {
 
 const CHAT_ONLINE_WINDOW_MS = 90 * 1000;
 
-const buildChatStatus = (lastSeenAt) => {
+const buildChatStatus = (lastSeenAt, chatIsOnline = false) => {
   const seenAt = lastSeenAt ? new Date(lastSeenAt) : null;
-  const online = Boolean(seenAt && Date.now() - seenAt.getTime() < CHAT_ONLINE_WINDOW_MS);
+  const online = Boolean(chatIsOnline && seenAt && Date.now() - seenAt.getTime() < CHAT_ONLINE_WINDOW_MS);
   return {
     online,
     lastSeenAt: seenAt,
@@ -1290,7 +1290,7 @@ const buildChatContactPayload = (user) => ({
   role: user.role,
   classroomName: user.classroomName || "",
   rollNumber: user.rollNumber || "",
-  ...buildChatStatus(user.chatLastSeenAt),
+  ...buildChatStatus(user.chatLastSeenAt, user.chatIsOnline),
 });
 
 const getConversationParticipants = (userId, recipientId) => {
@@ -1363,7 +1363,7 @@ const getChatFileType = (file) => {
 const getChatContacts = async (user) => {
   if (user.role === "admin") {
     return User.find({ _id: { $ne: user._id }, role: { $in: ["student", "teacher"] } })
-      .select("name email role classroomName rollNumber chatLastSeenAt")
+      .select("name email role classroomName rollNumber chatLastSeenAt chatIsOnline")
       .sort({ role: 1, name: 1 })
       .lean();
   }
@@ -1379,7 +1379,7 @@ const getChatContacts = async (user) => {
         { classroomId: { $in: classroomIds } },
       ],
     })
-      .select("name email role classroomName rollNumber chatLastSeenAt")
+      .select("name email role classroomName rollNumber chatLastSeenAt chatIsOnline")
       .sort({ classroomName: 1, name: 1 })
       .lean();
   }
@@ -1397,7 +1397,7 @@ const getChatContacts = async (user) => {
     role: "teacher",
     approvalStatus: "approved",
   })
-    .select("name email role classroomName rollNumber chatLastSeenAt")
+    .select("name email role classroomName rollNumber chatLastSeenAt chatIsOnline")
     .sort({ name: 1 })
     .lean();
 };
@@ -1442,7 +1442,7 @@ app.get("/", (req, res) => {
 
 app.get("/api/chat/contacts", verifyToken, verifyChatUser, async (req, res) => {
   try {
-    await User.updateOne({ _id: req.dbUser._id }, { chatLastSeenAt: new Date() });
+    await User.updateOne({ _id: req.dbUser._id }, { chatLastSeenAt: new Date(), chatIsOnline: true });
     const contacts = await getChatContacts(req.dbUser);
     res.json(contacts.map(buildChatContactPayload));
   } catch (err) {
@@ -1454,10 +1454,21 @@ app.get("/api/chat/contacts", verifyToken, verifyChatUser, async (req, res) => {
 app.post("/api/chat/heartbeat", verifyToken, verifyChatUser, async (req, res) => {
   try {
     const chatLastSeenAt = new Date();
-    await User.updateOne({ _id: req.dbUser._id }, { chatLastSeenAt });
-    res.json({ ...buildChatStatus(chatLastSeenAt), lastSeenAt: chatLastSeenAt });
+    await User.updateOne({ _id: req.dbUser._id }, { chatLastSeenAt, chatIsOnline: true });
+    res.json({ ...buildChatStatus(chatLastSeenAt, true), lastSeenAt: chatLastSeenAt });
   } catch (err) {
     console.log("CHAT HEARTBEAT ERROR:", err);
+    res.status(500).json({ message: "Failed to update chat status." });
+  }
+});
+
+app.post("/api/chat/offline", verifyToken, verifyChatUser, async (req, res) => {
+  try {
+    const chatLastSeenAt = new Date();
+    await User.updateOne({ _id: req.dbUser._id }, { chatLastSeenAt, chatIsOnline: false });
+    res.json({ ...buildChatStatus(chatLastSeenAt, false), lastSeenAt: chatLastSeenAt });
+  } catch (err) {
+    console.log("CHAT OFFLINE ERROR:", err);
     res.status(500).json({ message: "Failed to update chat status." });
   }
 });
