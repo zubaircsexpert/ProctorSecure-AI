@@ -5,6 +5,7 @@ import {
   Lock,
   MessageCircle,
   Mic,
+  MicOff,
   Paperclip,
   Phone,
   PhoneOff,
@@ -1001,22 +1002,39 @@ const PortalChat = () => {
           flex-wrap: wrap;
         }
         .call-control {
-          width: 42px;
-          height: 42px;
-          border: 1px solid rgba(255,255,255,.18);
+          width: 46px;
+          height: 46px;
+          border: 1.5px solid rgba(255,255,255,.25);
           border-radius: 8px;
-          background: rgba(255,255,255,.08);
+          background: rgba(255,255,255,.10);
           color: #fff;
           display: grid;
           place-items: center;
           cursor: pointer;
+          transition: all 0.2s ease;
+          font-weight: 600;
+        }
+        .call-control:hover {
+          background: rgba(255,255,255,.15);
+          border-color: rgba(255,255,255,.35);
         }
         .call-control.active {
           background: #16a34a;
           border-color: #16a34a;
+          box-shadow: 0 0 12px rgba(22, 163, 74, 0.4);
+        }
+        .call-control.active:hover {
+          background: #15803d;
+          border-color: #15803d;
         }
         .call-control.warning {
-          background: #f97316;
+          background: #ea580c;
+          border-color: #ea580c;
+          box-shadow: 0 0 12px rgba(234, 88, 12, 0.4);
+        }
+        .call-control.warning:hover {
+          background: #c2410c;
+          border-color: #c2410c;
         }
         .end-call {
           width: 46px;
@@ -1295,8 +1313,9 @@ const PortalChat = () => {
             font-size: 11px;
           }
           .call-control, .end-call {
-            width: 36px;
-            height: 36px;
+            width: 40px;
+            height: 40px;
+            font-size: 14px;
           }
           .call-video {
             grid-column: 1 / -1;
@@ -1473,15 +1492,15 @@ const PortalChat = () => {
               </div>
             </div>
             <div className="call-actions">
-              <button type="button" className={`call-control ${callMuted ? "warning" : ""}`} title={callMuted ? "Unmute microphone" : "Mute microphone"} onClick={toggleMute}>
-                {callMuted ? <Mic size={18} /> : <Mic size={18} />}
+              <button type="button" className={`call-control ${callMuted ? "warning" : "active"}`} title={callMuted ? "Unmute microphone" : "Mute microphone"} onClick={toggleMute}>
+                {callMuted ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
-              <button type="button" className={`call-control ${speakerOn ? "active" : "warning"}`} title={speakerOn ? "Speaker on" : "Speaker muted"} onClick={toggleSpeaker}>
-                {speakerOn ? <Volume2 size={19} /> : <VolumeX size={19} />}
+              <button type="button" className={`call-control ${speakerOn ? "active" : "warning"}`} title={speakerOn ? "Speaker on" : "Speaker off"} onClick={toggleSpeaker}>
+                {speakerOn ? <Volume2 size={20} /> : <VolumeX size={20} />}
               </button>
               {activeCall.type === "video" ? (
-                <button type="button" className={`call-control ${cameraOff ? "warning" : ""}`} title={cameraOff ? "Turn camera on" : "Turn camera off"} onClick={toggleCamera}>
-                  {cameraOff ? <VideoOff size={19} /> : <Video size={19} />}
+                <button type="button" className={`call-control ${cameraOff ? "warning" : "active"}`} title={cameraOff ? "Turn camera on" : "Turn camera off"} onClick={toggleCamera}>
+                  {cameraOff ? <VideoOff size={20} /> : <Video size={20} />}
                 </button>
               ) : null}
               <button type="button" className="end-call" title="End call" onClick={() => endCall()}>
