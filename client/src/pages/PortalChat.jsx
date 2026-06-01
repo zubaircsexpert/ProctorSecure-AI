@@ -64,6 +64,8 @@ const PortalChat = () => {
   const remoteStreamRef = useRef(null);
   const peerRef = useRef(null);
   const socketRef = useRef(null);
+  const ringtoneContextRef = useRef(null);
+  const ringtoneTimerRef = useRef(null);
   const activeCallRef = useRef(null);
   const incomingCallRef = useRef(null);
   const recorderRef = useRef(null);
@@ -364,6 +366,43 @@ const PortalChat = () => {
     return stream;
   };
 
+  const stopRingtone = () => {
+    if (ringtoneTimerRef.current) {
+      window.clearInterval(ringtoneTimerRef.current);
+      ringtoneTimerRef.current = null;
+    }
+  };
+
+  const playRingtoneBeep = () => {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+
+    const context = ringtoneContextRef.current || new AudioContext();
+    ringtoneContextRef.current = context;
+    if (context.state === "suspended") context.resume().catch(() => {});
+
+    const now = context.currentTime;
+    [0, 0.22].forEach((offset) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, now + offset);
+      gain.gain.setValueAtTime(0.0001, now + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(now + offset);
+      oscillator.stop(now + offset + 0.18);
+    });
+  };
+
+  const startRingtone = () => {
+    if (ringtoneTimerRef.current) return;
+    playRingtoneBeep();
+    ringtoneTimerRef.current = window.setInterval(playRingtoneBeep, 1400);
+  };
+
   const stopCallMedia = () => {
     callStreamRef.current?.getTracks().forEach((track) => track.stop());
     callStreamRef.current = null;
@@ -384,6 +423,7 @@ const PortalChat = () => {
     }
     peerRef.current?.close();
     peerRef.current = null;
+    stopRingtone();
     stopCallMedia();
     setActiveCall(null);
     setIncomingCall(null);
@@ -449,6 +489,7 @@ const PortalChat = () => {
         recipientId: incomingCall.from.id,
         callId: incomingCall.callId,
       });
+      stopRingtone();
       setIncomingCall(null);
     } catch (error) {
       console.error("Accept call failed", error);
@@ -462,6 +503,7 @@ const PortalChat = () => {
       recipientId: incomingCall.from.id,
       callId: incomingCall.callId,
     });
+    stopRingtone();
     setIncomingCall(null);
   };
 
@@ -499,6 +541,7 @@ const PortalChat = () => {
 
     socket.on("call:incoming", (payload) => {
       setIncomingCall(payload);
+      startRingtone();
     });
 
     socket.on("call:accepted", async ({ callId, fromId }) => {
@@ -574,6 +617,7 @@ const PortalChat = () => {
     });
 
     return () => {
+      stopRingtone();
       socket.disconnect();
       socketRef.current = null;
     };
@@ -581,6 +625,8 @@ const PortalChat = () => {
 
   useEffect(() => {
     return () => {
+      stopRingtone();
+      ringtoneContextRef.current?.close?.().catch(() => {});
       callStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
@@ -597,11 +643,12 @@ const PortalChat = () => {
       <style>{`
         .portal-chat {
           height: calc(100dvh - 104px);
-          min-height: 620px;
+          min-height: 0;
           display: grid;
           grid-template-columns: minmax(250px, 330px) minmax(0, 1fr);
           background: #eef4ff;
           color: #0f172a;
+          overflow: hidden;
         }
         .chat-sidebar {
           min-height: 0;
@@ -666,9 +713,10 @@ const PortalChat = () => {
         .chat-main {
           min-width: 0;
           min-height: 0;
-          display: grid;
-          grid-template-rows: auto auto minmax(0, 1fr) auto;
+          display: flex;
+          flex-direction: column;
           background: #f8fafc;
+          overflow: hidden;
         }
         .chat-header {
           min-width: 0;
@@ -695,6 +743,24 @@ const PortalChat = () => {
           display: grid;
           place-items: center;
           cursor: pointer;
+        }
+        .call-start-button {
+          background: #16a34a;
+          border-color: #16a34a;
+          color: #fff;
+        }
+        .call-start-button:hover:not(:disabled) {
+          background: #15803d;
+          border-color: #15803d;
+        }
+        .video-start-button {
+          background: #2563eb;
+          border-color: #2563eb;
+          color: #fff;
+        }
+        .video-start-button:hover:not(:disabled) {
+          background: #1d4ed8;
+          border-color: #1d4ed8;
         }
         .icon-button:disabled, .primary-button:disabled {
           cursor: not-allowed;
@@ -753,10 +819,10 @@ const PortalChat = () => {
           border-radius: 8px;
           background: #020617;
           color: #fff;
-          padding: 14px;
+          padding: 12px;
           display: grid;
           grid-template-columns: minmax(0, 1fr) auto;
-          gap: 12px;
+          gap: 10px;
           align-items: center;
           box-shadow: 0 16px 36px rgba(15, 23, 42, .18);
         }
@@ -771,8 +837,8 @@ const PortalChat = () => {
           gap: 12px;
         }
         .call-avatar {
-          width: 46px;
-          height: 46px;
+          width: 42px;
+          height: 42px;
           border-radius: 8px;
           display: grid;
           place-items: center;
@@ -790,7 +856,7 @@ const PortalChat = () => {
           font-weight: 800;
         }
         .call-video {
-          width: min(240px, 38vw);
+          width: min(220px, 34vw);
           aspect-ratio: 16 / 10;
           border-radius: 8px;
           background: #0f172a;
@@ -806,7 +872,8 @@ const PortalChat = () => {
         }
         .remote-video, .local-video {
           width: 100%;
-          aspect-ratio: 16 / 10;
+          aspect-ratio: 16 / 9;
+          max-height: 220px;
           border-radius: 8px;
           object-fit: cover;
           background: #0f172a;
@@ -814,7 +881,7 @@ const PortalChat = () => {
         }
         .audio-call-surface {
           grid-column: 1 / -1;
-          min-height: 86px;
+          min-height: 68px;
           border-radius: 8px;
           display: grid;
           place-items: center;
@@ -840,7 +907,8 @@ const PortalChat = () => {
           cursor: pointer;
         }
         .call-control.active {
-          background: #2563eb;
+          background: #16a34a;
+          border-color: #16a34a;
         }
         .call-control.warning {
           background: #f97316;
@@ -856,7 +924,11 @@ const PortalChat = () => {
           place-items: center;
           cursor: pointer;
         }
+        .end-call:hover {
+          background: #b91c1c;
+        }
         .messages {
+          flex: 1 1 auto;
           min-height: 0;
           overflow-y: auto;
           padding: 18px;
@@ -914,6 +986,9 @@ const PortalChat = () => {
           border-top: 1px solid #e2e8f0;
           background: #fff;
           padding: 12px;
+          position: sticky;
+          bottom: 0;
+          z-index: 2;
         }
         .file-pill {
           display: inline-flex;
@@ -990,6 +1065,9 @@ const PortalChat = () => {
             margin: 8px 12px 0;
             grid-template-columns: 1fr auto;
           }
+          .call-actions {
+            justify-content: flex-start;
+          }
           .call-video {
             grid-column: 1 / -1;
             width: 100%;
@@ -1060,10 +1138,10 @@ const PortalChat = () => {
             </div>
           </div>
           <div className="header-actions">
-            <button type="button" className="icon-button" title="Audio call" onClick={() => startCall("audio")} disabled={!unlocked}>
+            <button type="button" className="icon-button call-start-button" title="Audio call" onClick={() => startCall("audio")} disabled={!unlocked}>
               <Phone size={19} />
             </button>
-            <button type="button" className="icon-button" title="Video call" onClick={() => startCall("video")} disabled={!unlocked}>
+            <button type="button" className="icon-button video-start-button" title="Video call" onClick={() => startCall("video")} disabled={!unlocked}>
               <Video size={19} />
             </button>
             <button type="button" className="icon-button" title="Clear chat" onClick={clearChat}>
