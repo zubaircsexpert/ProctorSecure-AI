@@ -1099,6 +1099,19 @@ const emitCallError = (socket, message) => {
   socket.emit("call:error", { message });
 };
 
+const connectedChatUsers = new Map();
+const chatUserRoom = (userId) => `user:${String(userId)}`;
+
+const emitPresenceUpdate = async (userId, online) => {
+  const chatLastSeenAt = new Date();
+  await User.updateOne({ _id: userId }, { chatLastSeenAt, chatIsOnline: online });
+  io.emit("presence:update", {
+    userId: String(userId),
+    online,
+    lastSeenAt: chatLastSeenAt,
+  });
+};
+
 io.use(async (socket, next) => {
   const user = await getSocketUser(socket);
   if (!user || !["student", "teacher", "admin"].includes(user.role)) {
@@ -1106,12 +1119,16 @@ io.use(async (socket, next) => {
   }
 
   socket.dbUser = user;
-  socket.join(`user:${user._id}`);
   next();
 });
 
 io.on("connection", (socket) => {
   const user = socket.dbUser;
+  const userId = String(user._id);
+  const currentCount = connectedChatUsers.get(userId) || 0;
+  connectedChatUsers.set(userId, currentCount + 1);
+  socket.join(chatUserRoom(userId));
+  emitPresenceUpdate(userId, true).catch((err) => console.log("SOCKET PRESENCE ONLINE ERROR:", err));
 
   socket.on("call:start", async ({ recipientId, type, callId } = {}) => {
     try {
@@ -1126,7 +1143,7 @@ io.on("connection", (socket) => {
         return;
       }
 
-      io.to(`user:${recipient._id}`).emit("call:incoming", {
+      io.to(chatUserRoom(recipient._id)).emit("call:incoming", {
         callId,
         type,
         from: {
@@ -1143,32 +1160,43 @@ io.on("connection", (socket) => {
 
   socket.on("call:accept", ({ recipientId, callId } = {}) => {
     if (!mongoose.Types.ObjectId.isValid(recipientId)) return;
-    io.to(`user:${recipientId}`).emit("call:accepted", { callId, fromId: user._id });
+    io.to(chatUserRoom(recipientId)).emit("call:accepted", { callId, fromId: user._id });
   });
 
   socket.on("call:reject", ({ recipientId, callId } = {}) => {
     if (!mongoose.Types.ObjectId.isValid(recipientId)) return;
-    io.to(`user:${recipientId}`).emit("call:rejected", { callId, fromId: user._id });
+    io.to(chatUserRoom(recipientId)).emit("call:rejected", { callId, fromId: user._id });
   });
 
   socket.on("call:end", ({ recipientId, callId } = {}) => {
     if (!mongoose.Types.ObjectId.isValid(recipientId)) return;
-    io.to(`user:${recipientId}`).emit("call:ended", { callId, fromId: user._id });
+    io.to(chatUserRoom(recipientId)).emit("call:ended", { callId, fromId: user._id });
   });
 
   socket.on("webrtc:offer", ({ recipientId, callId, description } = {}) => {
     if (!mongoose.Types.ObjectId.isValid(recipientId) || !description) return;
-    io.to(`user:${recipientId}`).emit("webrtc:offer", { callId, fromId: user._id, description });
+    io.to(chatUserRoom(recipientId)).emit("webrtc:offer", { callId, fromId: user._id, description });
   });
 
   socket.on("webrtc:answer", ({ recipientId, callId, description } = {}) => {
     if (!mongoose.Types.ObjectId.isValid(recipientId) || !description) return;
-    io.to(`user:${recipientId}`).emit("webrtc:answer", { callId, fromId: user._id, description });
+    io.to(chatUserRoom(recipientId)).emit("webrtc:answer", { callId, fromId: user._id, description });
   });
 
   socket.on("webrtc:ice-candidate", ({ recipientId, callId, candidate } = {}) => {
     if (!mongoose.Types.ObjectId.isValid(recipientId) || !candidate) return;
-    io.to(`user:${recipientId}`).emit("webrtc:ice-candidate", { callId, fromId: user._id, candidate });
+    io.to(chatUserRoom(recipientId)).emit("webrtc:ice-candidate", { callId, fromId: user._id, candidate });
+  });
+
+  socket.on("disconnect", () => {
+    const nextCount = Math.max((connectedChatUsers.get(userId) || 1) - 1, 0);
+    if (nextCount > 0) {
+      connectedChatUsers.set(userId, nextCount);
+      return;
+    }
+
+    connectedChatUsers.delete(userId);
+    emitPresenceUpdate(userId, false).catch((err) => console.log("SOCKET PRESENCE OFFLINE ERROR:", err));
   });
 });
 

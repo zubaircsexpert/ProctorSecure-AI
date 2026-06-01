@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, LockKeyhole, ShieldCheck } from "lucide-react";
 import API from "../services/api";
@@ -33,6 +33,10 @@ function Login() {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetMessage, setResetMessage] = useState("");
   const [resetPreviewUrl, setResetPreviewUrl] = useState("");
+
+  useEffect(() => {
+    API.get("/", { timeout: 8000 }).catch(() => {});
+  }, []);
 
   const handleLogin = async (event) => {
     event.preventDefault();

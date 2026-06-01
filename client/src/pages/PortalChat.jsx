@@ -27,6 +27,19 @@ const buildMediaUrl = (fileUrl) => {
   return `${API.defaults.baseURL}/${cleanPath}`;
 };
 
+const ICE_SERVERS = [
+  { urls: ["stun:stun.l.google.com:19302", "stun:global.stun.twilio.com:3478"] },
+  {
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp",
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
+  },
+];
+
 const formatLastSeen = (lastSeenAt) => {
   if (!lastSeenAt) return "Last seen not available";
   const seen = new Date(lastSeenAt);
@@ -131,9 +144,7 @@ const PortalChat = () => {
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "hidden") {
-        markOfflineWithBeacon();
-      } else {
+      if (document.visibilityState === "visible") {
         markOnline();
         fetchContacts({ silent: true });
       }
@@ -144,7 +155,7 @@ const PortalChat = () => {
     const heartbeat = window.setInterval(() => {
       markOnline();
       fetchContacts({ silent: true });
-    }, 30000);
+    }, 15000);
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", markOfflineWithBeacon);
     window.addEventListener("beforeunload", markOfflineWithBeacon);
@@ -322,7 +333,8 @@ const PortalChat = () => {
 
   const createPeer = (recipientId, callId) => {
     const peer = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: ICE_SERVERS,
+      iceCandidatePoolSize: 8,
     });
 
     peer.onicecandidate = (event) => {
@@ -357,6 +369,10 @@ const PortalChat = () => {
   };
 
   const getCallMedia = async (type) => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error("Media devices are not available in this browser.");
+    }
+
     const stream = await navigator.mediaDevices.getUserMedia(
       type === "video" ? { audio: true, video: true } : { audio: true, video: false }
     );
@@ -403,6 +419,42 @@ const PortalChat = () => {
     ringtoneTimerRef.current = window.setInterval(playRingtoneBeep, 1400);
   };
 
+  const waitForSocketConnection = () =>
+    new Promise((resolve, reject) => {
+      const socket = socketRef.current;
+      if (!socket) {
+        reject(new Error("Chat connection is not ready yet."));
+        return;
+      }
+
+      if (socket.connected) {
+        resolve(socket);
+        return;
+      }
+
+      const timeout = window.setTimeout(() => {
+        socket.off("connect", handleConnect);
+        socket.off("connect_error", handleError);
+        reject(new Error("Chat connection is still connecting. Please try again."));
+      }, 5000);
+
+      const handleConnect = () => {
+        window.clearTimeout(timeout);
+        socket.off("connect_error", handleError);
+        resolve(socket);
+      };
+
+      const handleError = () => {
+        window.clearTimeout(timeout);
+        socket.off("connect", handleConnect);
+        reject(new Error("Chat connection failed. Please refresh and try again."));
+      };
+
+      socket.once("connect", handleConnect);
+      socket.once("connect_error", handleError);
+      socket.connect();
+    });
+
   const stopCallMedia = () => {
     callStreamRef.current?.getTracks().forEach((track) => track.stop());
     callStreamRef.current = null;
@@ -442,6 +494,7 @@ const PortalChat = () => {
 
     try {
       endCall({ notify: false });
+      const socket = await waitForSocketConnection();
       const stream = await getCallMedia(type);
       const callId = `${user?.id || user?._id}-${selectedContact.id}-${Date.now()}`;
       const peer = createPeer(selectedContact.id, callId);
@@ -456,14 +509,14 @@ const PortalChat = () => {
         startedAt: Date.now(),
         status: "calling",
       });
-      socketRef.current?.emit("call:start", {
+      socket.emit("call:start", {
         recipientId: selectedContact.id,
         type,
         callId,
       });
     } catch (error) {
       console.error("Call permission failed", error);
-      setNotice(type === "video" ? "Camera and microphone permission is required for video call." : "Microphone permission is required for audio call.");
+      setNotice(error.message || (type === "video" ? "Camera and microphone permission is required for video call." : "Microphone permission is required for audio call."));
     }
   };
 
@@ -536,8 +589,27 @@ const PortalChat = () => {
     const socket = io(API.defaults.baseURL, {
       auth: { token },
       transports: ["websocket", "polling"],
+      reconnection: true,
+      reconnectionAttempts: 8,
+      reconnectionDelay: 700,
     });
     socketRef.current = socket;
+
+    socket.on("connect", () => {
+      fetchContacts({ silent: true });
+    });
+
+    socket.on("connect_error", () => {
+      setNotice("Chat connection is reconnecting. Calls may not start until it is online.");
+    });
+
+    socket.on("presence:update", ({ userId, online, lastSeenAt }) => {
+      setContacts((current) =>
+        current.map((contact) =>
+          String(contact.id) === String(userId) ? { ...contact, online, lastSeenAt } : contact
+        )
+      );
+    });
 
     socket.on("call:incoming", (payload) => {
       setIncomingCall(payload);
