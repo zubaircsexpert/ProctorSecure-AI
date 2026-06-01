@@ -1104,41 +1104,166 @@ const PortalChat = () => {
         }
         @media (max-width: 820px) {
           .portal-chat {
-            height: calc(100dvh - 104px);
+            height: calc(100dvh - 92px);
             min-height: 0;
             grid-template-columns: 1fr;
             grid-template-rows: auto minmax(0, 1fr);
+            background: #e9f2ee;
           }
           .chat-sidebar {
-            grid-template-rows: auto auto;
-            padding: 12px;
+            min-height: 0;
+            max-height: 104px;
+            grid-template-rows: 38px 48px;
+            gap: 6px;
+            padding: 7px 8px;
+            overflow: hidden;
           }
           .chat-brand, .signed-in { display: none; }
+          .contact-select {
+            height: 38px;
+            padding: 7px 9px;
+            border-radius: 8px;
+            font-size: 13px;
+          }
           .contact-list {
+            display: grid;
             grid-auto-flow: column;
-            grid-auto-columns: minmax(190px, 72%);
+            grid-auto-columns: minmax(138px, 46%);
+            gap: 6px;
             overflow-x: auto;
             overflow-y: hidden;
+            padding-bottom: 2px;
+            scrollbar-width: none;
+          }
+          .contact-list::-webkit-scrollbar {
+            display: none;
+          }
+          .contact-item {
+            min-height: 44px;
+            padding: 7px 9px;
+          }
+          .contact-name {
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .contact-meta {
+            margin-top: 2px;
+            font-size: 10px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
           }
           .chat-header {
-            padding: 10px 12px;
-            align-items: flex-start;
+            min-height: 52px;
+            padding: 7px 9px;
+            align-items: center;
+            gap: 8px;
           }
-          .chat-person h2 { font-size: 18px; }
-          .header-actions .icon-button { width: 38px; height: 38px; }
+          .chat-person h2 {
+            font-size: 16px;
+            line-height: 1.1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+          .presence {
+            margin-top: 2px;
+            font-size: 11px;
+          }
+          .header-actions {
+            gap: 5px;
+            flex-wrap: nowrap;
+          }
+          .header-actions .icon-button {
+            width: 34px;
+            height: 34px;
+          }
           .lock-panel {
-            margin: 8px 12px 0;
+            margin: 6px 8px 0;
+            padding: 8px;
             grid-template-columns: 1fr;
+            gap: 7px;
           }
-          .messages { padding: 12px; }
-          .message-bubble { max-width: 88%; }
-          .notice { margin: 8px 12px 0; }
+          .lock-panel > svg, .lock-copy small {
+            display: none;
+          }
+          .code-input {
+            min-height: 38px;
+            padding: 8px 10px;
+          }
+          .primary-button {
+            min-height: 38px;
+            padding: 0 11px;
+          }
+          .messages {
+            flex: 1 1 auto;
+            min-height: 0;
+            padding: 10px 8px;
+            background: #eef6f2;
+          }
+          .empty {
+            min-height: 120px;
+            padding: 10px;
+            font-size: 13px;
+          }
+          .message-row {
+            margin-bottom: 7px;
+          }
+          .message-bubble {
+            max-width: 86%;
+            padding: 8px 10px;
+            box-shadow: 0 4px 12px rgba(15, 23, 42, .08);
+          }
+          .message-row.mine .message-bubble {
+            background: #16a34a;
+            border-color: #16a34a;
+          }
+          .message-meta {
+            font-size: 10px;
+            gap: 6px;
+          }
+          .message-text {
+            margin-top: 5px;
+            line-height: 1.4;
+          }
+          img.message-media, video.message-media {
+            max-height: 220px;
+          }
+          audio.message-media {
+            width: min(280px, 100%);
+          }
+          .notice {
+            margin: 6px 8px 0;
+            padding: 8px 10px;
+            font-size: 12px;
+          }
           .call-panel {
-            margin: 8px 12px 0;
+            margin: 6px 8px 0;
+            padding: 8px;
             grid-template-columns: 1fr auto;
+            gap: 8px;
           }
           .call-actions {
             justify-content: flex-start;
+          }
+          .call-avatar {
+            width: 34px;
+            height: 34px;
+          }
+          .call-info {
+            gap: 8px;
+          }
+          .call-info strong {
+            font-size: 13px;
+          }
+          .call-info span {
+            font-size: 11px;
+          }
+          .call-control, .end-call {
+            width: 36px;
+            height: 36px;
           }
           .call-video {
             grid-column: 1 / -1;
@@ -1147,9 +1272,64 @@ const PortalChat = () => {
           .call-stage {
             grid-template-columns: 1fr;
           }
-          .input-row { grid-template-columns: 40px 40px minmax(0, 1fr) 44px; }
+          .remote-video, .local-video {
+            max-height: 160px;
+          }
+          .audio-call-surface {
+            min-height: 48px;
+            font-size: 12px;
+          }
+          .input-row {
+            grid-template-columns: 36px 36px minmax(0, 1fr) 42px;
+            gap: 6px;
+            align-items: center;
+          }
+          .input-row .icon-button {
+            width: 36px;
+            height: 36px;
+          }
+          .textarea {
+            min-height: 38px;
+            max-height: 84px;
+            padding: 8px 10px;
+            font-size: 14px;
+          }
           .primary-button.send-label span { display: none; }
-          .composer { padding: 10px; }
+          .composer {
+            padding: 7px 8px calc(7px + env(safe-area-inset-bottom));
+            flex: 0 0 auto;
+          }
+        }
+        @media (max-width: 480px) {
+          .portal-chat {
+            height: calc(100dvh - 76px);
+          }
+          .chat-sidebar {
+            max-height: 86px;
+            grid-template-rows: 36px 38px;
+            padding: 5px 7px;
+          }
+          .contact-list {
+            grid-auto-columns: minmax(118px, 44%);
+          }
+          .contact-item {
+            min-height: 36px;
+            padding: 5px 8px;
+          }
+          .contact-meta {
+            display: none;
+          }
+          .chat-header {
+            min-height: 48px;
+            padding: 6px 8px;
+          }
+          .header-actions .icon-button {
+            width: 32px;
+            height: 32px;
+          }
+          .messages {
+            padding: 8px 7px;
+          }
         }
       `}</style>
 
