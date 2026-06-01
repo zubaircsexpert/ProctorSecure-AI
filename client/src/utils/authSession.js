@@ -1,5 +1,7 @@
 const TOKEN_KEY = "token";
 const USER_KEY = "user";
+const BACKGROUND_AT_KEY = "backgroundedAt";
+const MAX_BACKGROUND_MS = 5 * 60 * 1000;
 
 const hasBrowserStorage = () => typeof window !== "undefined";
 
@@ -20,6 +22,7 @@ export const clearAuthSession = () => {
   if (!hasBrowserStorage()) return;
   window.sessionStorage.removeItem(TOKEN_KEY);
   window.sessionStorage.removeItem(USER_KEY);
+  window.sessionStorage.removeItem(BACKGROUND_AT_KEY);
   clearLegacyAuthStorage();
 };
 
@@ -49,4 +52,20 @@ export const getAuthUser = () => {
 export const updateStoredUser = (user) => {
   if (!hasBrowserStorage()) return;
   window.sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+};
+
+export const markSessionBackgrounded = () => {
+  if (!hasBrowserStorage()) return;
+  window.sessionStorage.setItem(BACKGROUND_AT_KEY, String(Date.now()));
+};
+
+export const clearSessionBackgrounded = () => {
+  if (!hasBrowserStorage()) return;
+  window.sessionStorage.removeItem(BACKGROUND_AT_KEY);
+};
+
+export const hasBackgroundSessionExpired = () => {
+  if (!hasBrowserStorage()) return false;
+  const backgroundedAt = Number(window.sessionStorage.getItem(BACKGROUND_AT_KEY) || 0);
+  return Boolean(backgroundedAt && Date.now() - backgroundedAt > MAX_BACKGROUND_MS);
 };

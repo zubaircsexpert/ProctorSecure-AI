@@ -144,10 +144,19 @@ const PortalChat = () => {
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        markOnline();
-        fetchContacts({ silent: true });
+      if (document.visibilityState === "hidden") {
+        setUnlockedContactId("");
+        markOfflineWithBeacon();
+        return;
       }
+
+      markOnline();
+      fetchContacts({ silent: true });
+    };
+
+    const handleLeaveChatScreen = () => {
+      setUnlockedContactId("");
+      markOfflineWithBeacon();
     };
 
     fetchContacts();
@@ -157,14 +166,14 @@ const PortalChat = () => {
       fetchContacts({ silent: true });
     }, 15000);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", markOfflineWithBeacon);
-    window.addEventListener("beforeunload", markOfflineWithBeacon);
+    window.addEventListener("pagehide", handleLeaveChatScreen);
+    window.addEventListener("beforeunload", handleLeaveChatScreen);
 
     return () => {
       window.clearInterval(heartbeat);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("pagehide", markOfflineWithBeacon);
-      window.removeEventListener("beforeunload", markOfflineWithBeacon);
+      window.removeEventListener("pagehide", handleLeaveChatScreen);
+      window.removeEventListener("beforeunload", handleLeaveChatScreen);
       markOffline();
     };
   }, []);
